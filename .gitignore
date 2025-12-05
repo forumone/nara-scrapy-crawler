@@ -1,0 +1,27 @@
+# Python / Virtual Environment
+__pycache__/
+*.pyc
+venv/
+env/
+.env
+
+# Scrapy specific
+.scrapy/
+*.log
+
+# IDE settings (VS Code / PyCharm)
+.vscode/
+.idea/
+
+# Local Output Files (Don't commit crawl data!)
+*.json
+*.jsonl
+*.csv
+output/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
