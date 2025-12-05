@@ -5,6 +5,6 @@ class ArchiveItem(scrapy.Item):
     # These fields match your OpenSearch Mapping
     url = scrapy.Field()
     title = scrapy.Field()
-    content = scrapy.Field()     # The main body text
-    published_date = scrapy.Field()
+    teaser_text = scrapy.Field()
+    full_text = scrapy.Field()     # The main body text
     source_site = scrapy.Field() # Useful for filtering in search
