@@ -26,8 +26,23 @@ ROBOTSTXT_OBEY = False
 CONCURRENT_REQUESTS_PER_DOMAIN = 1
 DOWNLOAD_DELAY = 1
 
-FEED_URI = 's3://YOUR_BUCKET_NAME/incoming/%(name)s/%(time)s.json'
+FEED_URI = 's3://nara-crawl-data/obamawhitehouse/test.json'
 FEED_FORMAT = 'json'
+
+import os
+
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+
+# 2. Page Count Limit (MUST BE INT)
+page_count_env = os.getenv('CLOSESPIDER_PAGECOUNT')
+if page_count_env:
+    CLOSESPIDER_PAGECOUNT = int(page_count_env)
+
+# 3. Depth Limit (MUST BE INT)
+depth_env = os.getenv('DEPTH_LIMIT')
+if depth_env:
+    DEPTH_LIMIT = int(depth_env)
 
 # Disable cookies (enabled by default)
 #COOKIES_ENABLED = False
