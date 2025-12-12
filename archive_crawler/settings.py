@@ -27,7 +27,7 @@ CONCURRENT_REQUESTS_PER_DOMAIN = 1
 DOWNLOAD_DELAY = 1
 
 FEED_URI = 's3://nara-crawl-data/obamawhitehouse/centralized-obama-bulkified.json'
-FEED_FORMAT = 'json'
+FEED_FORMAT = 'jsonl'
 
 import os
 

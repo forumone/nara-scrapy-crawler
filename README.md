@@ -54,11 +54,43 @@ scrapy crawl generic_crawl \
 ```
 
 ## 📂 Project Structure
-gs
-spiders/generic_crawl.py: The core spider. Uses CrawlSpider and LinkExtractors to walk the site. Dynamically accepts url and urls_to_skip.
 
-items.py: Defines the strict JSON schema (Title, Full Text, Teaser, Date).
+`spiders/generic_crawl.py`: The core spider. Uses CrawlSpider and LinkExtractors to walk the site. Dynamically accepts url and urls_to_skip.
 
-run_crawl.sh: The Entrypoint script used by the Docker container. It accepts CLI args and translates them into Scrapy commands.
+`items.py`: Defines the strict JSON schema (Title, Full Text, Teaser, Date).
+
+`run_crawl.sh`: The Entrypoint script used by the Docker container. It accepts CLI args and translates them into Scrapy commands.
 
 Dockerfile: Python 3.9 Slim image configuration.
+
+
+## 🛠 Deployment to AWS
+
+### Authenticate Docker to ECR.
+```commandline
+aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 756132184927.dkr.ecr.us-east-2.amazonaws.com
+```
+
+### Build to make a new image.
+```commandline
+docker build --platform linux/amd64 -t archive-crawler .
+```
+
+### Create the history tag:
+
+Where `[tag]` is the next iteration of the tag.
+
+```commandline
+docker tag archive-crawler:latest 756132184927.dkr.ecr.us-east-2.amazonaws.com/archive-crawler:[tag]
+```
+
+### Update the current pointer
+
+```commandline
+docker tag archive-crawler:latest 756132184927.dkr.ecr.us-east-2.amazonaws.com/archive-crawler:latest
+```
+
+### Push to AWS
+```commandline
+docker push 756132184927.dkr.ecr.us-east-2.amazonaws.com/archive-crawler:latest
+```
