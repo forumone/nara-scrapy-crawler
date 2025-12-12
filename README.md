@@ -81,16 +81,13 @@ docker build --platform linux/amd64 -t archive-crawler .
 Where `[tag]` is the next iteration of the tag.
 
 ```commandline
-docker tag archive-crawler:latest 756132184927.dkr.ecr.us-east-2.amazonaws.com/archive-crawler:[tag]
+docker tag archive-crawler:latest 756132184927.dkr.ecr.us-east-2.amazonaws.com/nara/archive-crawler:[tag]
+docker push 756132184927.dkr.ecr.us-east-2.amazonaws.com/nara/archive-crawler:[tag]
 ```
 
 ### Update the current pointer
 
 ```commandline
-docker tag archive-crawler:latest 756132184927.dkr.ecr.us-east-2.amazonaws.com/archive-crawler:latest
-```
-
-### Push to AWS
-```commandline
-docker push 756132184927.dkr.ecr.us-east-2.amazonaws.com/archive-crawler:latest
+docker tag archive-crawler:latest 756132184927.dkr.ecr.us-east-2.amazonaws.com/nara/archive-crawler:latest
+docker push 756132184927.dkr.ecr.us-east-2.amazonaws.com/nara/archive-crawler:latest
 ```
