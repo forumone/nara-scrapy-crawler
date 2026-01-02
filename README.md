@@ -45,12 +45,13 @@ Prints JSON to the terminal. Best for debugging selectors and cleaning logic.
 
 ```bash
 scrapy crawl generic_crawl \
-  -a url="[https://www.example.com/](https://www.example.com/)" \
-  -a site_id="local_dev_test" \
-  -a urls_to_skip="/login,/admin,/calendar" \
+  -a url="https://letsmove.obamawhitehouse.archives.gov/" \
+  -a site_id="letsmove" \
+  -a urls_to_skip="/blog/all" \
   -s FEED_URI=stdout \
   -s FEED_FORMAT=json \
-  -s CLOSESPIDER_PAGECOUNT=10
+  -s DEPTH_LIMIT=1 \
+  -s CLOSESPIDER_PAGECOUNT=2
 ```
 
 ## 📂 Project Structure

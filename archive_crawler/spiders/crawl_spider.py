@@ -2,6 +2,8 @@ from scrapy.spiders import CrawlSpider, Rule
 from scrapy.linkextractors import LinkExtractor
 from urllib.parse import urlparse
 from archive_crawler.items import ArchiveItem
+from scrapy.selector import Selector
+from w3lib.html import remove_tags_with_content
 import re
 
 class GenericCrawlSpider(CrawlSpider):
@@ -54,13 +56,26 @@ class GenericCrawlSpider(CrawlSpider):
 
         # 2. Extract Title (Scrapy Native)
         # .get(default='') prevents a crash if the tag is missing
-        item['title'] = response.xpath("//h1[@class='maincontent_title']/text()").get(default='').strip()
+        # There are several different title structures we are capturing with xpath "or" logic.
+        title_xpath_query = "//h1[@class='maincontent_title'] | //*[@id='maincontent']/div/div[1]/h2 | //*[@id='maincontent']/h1"
+        title = response.xpath(title_xpath_query).xpath('string(.)').get(default='missing_title').strip()
+        item['title'] = title
 
         # 3. Extract Body Content
-        # usage of xpath('string(.)') gets text from the div AND its children (like <b>, <span>, etc)
-        # This mimics lxml's .text_content()
-        raw_body = response.xpath("//div[@id='maincontent']/*/div[@class='content']").xpath('string(.)').get(default='')
+        # Some body fields have style and script tags. We don't want the contents of these elements. So we first load
+        # the match, drop or remove the tags we don't want and then load it back into scrapy selector to finish the
+        # the white space removal.
+        body_xpath_query = "//div[@id='maincontent']/*/div[@class='content'] | //div[starts-with(@id, 'node-')]/div/p"
+        match_body = response.xpath(body_xpath_query).get()
+        # Remove the <style> and <script> tags inside this specific area
+        # @todo: revisit this logic as it doesn't work for https://letsmove.obamawhitehouse.archives.gov/gardening-guide.
+        try:
+            body_without_style_and_script = remove_tags_with_content(match_body, which_ones=('script', 'style'))
+        except TypeError:
+            body_without_style_and_script = ''
 
+        clean_selector = Selector(text=body_without_style_and_script)
+        raw_body = clean_selector.xpath('string(.)').get(default='missing_body')
         # Clean whitespace
         clean_body_content = re.sub(r'\s+', ' ', raw_body).strip()
         item['full_text'] = clean_body_content
