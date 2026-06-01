@@ -32,6 +32,11 @@ class GenericCrawlSpider(CrawlSpider):
         # We build the rules list here before calling super().__init__
         self.rules = (
             Rule(
+                LinkExtractor(deny=(r'\?page=', r'/page/')),
+                callback='parse_item',  # Call this method when a page is found
+                follow=True  # Keep following links on that page
+            ),
+            Rule(
                 LinkExtractor(
                     # Allow anything on the same domain...
                     allow=(),
@@ -57,15 +62,17 @@ class GenericCrawlSpider(CrawlSpider):
         # 2. Extract Title (Scrapy Native)
         # .get(default='') prevents a crash if the tag is missing
         # There are several different title structures we are capturing with xpath "or" logic.
-        title_xpath_query = "//h1[@class='maincontent_title'] | //*[@id='maincontent']/div/div[1]/h2 | //*[@id='maincontent']/h1"
-        title = response.xpath(title_xpath_query).xpath('string(.)').get(default='missing_title').strip()
+        title_xpath_query = "//div[@id='hero-caption']//h1 | //h1[@class='maincontent_title'] | //*[@id='maincontent']/div/div[1]/h2 | //*[@id='maincontent']/h1 | //h1[@class='title'][normalize-space()] | //div[contains(@class, 'pane-whr-achievement-page-intro-pane')]//h1"
+        default_title_xpath_query = "//head/title[1]"
+        default_title = response.xpath(default_title_xpath_query).xpath('string(.)').get(default='missing_title').strip()
+        title = response.xpath(title_xpath_query).xpath('string(.)').get(default=default_title).strip()
         item['title'] = title
 
         # 3. Extract Body Content
         # Some body fields have style and script tags. We don't want the contents of these elements. So we first load
         # the match, drop or remove the tags we don't want and then load it back into scrapy selector to finish the
         # the white space removal.
-        body_xpath_query = "//div[@id='maincontent']/*/div[@class='content'] | //div[starts-with(@id, 'node-')]/div/p"
+        body_xpath_query = "//div[contains(@class, 'hero-page-content')] | //div[@id='maincontent']/*/div[@class='content'] | //div[starts-with(@id, 'node-')]/div/p | //div[contains(@class, 'pane-bundle-forall-checklist')] | //div[contains(@class, 'forall-body')] | //div[@id='microsite'] | //div[contains(@class,'longpage-section')]"
         match_body = response.xpath(body_xpath_query).get()
         # Remove the <style> and <script> tags inside this specific area
         # @todo: revisit this logic as it doesn't work for https://letsmove.obamawhitehouse.archives.gov/gardening-guide.
