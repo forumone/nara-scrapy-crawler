@@ -12,6 +12,8 @@ env/
 # IDE settings (VS Code / PyCharm)
 .vscode/
 .idea/
+.claude
+.playwright-mcp
 
 # Local Output Files (Don't commit crawl data!)
 *.json
