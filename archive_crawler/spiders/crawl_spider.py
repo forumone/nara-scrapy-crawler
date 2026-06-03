@@ -40,8 +40,8 @@ class GenericCrawlSpider(CrawlSpider):
                 LinkExtractor(
                     # Allow anything on the same domain...
                     allow=(),
-                    # ...Except things matching our skip list
-                    deny=deny_list,
+                    # ...Except pagination and the skip list
+                    deny=(r'\?page=', r'/page/', *deny_list),
                     # unique=True ensures we don't crawl the same page twice
                     unique=True
                 ),
@@ -94,6 +94,6 @@ class GenericCrawlSpider(CrawlSpider):
         else:
             item['teaser_text'] = ''
 
-        item['source_site'] = 'obamawhitehouse'
+        item['source_site'] = self.site_id
 
         yield item
