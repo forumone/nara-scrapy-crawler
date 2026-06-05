@@ -7,6 +7,16 @@ from w3lib.html import remove_tags_with_content
 from archive_crawler.items import ArchiveItem
 
 
+def _first_sentence(text, min_offset=60):
+    """Return the first sentence of text, skipping sentence-boundary candidates within
+    the first min_offset characters to avoid splitting on date prefixes and abbreviations
+    like Mr., U.S., Dr., etc."""
+    if not text:
+        return ''
+    m = re.search(r'[.!?](?=\s+[A-Z])', text[min_offset:])
+    return text[:min_offset + m.end()] if m else text
+
+
 class ObamaPetitionsSpider(scrapy.Spider):
     name = "obama_petitions"
     allowed_domains = ["petitions.obamawhitehouse.archives.gov"]
@@ -39,9 +49,10 @@ class ObamaPetitionsSpider(scrapy.Spider):
         date = response.css('h4.petition-attribution::text').get(default='').strip()
         body = self._extract_text(response, '.field-name-body .field-items .field-item')
 
-        full_text = f"{date} {body}".strip() if date else body
+        # Only prepend date if it contains an actual date value (has a digit)
+        full_text = f"{date} {body}".strip() if (date and any(c.isdigit() for c in date)) else body
         item['full_text'] = full_text
-        item['teaser_text'] = full_text.split('.', 1)[0] + '.' if full_text else ''
+        item['teaser_text'] = _first_sentence(full_text)
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
         yield item
@@ -56,7 +67,7 @@ class ObamaPetitionsSpider(scrapy.Spider):
             body = self._extract_text(response, '#content-main')
 
         item['full_text'] = body
-        item['teaser_text'] = body.split('.', 1)[0] + '.' if body else ''
+        item['teaser_text'] = _first_sentence(body)
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
         yield item
