@@ -52,11 +52,11 @@ class TrumpPetitionsSpider(scrapy.Spider):
         item['url'] = response.url
         item['title'] = response.css('h1.title::text').get(default='').strip()
 
-        date = response.css('h4.petition-attribution::text').get(default='').strip()
+        date = re.sub(r'\s+', ' ', response.css('h4.petition-attribution::text').get(default='')).strip()
         body = self._extract_text(response, '.field-name-body .field-items .field-item')
 
-        # Only prepend date if it contains an actual date value (has a digit)
-        full_text = f"{date} {body}".strip() if (date and any(c.isdigit() for c in date)) else body
+        # Only append date if it contains an actual date value (has a digit)
+        full_text = f"{body} {date}".strip() if (date and any(c.isdigit() for c in date)) else body
         item['full_text'] = full_text
         item['teaser_text'] = _first_sentence(full_text)
         item['source_site'] = self.SOURCE_SITE
