@@ -48,7 +48,7 @@ scrapy crawl generic_crawl \
   -a url="https://letsmove.obamawhitehouse.archives.gov/" \
   -a site_id="letsmove" \
   -a urls_to_skip="/blog/all" \
-  -s FEED_URI=stdout \
+  -s FEED_URI=stdout:// \
   -s FEED_FORMAT=json \
   -s DEPTH_LIMIT=1 \
   -s CLOSESPIDER_PAGECOUNT=2
