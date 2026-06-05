@@ -16,9 +16,8 @@ class TrumpPetitionsSpider(scrapy.Spider):
         "https://petitions.trumpwhitehouse.archives.gov/developers",
     ]
 
-    # TODO: Tech lead to decide before any indexing run.
-    # Options: 'trumpwhitehouse', 'petitions.trumpwhitehouse', 'trump_petitions'
-    SOURCE_SITE = 'TODO_SET_SOURCE_SITE'
+    SOURCE_SITE = 'petitions.trumpwhitehouse'
+    SOURCE_TYPE = 'Archived White House Websites'
 
     def parse(self, response):
         if '/petition/' in response.url:
@@ -50,6 +49,7 @@ class TrumpPetitionsSpider(scrapy.Spider):
         item['full_text'] = full_text
         item['teaser_text'] = full_text.split('.', 1)[0] + '.' if full_text else ''
         item['source_site'] = self.SOURCE_SITE
+        item['source_type'] = self.SOURCE_TYPE
         yield item
 
     def generic_page_parse(self, response):
@@ -64,6 +64,7 @@ class TrumpPetitionsSpider(scrapy.Spider):
         item['full_text'] = body
         item['teaser_text'] = body.split('.', 1)[0] + '.' if body else ''
         item['source_site'] = self.SOURCE_SITE
+        item['source_type'] = self.SOURCE_TYPE
         yield item
 
         for href in response.css('#sidebar-top .menu a::attr(href)').getall():

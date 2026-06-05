@@ -7,4 +7,5 @@ class ArchiveItem(scrapy.Item):
     title = scrapy.Field()
     teaser_text = scrapy.Field()
     full_text = scrapy.Field()     # The main body text
-    source_site = scrapy.Field() # Useful for filtering in search
+    source_site = scrapy.Field()
+    source_type = scrapy.Field()
