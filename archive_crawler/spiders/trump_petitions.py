@@ -7,16 +7,25 @@ from w3lib.html import remove_tags_with_content
 from archive_crawler.items import ArchiveItem
 
 
-def _teaser(text, min_offset=60, max_len=200):
+def _teaser(text, min_offset=60, max_len=200, truncate_after=True):
     """Return a teaser string: the first sentence of text (skipping the first
-    min_offset characters to avoid splitting on abbreviations), capped at max_len
-    characters at a word boundary."""
+    min_offset characters to avoid splitting on abbreviations), capped near max_len
+    at a word boundary.
+
+    truncate_after=True  (default): extend past max_len to the next space, so the
+                                    teaser may slightly exceed max_len.
+    truncate_after=False:           cut back to the last space before max_len, so the
+                                    teaser is always strictly shorter than max_len.
+    """
     if not text:
         return ''
     m = re.search(r'[.!?](?=\s+[A-Z])', text[min_offset:])
     result = text[:min_offset + m.end()] if m else text
     if len(result) <= max_len:
         return result
+    if truncate_after:
+        next_space = result.find(' ', max_len)
+        return result[:next_space] if next_space != -1 else result
     truncated = result[:max_len]
     last_space = truncated.rfind(' ')
     return truncated[:last_space] if last_space > 0 else truncated
