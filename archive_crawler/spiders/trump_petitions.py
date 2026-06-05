@@ -66,9 +66,12 @@ class TrumpPetitionsSpider(scrapy.Spider):
         item['url'] = response.url
         item['title'] = response.css('h1.title::text').get(default='').strip()
 
+        date = re.sub(r'\s+', ' ', response.css('h4.petition-attribution::text').get(default='')).strip()
         body = self._extract_text(response, '.field-name-body .field-items .field-item')
 
-        item['full_text'] = body
+        # Append date attribution to full_text; teaser is sourced from body only
+        full_text = f"{body} {date}".strip() if (date and any(c.isdigit() for c in date)) else body
+        item['full_text'] = full_text
         item['teaser_text'] = _teaser(body)
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
