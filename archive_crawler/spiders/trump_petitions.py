@@ -7,15 +7,15 @@ from w3lib.html import remove_tags_with_content
 from archive_crawler.items import ArchiveItem
 
 
-def _teaser(text, min_offset=60, max_len=200, truncate_after=True):
+def _teaser(text, min_offset=60, max_len=200, truncate_after=False):
     """Return a teaser string: the first sentence of text (skipping the first
     min_offset characters to avoid splitting on abbreviations), capped near max_len
     at a word boundary.
 
-    truncate_after=True  (default): extend past max_len to the next space, so the
-                                    teaser may slightly exceed max_len.
-    truncate_after=False:           cut back to the last space before max_len, so the
-                                    teaser is always strictly shorter than max_len.
+    truncate_after=False (default): cut back to the last space before max_len, so the
+                                   teaser is always strictly shorter than max_len.
+    truncate_after=True:            extend past max_len to the next space, so the
+                                   teaser may slightly exceed max_len.
     """
     if not text:
         return ''
