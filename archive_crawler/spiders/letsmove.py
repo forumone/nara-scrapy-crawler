@@ -44,8 +44,11 @@ class LetsMoveSpider(CrawlSpider):
         Rule(
             LinkExtractor(
                 deny=(
-                    r'/sites/',   # static assets (CSS, JS, images)
-                    r'/user/',    # Drupal user pages
+                    r'/sites/',     # static assets (CSS, JS, images)
+                    r'/user/',      # Drupal user pages
+                    r'/node/\d',    # raw Drupal node paths (redirect noise)
+                    r'/print/',     # Drupal print views (duplicate content)
+                    r'/category/',  # listing views (low-value, pagination-heavy)
                 ),
             ),
             callback='parse_item',
@@ -62,6 +65,8 @@ class LetsMoveSpider(CrawlSpider):
             return
 
         title = (response.css('#maincontent h1').xpath('string(.)').get(default='')).strip()
+        if not title:
+            return
 
         item = ArchiveItem()
         item['url'] = response.url
