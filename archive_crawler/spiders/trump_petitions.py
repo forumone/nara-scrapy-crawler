@@ -7,14 +7,19 @@ from w3lib.html import remove_tags_with_content
 from archive_crawler.items import ArchiveItem
 
 
-def _first_sentence(text, min_offset=60):
-    """Return the first sentence of text, skipping sentence-boundary candidates within
-    the first min_offset characters to avoid splitting on date prefixes and abbreviations
-    like Mr., U.S., Dr., etc."""
+def _teaser(text, min_offset=60, max_len=200):
+    """Return a teaser string: the first sentence of text (skipping the first
+    min_offset characters to avoid splitting on abbreviations), capped at max_len
+    characters at a word boundary."""
     if not text:
         return ''
     m = re.search(r'[.!?](?=\s+[A-Z])', text[min_offset:])
-    return text[:min_offset + m.end()] if m else text
+    result = text[:min_offset + m.end()] if m else text
+    if len(result) <= max_len:
+        return result
+    truncated = result[:max_len]
+    last_space = truncated.rfind(' ')
+    return truncated[:last_space] if last_space > 0 else truncated
 
 
 class TrumpPetitionsSpider(scrapy.Spider):
@@ -52,13 +57,10 @@ class TrumpPetitionsSpider(scrapy.Spider):
         item['url'] = response.url
         item['title'] = response.css('h1.title::text').get(default='').strip()
 
-        date = re.sub(r'\s+', ' ', response.css('h4.petition-attribution::text').get(default='')).strip()
         body = self._extract_text(response, '.field-name-body .field-items .field-item')
 
-        # Only append date if it contains an actual date value (has a digit)
-        full_text = f"{body} {date}".strip() if (date and any(c.isdigit() for c in date)) else body
-        item['full_text'] = full_text
-        item['teaser_text'] = _first_sentence(full_text)
+        item['full_text'] = body
+        item['teaser_text'] = _teaser(body)
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
         yield item
@@ -73,7 +75,7 @@ class TrumpPetitionsSpider(scrapy.Spider):
             body = self._extract_text(response, '#content-main')
 
         item['full_text'] = body
-        item['teaser_text'] = _first_sentence(body)
+        item['teaser_text'] = _teaser(body)
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
         yield item
