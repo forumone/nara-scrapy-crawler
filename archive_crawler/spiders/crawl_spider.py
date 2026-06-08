@@ -9,7 +9,7 @@ import re
 class GenericCrawlSpider(CrawlSpider):
     name = "generic_crawl"
 
-    def __init__(self, url=None, urls_to_skip=None, site_id='archive', *args, **kwargs):
+    def __init__(self, url=None, urls_to_skip=None, site_id='archive', source_type='', *args, **kwargs):
         # 1. Validation
         if not url:
             raise ValueError("No 'url' argument provided.")
@@ -21,6 +21,7 @@ class GenericCrawlSpider(CrawlSpider):
         domain = urlparse(url).netloc
         self.allowed_domains = [domain]
         self.site_id = site_id
+        self.source_type = source_type
 
         # 3. Process the Skip List (Deny List)
         deny_list = []
@@ -40,8 +41,8 @@ class GenericCrawlSpider(CrawlSpider):
                 LinkExtractor(
                     # Allow anything on the same domain...
                     allow=(),
-                    # ...Except things matching our skip list
-                    deny=deny_list,
+                    # ...Except pagination and the skip list
+                    deny=(r'\?page=', r'/page/', *deny_list),
                     # unique=True ensures we don't crawl the same page twice
                     unique=True
                 ),
@@ -94,6 +95,7 @@ class GenericCrawlSpider(CrawlSpider):
         else:
             item['teaser_text'] = ''
 
-        item['source_site'] = 'obamawhitehouse'
+        item['source_site'] = self.site_id
+        item['source_type'] = self.source_type
 
         yield item
