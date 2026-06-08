@@ -18,6 +18,10 @@ class TrumpPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'petitions.trumpwhitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._seen = set()
+
     def parse(self, response):
         if '/petition/' in response.url:
             yield from self.petition_page_parse(response)
@@ -37,9 +41,17 @@ class TrumpPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
             yield response.follow(next_page, callback=self.listing_page_parse)
 
     def petition_page_parse(self, response):
+        if response.url in self._seen:
+            return
+        self._seen.add(response.url)
         item = ArchiveItem()
         item['url'] = response.url
-        item['title'] = response.css('h1.title::text').get(default='').strip()
+        title = response.css('h1.title::text').get(default='').strip()
+        if not title:
+            title = response.css('h1::text').get(default='').strip()
+        if not title:
+            return
+        item['title'] = title
 
         date = re.sub(r'\s+', ' ', response.css('h4.petition-attribution::text').get(default='')).strip()
         body = self._extract_text(response, '.field-name-body .field-items .field-item')
@@ -53,9 +65,17 @@ class TrumpPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
         yield item
 
     def generic_page_parse(self, response):
+        if response.url in self._seen:
+            return
+        self._seen.add(response.url)
         item = ArchiveItem()
         item['url'] = response.url
-        item['title'] = response.css('h1.title::text').get(default='').strip()
+        title = response.css('h1.title::text').get(default='').strip()
+        if not title:
+            title = response.css('h1::text').get(default='').strip()
+        if not title:
+            return
+        item['title'] = title
 
         body = self._extract_text(response, '.field-name-body .field-items .field-item')
         if not body:
