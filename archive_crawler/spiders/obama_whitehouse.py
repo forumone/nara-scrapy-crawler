@@ -29,7 +29,11 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, CrawlSpider):
     )
 
     def parse_item(self, response):
-        # Listing and pagination pages have no .field-items and are skipped naturally.
+        # Listing and pagination pages have .views-row elements; skip them as items
+        # but CrawlSpider still follows their links (follow=True) to discover content.
+        if response.css('.views-row'):
+            return
+
         body = self._extract_text(response, '.field-items .field-item')
         if not body:
             return
