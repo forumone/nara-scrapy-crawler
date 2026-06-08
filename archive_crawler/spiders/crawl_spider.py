@@ -1,12 +1,16 @@
-from scrapy.spiders import CrawlSpider, Rule
-from scrapy.linkextractors import LinkExtractor
-from urllib.parse import urlparse
-from archive_crawler.items import ArchiveItem
-from scrapy.selector import Selector
-from w3lib.html import remove_tags_with_content
 import re
 
-class GenericCrawlSpider(CrawlSpider):
+from scrapy.linkextractors import LinkExtractor
+from scrapy.selector import Selector
+from scrapy.spiders import CrawlSpider, Rule
+from urllib.parse import urlparse
+from w3lib.html import remove_tags_with_content
+
+from archive_crawler.items import ArchiveItem
+from archive_crawler.spiders.base import ArchiveSpiderMixin
+
+
+class GenericCrawlSpider(ArchiveSpiderMixin, CrawlSpider):
     name = "generic_crawl"
 
     def __init__(self, url=None, urls_to_skip=None, site_id='archive', source_type='', *args, **kwargs):
@@ -89,11 +93,7 @@ class GenericCrawlSpider(CrawlSpider):
         item['full_text'] = clean_body_content
 
         # 4. Teaser
-        if clean_body_content:
-            teaser_text = clean_body_content.split('.', 1)
-            item['teaser_text'] = teaser_text[0] + '.'
-        else:
-            item['teaser_text'] = ''
+        item['teaser_text'] = self._teaser(clean_body_content)
 
         item['source_site'] = self.site_id
         item['source_type'] = self.source_type
