@@ -54,7 +54,7 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
     name = "obama_whitehouse"
     allowed_domains = ["obamawhitehouse.archives.gov"]
 
-    SOURCE_SITE = 'obamawhitehouse'
+    SOURCE_SITE = 'www.obamawhitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
 
     def start_requests(self):
