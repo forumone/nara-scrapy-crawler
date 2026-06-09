@@ -75,7 +75,8 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
     def parse_item(self, response):
         if response.css('.views-row'):
             return
-        body = self._extract_text(response, '.field-items .field-item')
+        body = (self._extract_text(response, '.field-items .field-item') or
+                self._extract_text(response, '.longpage-sections'))
         if not body:
             return
         title = response.css('h1').xpath('string(.)').get(default='').strip()
