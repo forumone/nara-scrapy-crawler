@@ -51,6 +51,11 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
         'https://obamawhitehouse.archives.gov/we-the-geeks',
     ]
 
+    def _is_listing_page(self, response):
+        # .views-row reliably identifies listing pages on this site; content
+        # pages do not embed views, so this check is safe here.
+        return super()._is_listing_page(response) or bool(response.css('.views-row'))
+
     rules = (
         Rule(
             # allow= anchors to the exact hostname; allow_domains alone would

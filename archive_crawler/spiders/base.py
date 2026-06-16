@@ -71,18 +71,28 @@ class NavHarvesterMixin:
     def _filter_web_urls(self, links):
         return [lnk for lnk in links if self._is_web_url(lnk.url)]
 
+    def _is_listing_page(self, response):
+        """Return True if this response is a listing page that should be skipped.
+
+        Default implementation checks only _listing_urls (populated from
+        listing_file). Subclasses add site-specific detection — for example,
+        checking for .views-row on sites where that selector reliably identifies
+        listing pages and does not appear on content pages with embedded views.
+        """
+        return response.url in self._listing_urls
+
     def parse_nav(self, response):
         """Yield the URL and follow links if this is a nav content page.
 
-        Listing pages (.views-row or already in the listing harvest) are dropped
-        entirely — no item yielded and no links followed. This prevents the spider
-        from fanning out into listing sections and their thousands of content URLs.
+        Listing pages are dropped entirely — no item yielded and no links
+        followed. This prevents the spider from fanning out into listing
+        sections and their thousands of content URLs.
 
-        Links are followed manually (rather than via follow=True in the Rule) so
-        that we can gate following on this per-page check. Subclass rules must set
-        follow=False and omit process_links; filtering is applied here instead.
+        Links are followed manually (rather than via follow=True in the Rule)
+        so that we can gate following on this per-page check. Subclass rules
+        must set follow=False and omit process_links; filtering is applied here.
         """
-        if response.url in self._listing_urls or response.css('.views-row'):
+        if self._is_listing_page(response):
             return
         yield {'url': response.url}
         for rule in self._rules:
