@@ -84,12 +84,13 @@ The `-a listing_file` argument is optional — omit it to collect all discovered
 
 ### Merge
 
-Concatenate both harvest CSVs into a single input file for the content spider:
+Combine both harvest CSVs into a single input file for the content spider:
 
 ```bash
-head -1 data/www.obamawhitehouse_harvest-listing.csv > data/www.obamawhitehouse_harvest-full.csv
-tail -n +2 data/www.obamawhitehouse_harvest-listing.csv >> data/www.obamawhitehouse_harvest-full.csv
-tail -n +2 data/www.obamawhitehouse_harvest-nav.csv >> data/www.obamawhitehouse_harvest-full.csv
+python merge_harvest.py \
+  -o data/www.obamawhitehouse_harvest-full.csv \
+  data/www.obamawhitehouse_harvest-listing.csv \
+  data/www.obamawhitehouse_harvest-nav.csv
 ```
 
 ### Phase C: Crawl Content
