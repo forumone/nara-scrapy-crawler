@@ -7,6 +7,8 @@
 #     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
+import os
+
 BOT_NAME = "archive_crawler"
 
 SPIDER_MODULES = ["archive_crawler.spiders"]
@@ -26,10 +28,9 @@ ROBOTSTXT_OBEY = False
 CONCURRENT_REQUESTS_PER_DOMAIN = 1
 DOWNLOAD_DELAY = 1
 
-FEED_URI = 's3://nara-crawl-data/obamawhitehouse/centralized-obama-bulkified.jsonl'
+if os.getenv('FEED_URI'):
+    FEED_URI = os.getenv('FEED_URI')
 FEED_FORMAT = 'jsonl'
-
-import os
 
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')

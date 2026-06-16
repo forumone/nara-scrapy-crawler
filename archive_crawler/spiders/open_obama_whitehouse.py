@@ -1,8 +1,10 @@
-from pathlib import Path
-
 import scrapy
 
-class OpenSpider(scrapy.Spider):
+from archive_crawler.items import ArchiveItem
+from archive_crawler.spiders.base import ArchiveSpiderMixin
+
+
+class OpenSpider(ArchiveSpiderMixin, scrapy.Spider):
     name = "open_obama_whitehouse"
     allowed_domains = ["open.obamawhitehouse.archives.gov"]
     start_urls = [
@@ -19,6 +21,9 @@ class OpenSpider(scrapy.Spider):
         "https://open.obamawhitehouse.archives.gov/search"
     ]
 
+    SOURCE_SITE = 'open.obamawhitehouse'
+    SOURCE_TYPE = 'Archived White House Websites'
+
     def parse(self, response):
         if 'search' in response.url:
             yield scrapy.Request(response.url, callback=self.search_page_parse)
@@ -28,22 +33,30 @@ class OpenSpider(scrapy.Spider):
             yield scrapy.Request(response.url, callback=self.generic_parse)
 
     def generic_parse(self, response):
-        yield {
-            "url": response.url,
-            "title": response.xpath("//title/text()").get(),
-            "full_text": response.css("p::text").getall(),
-        }
+        body = self._extract_text(response, 'body')
+        item = ArchiveItem()
+        item['url'] = response.url
+        item['title'] = response.xpath("//title/text()").get(default='').strip()
+        item['full_text'] = body
+        item['teaser_text'] = self._teaser(body)
+        item['source_site'] = self.SOURCE_SITE
+        item['source_type'] = self.SOURCE_TYPE
+        yield item
 
     def dataset_page_parse(self, response):
         child_resource = response.css("span.links a::attr(href)").get()
         if child_resource is not None:
             yield response.follow(child_resource, callback=self.dataset_page_parse)
 
-        yield {
-            "url": response.url,
-            "title": response.xpath("normalize-space(//div[contains(@class, 'radix-layouts-content')]//h2[@class='pane-title']/text())").get(),
-            "full_text": response.css("div.field-name-body div.field-items p::text").getall(),
-        }
+        body = self._extract_text(response, "div.field-name-body div.field-items")
+        item = ArchiveItem()
+        item['url'] = response.url
+        item['title'] = response.xpath("normalize-space(//div[contains(@class, 'radix-layouts-content')]//h2[@class='pane-title']/text())").get(default='').strip()
+        item['full_text'] = body
+        item['teaser_text'] = self._teaser(body)
+        item['source_site'] = self.SOURCE_SITE
+        item['source_type'] = self.SOURCE_TYPE
+        yield item
 
     def search_page_parse(self, response):
         for result in response.css("div.views-row"):
@@ -53,4 +66,3 @@ class OpenSpider(scrapy.Spider):
         next_page = response.css("li.pager-next a::attr(href)").get()
         if next_page is not None:
             yield response.follow(next_page, callback=self.search_page_parse)
-
