@@ -59,18 +59,12 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
 
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
-        seen = set()
         if url_file:
             with open(url_file, newline='', encoding='utf-8') as f:
                 for row in csv.DictReader(f):
-                    url = row['url']
-                    if url not in seen:
-                        seen.add(url)
-                        yield scrapy.Request(url, callback=self.parse_item)
+                    yield scrapy.Request(row['url'], callback=self.parse_item)
         for url in NAV_ONLY_URLS:
-            if url not in seen:
-                seen.add(url)
-                yield scrapy.Request(url, callback=self.parse_item)
+            yield scrapy.Request(url, callback=self.parse_item)
 
     def parse_item(self, response):
         if response.css('.views-row'):
