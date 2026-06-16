@@ -54,6 +54,42 @@ scrapy crawl generic_crawl \
   -s CLOSESPIDER_PAGECOUNT=2
 ```
 
+## 🏛️ Obama White House Spider (Two-Phase Crawl)
+
+`obamawhitehouse.archives.gov` has no sitemap, so it uses a two-phase approach: a harvester collects all content URLs from listing pages, then a content spider crawls each URL.
+
+### Phase 1: Harvest URLs
+
+Crawls all briefing-room listing sections and the blog, following pagination, and outputs a flat CSV of content URLs.
+
+```bash
+scrapy crawl obama_whitehouse_harvest -O www.obamawhitehouse_urls.csv
+```
+
+Expected output: ~27,000 unique URLs.
+
+### Phase 2: Crawl Content
+
+Reads the URL file produced by Phase 1 and crawls each content page. Also crawls a hardcoded list of nav-only pages not reachable from any listing section.
+
+```bash
+scrapy crawl obama_whitehouse \
+  -a url_file=www.obamawhitehouse_urls.csv \
+  -O www.obamawhitehouse.csv
+```
+
+Expected output: ~27,000 items. At the default `DOWNLOAD_DELAY=1` with ~50% redirect rate, this takes approximately 19 hours — run it on a remote server, not a local machine.
+
+To validate against a smaller subset first, pass a reduced URL file:
+
+```bash
+scrapy crawl obama_whitehouse \
+  -a url_file=www.obamawhitehouse_urls_test.csv \
+  -O www.obamawhitehouse_test.csv
+```
+
+---
+
 ## 📂 Project Structure
 
 `spiders/generic_crawl.py`: The core spider. Uses CrawlSpider and LinkExtractors to walk the site. Dynamically accepts url and urls_to_skip.
