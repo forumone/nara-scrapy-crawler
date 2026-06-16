@@ -1,8 +1,8 @@
 import scrapy
 
 
-class ObamaWhiteHouseHarvestSpider(scrapy.Spider):
-    name = "obama_whitehouse_harvest"
+class ObamaWhiteHouseHarvestListSpider(scrapy.Spider):
+    name = "obama_whitehouse_harvest_list"
     allowed_domains = ["obamawhitehouse.archives.gov"]
     start_urls = [
         "https://obamawhitehouse.archives.gov/briefing-room/speeches-and-remarks",
