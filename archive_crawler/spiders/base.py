@@ -12,7 +12,7 @@ _WEB_EXTENSIONS = frozenset({'html', 'htm', 'php', 'asp', 'aspx', 'shtml', 'cfm'
 
 
 class NavHarvesterMixin:
-    """Mixin for CrawlSpider-based nav harvesters.
+    r"""Mixin for CrawlSpider-based nav harvesters.
 
     Provides listing-file exclusion, web-page URL filtering, and a parse_nav
     callback. Subclasses supply name, allowed_domains, start_urls, and rules.
@@ -22,9 +22,25 @@ class NavHarvesterMixin:
             name = "mysite_harvest_nav"
             allowed_domains = ["example.com"]
             start_urls = [...]
-            rules = (Rule(LinkExtractor(...), callback="parse_nav",
-                          follow=True, process_links="_filter_web_urls"),)
+            rules = (
+                Rule(
+                    # Use allow= to anchor to the exact hostname. allow_domains
+                    # alone also matches subdomains, which are typically handled
+                    # by their own separate spider.
+                    LinkExtractor(
+                        allow=r'//example\.com/',
+                        allow_domains=['example.com'],
+                    ),
+                    callback='parse_nav',
+                    follow=False,  # links followed manually in parse_nav
+                ),
+            )
     """
+
+    # Subclasses that need a different depth can override custom_settings entirely.
+    custom_settings = {
+        'DEPTH_LIMIT': 2,
+    }
 
     def __init__(self, listing_file=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -56,10 +72,23 @@ class NavHarvesterMixin:
         return [lnk for lnk in links if self._is_web_url(lnk.url)]
 
     def parse_nav(self, response):
-        """Yield the URL if it is a content page not already covered by the listing harvest."""
+        """Yield the URL and follow links if this is a nav content page.
+
+        Listing pages (.views-row or already in the listing harvest) are dropped
+        entirely — no item yielded and no links followed. This prevents the spider
+        from fanning out into listing sections and their thousands of content URLs.
+
+        Links are followed manually (rather than via follow=True in the Rule) so
+        that we can gate following on this per-page check. Subclass rules must set
+        follow=False and omit process_links; filtering is applied here instead.
+        """
         if response.url in self._listing_urls or response.css('.views-row'):
             return
         yield {'url': response.url}
+        for rule in self._rules:
+            links = self._filter_web_urls(rule.link_extractor.extract_links(response))
+            for link in links:
+                yield response.follow(link.url, callback=self.parse_nav)
 
 
 class ArchiveSpiderMixin:

@@ -51,15 +51,15 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
         'https://obamawhitehouse.archives.gov/we-the-geeks',
     ]
 
-    custom_settings = {
-        'DEPTH_LIMIT': 2,
-    }
-
     rules = (
         Rule(
-            LinkExtractor(allow_domains=['obamawhitehouse.archives.gov']),
+            # allow= anchors to the exact hostname; allow_domains alone would
+            # also match subdomains like letsmove.obamawhitehouse.archives.gov.
+            LinkExtractor(
+                allow=r'//obamawhitehouse\.archives\.gov/',
+                allow_domains=['obamawhitehouse.archives.gov'],
+            ),
             callback='parse_nav',
-            follow=True,
-            process_links='_filter_web_urls',
+            follow=False,  # links followed manually in parse_nav, only from non-listing pages
         ),
     )
