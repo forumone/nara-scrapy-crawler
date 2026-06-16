@@ -91,7 +91,13 @@ class NavHarvesterMixin:
         Links are followed manually (rather than via follow=True in the Rule)
         so that we can gate following on this per-page check. Subclass rules
         must set follow=False and omit process_links; filtering is applied here.
+
+        The web-URL guard is applied to response.url as well as to extracted
+        links because CrawlSpider's Rule dispatches links directly to this
+        callback before _filter_web_urls has a chance to screen them.
         """
+        if not self._is_web_url(response.url):
+            return
         if self._is_listing_page(response):
             return
         yield {'url': response.url}
