@@ -17,7 +17,39 @@ class NavHarvesterMixin:
     Provides listing-file exclusion, web-page URL filtering, and a parse_nav
     callback. Subclasses supply name, allowed_domains, start_urls, and rules.
 
+    See HARVESTING.md for the full end-to-end process this mixin fits into.
+
+    listing_file is required
+    ------------------------
+    Every nav harvester must be given the output of its companion
+    *_harvest_list spider via -a listing_file=<path>. This is not optional.
+
+    The listing file provides URL-based pre-filtering: known listing-page URLs
+    are loaded into _listing_urls at startup and checked before any request is
+    made. A URL in that set is never fetched, never emitted, and its links are
+    never followed. This is the definitive mechanism for keeping listing content
+    out of the nav harvest.
+
+    CSS-based listing detection (overriding _is_listing_page to inspect the
+    response body) is intentionally not used in split harvesters. In-page
+    signals such as .views-row are unreliable: content pages that embed a
+    "More Like This" block carry the same markup as listing pages and would be
+    incorrectly excluded. URL-based pre-filtering avoids this class of error
+    entirely by relying on what the list harvester actually found rather than
+    on assumptions about page structure.
+
+    If a site is simple enough that a listing_file is unnecessary, it does not
+    need a split harvester — use generic_crawl_harvest instead.
+
     Usage:
+        # Step 1: run the list harvester first
+        #   scrapy crawl mysite_harvest_list -o data/mysite_harvest_list.csv
+        #
+        # Step 2: feed its output to the nav harvester
+        #   scrapy crawl mysite_harvest_nav \
+        #       -a listing_file=data/mysite_harvest_list.csv \
+        #       -o data/mysite_harvest_nav.csv
+
         class MySiteHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
             name = "mysite_harvest_nav"
             allowed_domains = ["example.com"]
@@ -43,12 +75,16 @@ class NavHarvesterMixin:
     }
 
     def __init__(self, listing_file=None, *args, **kwargs):
+        if not listing_file:
+            raise ValueError(
+                "listing_file is required. Run the companion *_harvest_list spider "
+                "first, then pass its output: -a listing_file=data/mysite_harvest_list.csv"
+            )
         super().__init__(*args, **kwargs)
         self._listing_urls = set()
-        if listing_file:
-            with open(listing_file, newline='', encoding='utf-8') as f:
-                for row in csv.DictReader(f):
-                    self._listing_urls.add(row['url'])
+        with open(listing_file, newline='', encoding='utf-8') as f:
+            for row in csv.DictReader(f):
+                self._listing_urls.add(row['url'])
 
     @staticmethod
     def _is_web_url(url):
