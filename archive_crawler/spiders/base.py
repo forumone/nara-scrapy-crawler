@@ -11,6 +11,24 @@ from w3lib.html import remove_tags_with_content
 _WEB_EXTENSIONS = frozenset({'html', 'htm', 'php', 'asp', 'aspx', 'shtml', 'cfm', 'cgi'})
 
 
+def _is_web_url(url):
+    """Return True if the URL looks like a web page rather than a downloadable asset.
+
+    Rules, applied in order:
+    1. No dot in the last path segment → no extension → allow (e.g. /about/page).
+    2. "Extension" longer than 4 characters → not a real extension → allow
+       (e.g. /page.xhtml; common asset extensions are 2–4 chars: .js, .pdf, .docx).
+    3. Extension is in _WEB_EXTENSIONS → allow.
+    4. Anything else (e.g. .pdf, .txt, .csv, .png) → deny.
+    """
+    path = urlparse(url).path.rstrip('/')
+    last_segment = path.rsplit('/', 1)[-1] if path else ''
+    if '.' not in last_segment:
+        return True
+    ext = last_segment.rsplit('.', 1)[-1].lower()
+    return len(ext) > 4 or ext in _WEB_EXTENSIONS
+
+
 class NavHarvesterMixin:
     r"""Mixin for CrawlSpider-based nav harvesters.
 
@@ -86,26 +104,8 @@ class NavHarvesterMixin:
             for row in csv.DictReader(f):
                 self._listing_urls.add(row['url'])
 
-    @staticmethod
-    def _is_web_url(url):
-        """Return True if the URL looks like a web page rather than a downloadable asset.
-
-        Rules, applied in order:
-        1. No dot in the last path segment → no extension → allow (e.g. /about/page).
-        2. "Extension" longer than 4 characters → not a real extension → allow
-           (e.g. /page.xhtml; common asset extensions are 2–4 chars: .js, .pdf, .docx).
-        3. Extension is in _WEB_EXTENSIONS → allow.
-        4. Anything else (e.g. .pdf, .txt, .csv, .png) → deny.
-        """
-        path = urlparse(url).path.rstrip('/')
-        last_segment = path.rsplit('/', 1)[-1] if path else ''
-        if '.' not in last_segment:
-            return True
-        ext = last_segment.rsplit('.', 1)[-1].lower()
-        return len(ext) > 4 or ext in _WEB_EXTENSIONS
-
     def _filter_web_urls(self, links):
-        return [lnk for lnk in links if self._is_web_url(lnk.url)]
+        return [lnk for lnk in links if _is_web_url(lnk.url)]
 
     def _is_listing_page(self, response):
         """Return True if this response is a listing page that should be skipped.
@@ -132,7 +132,7 @@ class NavHarvesterMixin:
         links because CrawlSpider's Rule dispatches links directly to this
         callback before _filter_web_urls has a chance to screen them.
         """
-        if not self._is_web_url(response.url):
+        if not _is_web_url(response.url):
             return
         if self._is_listing_page(response):
             return

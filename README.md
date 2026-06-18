@@ -132,11 +132,25 @@ Test subsets append `-test`: `{source_site}_harvest-full-test.csv`, `{source_sit
 
 ---
 
+## 🗺 Sitemap Harvester
+
+`sitemap_harvest` is a generic, one-size-fits-all sitemap URL harvester. It fetches a sitemap (or sitemap index), recurses into all sub-sitemaps, deduplicates URLs case-insensitively, drops non-web assets (PDFs, images, etc.), and outputs a harvest CSV without fetching any content pages.
+
+```bash
+scrapy crawl sitemap_harvest \
+  -a sitemap_url=https://example.archives.gov/sitemap.xml \
+  -O data/example_harvest-full.csv
+```
+
+Expected output: one `url` column, one row per content page discovered in the sitemap.
+
+---
+
 ## ➕ Adding a New Site
 
 ### Choosing a harvester type
 
-- **Sitemap available?** Use a sitemap harvester (subclass `SitemapSpider`, override `sitemap_filter` to drop PDFs and apply case-insensitive deduplication). Output: `{source_site}_harvest-full.csv`.
+- **Sitemap available?** Use `sitemap_harvest` — pass the sitemap URL and write directly to the harvest-full CSV. Output: `{source_site}_harvest-full.csv`.
 - **No sitemap?** Use the two-phase no-sitemap approach (Phase A + Phase B) as described above for Obama WH.
 
 To check whether a site has a sitemap, try `{base_url}/sitemap.xml` and `{base_url}/sitemap_index.xml`.
