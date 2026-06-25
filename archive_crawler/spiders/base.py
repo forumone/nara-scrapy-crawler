@@ -144,10 +144,14 @@ class NavHarvesterMixin:
 
 
 class ArchiveSpiderMixin:
-    # min_offset skips the first N chars before searching for a sentence boundary,
-    # avoiding false splits on abbreviations like "Mr." or "U.S."
+    # min_offset: skip N chars before searching for a sentence boundary, avoiding
+    #   false splits on abbreviations like "Mr." or "U.S." (default: 60)
+    # max_len: hard character cap on the result (default: 200)
+    # truncate_after: cut at the first space after max_len rather than the last
+    #   space before it (default: False — trim before the boundary)
+    # ellipsis: append "…" to truncated results (default: True)
     @staticmethod
-    def _teaser(text, min_offset=60, max_len=200, truncate_after=False, ellipsis=False):
+    def _teaser(text, min_offset=60, max_len=200, truncate_after=False, ellipsis=True):
         if not text:
             return ''
         m = re.search(r'[.!?](?=\s+[A-Z])', text[min_offset:])
