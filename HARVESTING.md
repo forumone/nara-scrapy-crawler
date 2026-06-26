@@ -66,7 +66,7 @@ class MySiteHarvestListSpider(scrapy.Spider):
 Run it:
 
 ```
-scrapy crawl mysite_harvest_list -o data/mysite_harvest_list.csv
+scrapy crawl mysite_harvest_list -o data/mysite/mysite_harvest_list.csv
 ```
 
 Inspect the output before continuing. Verify row count is plausible and spot-check
@@ -110,8 +110,8 @@ Run it, feeding the list harvest:
 
 ```
 scrapy crawl mysite_harvest_nav \
-    -a listing_file=data/mysite_harvest_list.csv \
-    -o data/mysite_harvest_nav.csv
+    -a listing_file=data/mysite/mysite_harvest_list.csv \
+    -o data/mysite/mysite_harvest_nav.csv
 ```
 
 The default `DEPTH_LIMIT` is 2. If spot-checking reveals genuine content pages are
@@ -123,9 +123,9 @@ is usually low.
 
 ```
 python merge_harvest.py \
-    data/mysite_harvest_nav.csv \
-    data/mysite_harvest_list.csv \
-    -o data/mysite_harvest_full.csv
+    data/mysite/mysite_harvest_nav.csv \
+    data/mysite/mysite_harvest_list.csv \
+    -o data/mysite/mysite_harvest_full.csv
 ```
 
 Compare the merged URL count against any existing scrape results. Investigate
@@ -155,7 +155,7 @@ class MySiteSpider(ArchiveSpiderMixin, scrapy.Spider):
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
         if not url_file:
-            raise ValueError("url_file argument is required: -a url_file=data/mysite_harvest_full.csv")
+            raise ValueError("url_file argument is required: -a url_file=data/mysite/mysite_harvest_full.csv")
         with open(url_file, newline='', encoding='utf-8') as f:
             for row in csv.DictReader(f):
                 yield scrapy.Request(row['url'], callback=self.parse_item)
@@ -181,8 +181,8 @@ Run it:
 
 ```
 scrapy crawl mysite \
-    -a url_file=data/mysite_harvest_full.csv \
-    -o data/mysite.csv
+    -a url_file=data/mysite/mysite_harvest_full.csv \
+    -o data/mysite/mysite.csv
 ```
 
 ---
@@ -195,17 +195,17 @@ For simple sites with no paginated listing sections, skip to a single harvest ph
 scrapy crawl generic_crawl_harvest \
     -a url=https://example.archives.gov/ \
     -a urls_to_skip='/print/,/user/,/node/\d' \
-    -o data/example_harvest.csv
+    -o data/example/example_harvest.csv
 ```
 
 Then scrape using `generic_crawl` or a custom scraper spider:
 
 ```
 scrapy crawl generic_crawl \
-    -a url_file=data/example_harvest.csv \
+    -a url_file=data/example/example_harvest.csv \
     -a site_id=example \
     -a source_type='Archived White House Websites' \
-    -o data/example.csv
+    -o data/example/example.csv
 ```
 
 ---
@@ -217,7 +217,7 @@ scrapy crawl generic_crawl \
 | `<site>_harvest_list.py` | `<site>_harvest_list` |
 | `<site>_harvest_nav.py` | `<site>_harvest_nav` |
 | `<site>.py` | `<site>` |
-| Output CSVs | `data/<site>_harvest_list.csv`, `data/<site>_harvest_nav.csv`, `data/<site>_harvest_full.csv`, `data/<site>.csv` |
+| Output CSVs | `data/<site>/<site>_harvest_list.csv`, `data/<site>/<site>_harvest_nav.csv`, `data/<site>/<site>_harvest_full.csv`, `data/<site>/<site>.csv` |
 
 Use the `source_site` value as `<site>` (e.g. `letsmove.obamawhitehouse`,
 `petitions.trumpwhitehouse`). Dots in the source_site become dots in filenames.

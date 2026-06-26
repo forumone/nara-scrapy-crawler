@@ -58,14 +58,14 @@ scrapy crawl generic_crawl \
 
 `obamawhitehouse.archives.gov` has no sitemap, so it uses a three-phase approach: two harvesters collect all content URLs from listing pages and site navigation, then a content spider crawls each URL.
 
-All harvester and content CSV files are stored in the `data/` directory (git-tracked as an empty directory via `data/.gitkeep`; `.csv` files are gitignored).
+All harvester and content CSV files are stored under `data/{source_site}/` subdirectories (the root `data/` is git-tracked via `data/.gitkeep`; `.csv` files are gitignored).
 
 ### Phase A: Listing Harvest
 
 Crawls all briefing-room listing sections and the blog, following pagination, and outputs a flat CSV of content URLs.
 
 ```bash
-scrapy crawl obama_whitehouse_harvest_list -O data/www.obamawhitehouse_harvest-listing.csv
+scrapy crawl obama_whitehouse_harvest_list -O data/www.obamawhitehouse/www.obamawhitehouse_harvest-listing.csv
 ```
 
 Expected output: ~27,000 unique URLs.
@@ -76,8 +76,8 @@ Starts from nav entry points, follows internal links up to depth 2, and outputs 
 
 ```bash
 scrapy crawl obama_whitehouse_harvest_nav \
-  -a listing_file=data/www.obamawhitehouse_harvest-listing.csv \
-  -O data/www.obamawhitehouse_harvest-nav.csv
+  -a listing_file=data/www.obamawhitehouse/www.obamawhitehouse_harvest-listing.csv \
+  -O data/www.obamawhitehouse/www.obamawhitehouse_harvest-nav.csv
 ```
 
 The `-a listing_file` argument is optional — omit it to collect all discovered URLs without exclusions.
@@ -88,9 +88,9 @@ Combine both harvest CSVs into a single input file for the content spider:
 
 ```bash
 python merge_harvest.py \
-  -o data/www.obamawhitehouse_harvest-full.csv \
-  data/www.obamawhitehouse_harvest-listing.csv \
-  data/www.obamawhitehouse_harvest-nav.csv
+  -o data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv \
+  data/www.obamawhitehouse/www.obamawhitehouse_harvest-listing.csv \
+  data/www.obamawhitehouse/www.obamawhitehouse_harvest-nav.csv
 ```
 
 ### Phase C: Crawl Content
@@ -99,8 +99,8 @@ Reads the merged URL file and crawls each content page.
 
 ```bash
 scrapy crawl obama_whitehouse \
-  -a url_file=data/www.obamawhitehouse_harvest-full.csv \
-  -O data/www.obamawhitehouse.csv
+  -a url_file=data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv \
+  -O data/www.obamawhitehouse/www.obamawhitehouse.csv
 ```
 
 Expected output: ~27,000 items. At the default `DOWNLOAD_DELAY=1` with ~50% redirect rate, this takes approximately 19 hours — run it on a remote server, not a local machine.
@@ -109,8 +109,8 @@ To validate against a smaller subset first, pass a reduced URL file:
 
 ```bash
 scrapy crawl obama_whitehouse \
-  -a url_file=data/www.obamawhitehouse_harvest-full-test.csv \
-  -O data/www.obamawhitehouse-test.csv
+  -a url_file=data/www.obamawhitehouse/www.obamawhitehouse_harvest-full-test.csv \
+  -O data/www.obamawhitehouse/www.obamawhitehouse-test.csv
 ```
 
 ---
@@ -121,10 +121,10 @@ All harvester and content output files follow a consistent naming scheme:
 
 | File | Contents |
 |---|---|
-| `data/{source_site}_harvest-listing.csv` | Phase A listing harvest output |
-| `data/{source_site}_harvest-nav.csv` | Phase B nav harvest output |
-| `data/{source_site}_harvest-full.csv` | Merged input to content spider |
-| `data/{source_site}.csv` | Final content output |
+| `data/{source_site}/{source_site}_harvest-listing.csv` | Phase A listing harvest output |
+| `data/{source_site}/{source_site}_harvest-nav.csv` | Phase B nav harvest output |
+| `data/{source_site}/{source_site}_harvest-full.csv` | Merged input to content spider |
+| `data/{source_site}/{source_site}.csv` | Final content output |
 
 Test subsets append `-test`: `{source_site}_harvest-full-test.csv`, `{source_site}-test.csv`.
 
@@ -139,7 +139,7 @@ Test subsets append `-test`: `{source_site}_harvest-full-test.csv`, `{source_sit
 ```bash
 scrapy crawl sitemap_harvest \
   -a sitemap_url=https://example.archives.gov/sitemap.xml \
-  -O data/example_harvest-full.csv
+  -O data/example/example_harvest-full.csv
 ```
 
 Expected output: one `url` column, one row per content page discovered in the sitemap.
@@ -181,12 +181,12 @@ See `archive_crawler/spiders/generic_crawl.py` for a worked example of content e
 
 ```bash
 # Row count
-wc -l data/{source_site}.csv
+wc -l data/{source_site}/{source_site}.csv
 
 # Check for empty titles or full_text (should return 0)
 python -c "
 import csv
-with open('data/{source_site}.csv') as f:
+with open('data/{source_site}/{source_site}.csv') as f:
     rows = list(csv.DictReader(f))
 print('empty title:', sum(1 for r in rows if not r.get('title')))
 print('empty full_text:', sum(1 for r in rows if not r.get('full_text')))

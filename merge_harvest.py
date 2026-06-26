@@ -3,9 +3,9 @@
 
 Usage:
     python merge_harvest.py \\
-        -o data/www.obamawhitehouse_harvest-full.csv \\
-        data/www.obamawhitehouse_harvest-listing.csv \\
-        data/www.obamawhitehouse_harvest-nav.csv
+        -o data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv \\
+        data/www.obamawhitehouse/www.obamawhitehouse_harvest-listing.csv \\
+        data/www.obamawhitehouse/www.obamawhitehouse_harvest-nav.csv
 """
 
 import argparse
@@ -25,10 +25,10 @@ def main():
     fieldnames = None
     total = 0
 
-    with open(args.output, 'w', newline='', encoding='utf-8') as out_f:
+    with open(args.output, 'w', newline='', encoding='utf-8-sig') as out_f:
         writer = None
         for path in args.inputs:
-            with open(path, newline='', encoding='utf-8') as in_f:
+            with open(path, newline='', encoding='utf-8-sig') as in_f:
                 reader = csv.DictReader(in_f)
                 if fieldnames is None:
                     fieldnames = reader.fieldnames

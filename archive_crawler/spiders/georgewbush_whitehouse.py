@@ -18,9 +18,9 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
         if not url_file:
             raise ValueError(
                 "url_file argument is required: "
-                "-a url_file=data/georgewbush-whitehouse_harvest-full.csv"
+                "-a url_file=data/www.georgewbush-whitehouse/georgewbush-whitehouse_harvest-full.csv"
             )
-        with open(url_file, newline='', encoding='utf-8') as f:
+        with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 url = row['url']
                 # /images/ subdirectory pages are photo gallery wrappers with no text (28k URLs).

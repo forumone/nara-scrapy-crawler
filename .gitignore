@@ -16,10 +16,7 @@ env/
 .playwright-mcp
 
 # Local Output Files (Don't commit crawl data!)
-*.json
-*.jsonl
-*.csv
-output/
+data/
 
 # OS specific
 .DS_Store

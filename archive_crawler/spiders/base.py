@@ -1,4 +1,5 @@
 import csv
+import html
 import re
 from urllib.parse import urlparse
 
@@ -100,7 +101,7 @@ class NavHarvesterMixin:
             )
         super().__init__(*args, **kwargs)
         self._listing_urls = set()
-        with open(listing_file, newline='', encoding='utf-8') as f:
+        with open(listing_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 self._listing_urls.add(row['url'])
 
@@ -144,29 +145,27 @@ class NavHarvesterMixin:
 
 
 class ArchiveSpiderMixin:
-    # min_offset: skip N chars before searching for a sentence boundary, avoiding
-    #   false splits on abbreviations like "Mr." or "U.S." (default: 60)
-    # max_len: hard character cap on the result (default: 200)
+    # max_len: hard character cap (default: 200)
     # truncate_after: cut at the first space after max_len rather than the last
     #   space before it (default: False — trim before the boundary)
     # ellipsis: append "…" to truncated results (default: True)
     @staticmethod
-    def _teaser(text, min_offset=60, max_len=200, truncate_after=False, ellipsis=True):
+    def _teaser(text, max_len=200, truncate_after=False, ellipsis=True):
         if not text:
             return ''
-        m = re.search(r'[.!?](?=\s+[A-Z])', text[min_offset:])
-        result = text[:min_offset + m.end()] if m else text
-        suffix = '…' if ellipsis else ''
-        if len(result) <= max_len:
-            return result + suffix
+        if len(text) <= max_len:
+            return text
         if truncate_after:
-            next_space = result.find(' ', max_len)
-            truncated = result[:next_space] if next_space != -1 else result
+            next_space = text.find(' ', max_len)
+            output = text[:next_space] if next_space != -1 else text[:max_len]
         else:
-            truncated_raw = result[:max_len]
-            last_space = truncated_raw.rfind(' ')
-            truncated = truncated_raw[:last_space] if last_space > 0 else truncated_raw
-        return truncated + suffix
+            last_space = text[:max_len].rfind(' ')
+            output = text[:last_space] if last_space > 0 else text[:max_len]
+        if not ellipsis:
+            return output
+        if output.endswith('.'):
+            return output + ' …'
+        return output + '…'
 
     def _extract_text(self, response, selector):
         match = response.css(selector).get()
@@ -177,4 +176,4 @@ class ArchiveSpiderMixin:
         except TypeError:
             cleaned = ''
         text = Selector(text=cleaned).xpath('string(.)').get(default='')
-        return re.sub(r'\s+', ' ', text).strip()
+        return html.unescape(re.sub(r'\s+', ' ', text).strip())

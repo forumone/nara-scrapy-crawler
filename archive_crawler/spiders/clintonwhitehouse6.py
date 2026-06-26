@@ -31,9 +31,9 @@ class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
         if not url_file:
             raise ValueError(
                 "url_file argument is required: "
-                "-a url_file=data/clintonwhitehouse6_harvest-full.csv"
+                "-a url_file=data/clintonwhitehouse6/clintonwhitehouse6_harvest-full.csv"
             )
-        with open(url_file, newline='', encoding='utf-8') as f:
+        with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 url = row['url']
                 # .header.html files are companion header fragments, not content (20k of 40k URLs).

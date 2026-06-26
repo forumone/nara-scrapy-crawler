@@ -18,9 +18,9 @@ class ClintonWhiteHouse5Spider(ArchiveSpiderMixin, scrapy.Spider):
         if not url_file:
             raise ValueError(
                 "url_file argument is required: "
-                "-a url_file=data/clintonwhitehouse5_harvest-full.csv"
+                "-a url_file=data/clintonwhitehouse5/clintonwhitehouse5_harvest-full.csv"
             )
-        with open(url_file, newline='', encoding='utf-8') as f:
+        with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 url = row['url']
                 # /textonly/ is a text-only mirror (11k of 26k URLs).
