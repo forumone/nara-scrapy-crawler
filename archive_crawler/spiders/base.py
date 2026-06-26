@@ -211,7 +211,9 @@ class ArchiveSpiderMixin:
         # Remove injected/boilerplate UI elements before text extraction.
         # #menufloat: NARA's banner on Clinton-era archived sites.
         # .mobile-select: Biden WH mobile section-nav widget (hidden on desktop).
-        for node in sel.css('#menufloat, .mobile-select'):
+        # table[summary*="Breadcrumbs"], table[summary*="Print"]: breadcrumb/print
+        #   navigation tables common on GWBush-era archived government sites.
+        for node in sel.css('#menufloat, .mobile-select, table[summary*="Breadcrumbs"], table[summary*="Print"]'):
             parent = node.root.getparent()
             if parent is not None:
                 parent.remove(node.root)
