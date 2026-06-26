@@ -175,6 +175,12 @@ class ArchiveSpiderMixin:
             cleaned = remove_tags_with_content(match, which_ones=('script', 'style'))
         except TypeError:
             cleaned = ''
+        # Replace <br> and block-closing tags with a space before parsing so
+        # that xpath string() doesn't merge adjacent words across line breaks.
+        cleaned = re.sub(
+            r'<br\s*/?>|</(?:p|div|li|td|th|tr|h[1-6]|blockquote|pre)\s*>',
+            ' ', cleaned, flags=re.IGNORECASE,
+        )
         sel = Selector(text=cleaned)
         # Remove NARA's injected banner (present on Clinton-era archived sites).
         # Identified by element ID, not text content, so it survives boilerplate edits.
