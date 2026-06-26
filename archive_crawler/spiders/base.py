@@ -208,9 +208,10 @@ class ArchiveSpiderMixin:
             ' ', cleaned, flags=re.IGNORECASE,
         )
         sel = Selector(text=cleaned)
-        # Remove NARA's injected banner (present on Clinton-era archived sites).
-        # Identified by element ID, not text content, so it survives boilerplate edits.
-        for node in sel.css('#menufloat'):
+        # Remove injected/boilerplate UI elements before text extraction.
+        # #menufloat: NARA's banner on Clinton-era archived sites.
+        # .mobile-select: Biden WH mobile section-nav widget (hidden on desktop).
+        for node in sel.css('#menufloat, .mobile-select'):
             parent = node.root.getparent()
             if parent is not None:
                 parent.remove(node.root)
