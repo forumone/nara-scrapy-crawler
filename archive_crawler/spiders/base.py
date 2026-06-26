@@ -9,7 +9,7 @@ from w3lib.html import remove_tags, remove_tags_with_content
 # Invisible Unicode format characters that appear in archived source HTML.
 # Soft hyphen (U+00AD), zero-width space/non-joiner/joiner (U+200B-D),
 # directional marks (U+200E-F), BOM/ZWNBSP (U+FEFF).
-_INVISIBLE_RE = re.compile('[\u00ad\u200b\u200c\u200d\u200e\u200f\ufeff]')
+_INVISIBLE_RE = re.compile('[\u00ad\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]')
 
 
 # Explicit allowlist rather than a deny list: anything not in here (and not
@@ -187,8 +187,9 @@ class ArchiveSpiderMixin:
         )
         if not title:
             raw = response.css('title::text').get(default='').strip()
-            title = re.sub(r'\s+', ' ', remove_tags(raw)).strip()
-        return title
+            title = remove_tags(raw)
+        title = _INVISIBLE_RE.sub('', title)
+        return re.sub(r'\s+', ' ', title).strip()
 
     def _extract_text(self, response, selector):
         if response.css('frameset'):
