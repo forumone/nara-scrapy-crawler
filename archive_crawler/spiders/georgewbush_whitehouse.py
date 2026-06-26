@@ -26,7 +26,8 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 # /images/ subdirectory pages are photo gallery wrappers with no text (28k URLs).
                 # .v.html pages are video transcript variants (11k URLs); skip to avoid duplicates.
                 # /print/ subdirectories are printer-friendly duplicates of main content (68k URLs).
-                if '/images/' in url or url.endswith('.v.html') or '/print/' in url:
+                # /text/ subdirectories are plain-text duplicates of main content (94k URLs).
+                if '/images/' in url or url.endswith('.v.html') or '/print/' in url or '/text/' in url:
                     continue
                 yield scrapy.Request(url, callback=self.parse_item)
 
