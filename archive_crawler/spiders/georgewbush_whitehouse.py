@@ -13,6 +13,10 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'www.georgewbush-whitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # Archived pages sometimes redirect to live external government sites.
+    # Disable redirects to stay within the archive domain.
+    custom_settings = {'REDIRECT_ENABLED': False}
+
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
         if not url_file:
