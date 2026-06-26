@@ -6,6 +6,11 @@ from urllib.parse import urlparse
 from scrapy.selector import Selector
 from w3lib.html import remove_tags_with_content
 
+# Invisible Unicode format characters that appear in archived source HTML.
+# Soft hyphen (U+00AD), zero-width space/non-joiner/joiner (U+200B-D),
+# directional marks (U+200E-F), BOM/ZWNBSP (U+FEFF).
+_INVISIBLE_RE = re.compile('[\u00ad\u200b\u200c\u200d\u200e\u200f\ufeff]')
+
 
 # Explicit allowlist rather than a deny list: anything not in here (and not
 # extension-free) is treated as a non-page asset and skipped.
@@ -189,4 +194,5 @@ class ArchiveSpiderMixin:
             if parent is not None:
                 parent.remove(node.root)
         text = sel.xpath('string(.)').get(default='')
-        return html.unescape(re.sub(r'\s+', ' ', text).strip())
+        text = html.unescape(re.sub(r'\s+', ' ', text).strip())
+        return _INVISIBLE_RE.sub('', text)
