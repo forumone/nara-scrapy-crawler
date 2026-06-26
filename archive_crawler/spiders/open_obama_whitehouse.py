@@ -41,12 +41,15 @@ class OpenSpider(ArchiveSpiderMixin, scrapy.Spider):
         yield item
 
     def _parse_generic(self, response):
-        body = self._extract_text(response, 'body')
+        # Non-dataset pages (homepage, group pages, etc.) are navigation/listing
+        # pages with no extractable article content. Yield with empty full_text so
+        # the page is findable by title in search without polluting full_text with
+        # page chrome.
         item = ArchiveItem()
         item['url'] = response.url
         item['title'] = response.xpath('//title/text()').get(default='').strip()
-        item['full_text'] = body
-        item['teaser_text'] = self._teaser(body)
+        item['full_text'] = ''
+        item['teaser_text'] = ''
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
         yield item
