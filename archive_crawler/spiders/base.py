@@ -191,6 +191,8 @@ class ArchiveSpiderMixin:
         return title
 
     def _extract_text(self, response, selector):
+        if response.css('frameset'):
+            return ''
         match = response.css(selector).get()
         if not match:
             return ''
