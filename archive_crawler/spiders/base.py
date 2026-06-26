@@ -167,6 +167,12 @@ class ArchiveSpiderMixin:
             return output + ' …'
         return output + '…'
 
+    # NARA injects this notice at the top of all archived pages. Strip it so
+    # it doesn't pollute full_text or appear as the teaser.
+    _NARA_BOILERPLATE_END = (
+        'please contact your Internet Service Provider for assistance.'
+    )
+
     def _extract_text(self, response, selector):
         match = response.css(selector).get()
         if not match:
@@ -176,4 +182,9 @@ class ArchiveSpiderMixin:
         except TypeError:
             cleaned = ''
         text = Selector(text=cleaned).xpath('string(.)').get(default='')
-        return html.unescape(re.sub(r'\s+', ' ', text).strip())
+        text = html.unescape(re.sub(r'\s+', ' ', text).strip())
+        if text.startswith('This is historical material'):
+            idx = text.find(self._NARA_BOILERPLATE_END)
+            if idx != -1:
+                text = text[idx + len(self._NARA_BOILERPLATE_END):].lstrip()
+        return text
