@@ -188,6 +188,7 @@ class ArchiveSpiderMixin:
         if not title:
             raw = response.css('title::text').get(default='').strip()
             title = remove_tags(raw)
+        title = html.unescape(title)
         title = _INVISIBLE_RE.sub('', title)
         return re.sub(r'\s+', ' ', title).strip()
 
