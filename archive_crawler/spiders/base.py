@@ -158,9 +158,9 @@ class ArchiveSpiderMixin:
     def _teaser(text, max_len=200, truncate_after=False, ellipsis=True):
         if not text:
             return ''
-        # Strip horizontal rules (runs of underscores used as separators in
-        # press releases: "Office of the Press Secretary __________ For Immediate Release")
-        text = re.sub(r'_{3,} ?', '', text).strip()
+        # Strip repeated-punctuation runs (separators like "________" or "********").
+        text = re.sub(r'([\W_])\1{2,} ?', '', text)
+        text = re.sub(r'\s+', ' ', text).strip()
         if len(text) <= max_len:
             return text
         if truncate_after:
@@ -191,6 +191,7 @@ class ArchiveSpiderMixin:
         if not title:
             raw = response.css('title::text').get(default='').strip()
             title = remove_tags(raw)
+        title = re.sub(r'([\W_])\1{2,}', '', title)
         title = html.unescape(title)
         title = _INVISIBLE_RE.sub('', title)
         return re.sub(r'\s+', ' ', title).strip()
