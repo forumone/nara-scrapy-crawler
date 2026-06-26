@@ -27,7 +27,8 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 # .v.html pages are video transcript variants (11k URLs); skip to avoid duplicates.
                 # /print/ subdirectories are printer-friendly duplicates of main content (68k URLs).
                 # /text/ subdirectories are plain-text duplicates of main content (94k URLs).
-                if '/images/' in url or url.endswith('.v.html') or '/print/' in url or '/text/' in url:
+                # .es.html pages are Spanish-language variants.
+                if '/images/' in url or url.endswith('.v.html') or '/print/' in url or '/text/' in url or url.endswith('.es.html'):
                     continue
                 yield scrapy.Request(url, callback=self.parse_item)
 
