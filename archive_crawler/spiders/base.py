@@ -158,6 +158,9 @@ class ArchiveSpiderMixin:
     def _teaser(text, max_len=200, truncate_after=False, ellipsis=True):
         if not text:
             return ''
+        # Strip horizontal rules (runs of underscores used as separators in
+        # press releases: "Office of the Press Secretary __________ For Immediate Release")
+        text = re.sub(r'_{3,} ?', '', text).strip()
         if len(text) <= max_len:
             return text
         if truncate_after:

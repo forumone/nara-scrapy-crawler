@@ -33,15 +33,17 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 yield scrapy.Request(url, callback=self.parse_item)
 
     def parse_item(self, response):
-        # Two-column layout: #leftcol is site navigation; #whitebox is the article area.
-        # #news_container is a child of #whitebox that starts at the article text,
-        # skipping the leading breadcrumb table and "For Immediate Release" block.
-        # Fall back to #whitebox for pages that lack #news_container (speeches, remarks,
-        # etc. on a slightly different template); those pages include breadcrumb boilerplate
-        # at the top of #whitebox but the main content follows immediately after.
+        # Selector chain across three distinct sub-site layouts on this archive:
+        # 1. #news_container — main WH press release layout (inside #whitebox).
+        # 2. #whitebox — speeches/remarks on a slightly different WH template.
+        # 3. #mainContent — OMB E-Gov sub-site (/omb/) with its own layout.
+        # 4. font.BDYpixel — results.gov biographical content (/results/, /v/);
+        #    old font-tag layout with no semantic container IDs.
         body = (
             self._extract_text(response, '#news_container')
             or self._extract_text(response, '#whitebox')
+            or self._extract_text(response, '#mainContent')
+            or self._extract_text(response, 'font.BDYpixel')
         )
         if not body:
             return
