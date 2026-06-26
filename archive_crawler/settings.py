@@ -29,9 +29,11 @@ CONCURRENT_REQUESTS_PER_DOMAIN = 1
 DOWNLOAD_DELAY = 1
 
 # Archived sites often redirect to live external government domains we don't
-# want to scrape. Disable redirect following globally; individual spiders can
-# re-enable it via custom_settings if needed.
+# want to scrape. Disable both HTTP 3xx and <meta http-equiv="refresh">
+# redirect following globally; individual spiders can re-enable via
+# custom_settings if needed.
 REDIRECT_ENABLED = False
+METAREFRESH_ENABLED = False
 
 # Enable IPv6 resolution (some archive sites are IPv6-only)
 DNS_RESOLVER = 'scrapy.resolver.CachingHostnameResolver'
