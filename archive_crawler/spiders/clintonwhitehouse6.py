@@ -49,12 +49,7 @@ class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
             return
         # h1/h2 not present on any inspected pages; title tag is populated on index pages
         # but empty on dated documents; slug derivation handles the dated-document case.
-        title = (
-            response.css('h1').xpath('string(.)').get(default='').strip()
-            or response.css('h2').xpath('string(.)').get(default='').strip()
-            or response.css('title::text').get(default='').strip()
-            or _title_from_slug(response.url)
-        )
+        title = self._extract_title(response) or _title_from_slug(response.url)
         if not title:
             return
         item = ArchiveItem()

@@ -33,11 +33,7 @@ class ClintonWhiteHouse3Spider(ArchiveSpiderMixin, scrapy.Spider):
         )
         if not body:
             return
-        title = (
-            response.css('h1').xpath('string(.)').get(default='').strip()
-            or response.css('h2').xpath('string(.)').get(default='').strip()
-            or response.css('title::text').get(default='').strip()
-        )
+        title = self._extract_title(response)
         if not title:
             return
         item = ArchiveItem()

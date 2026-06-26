@@ -4,7 +4,7 @@ import re
 from urllib.parse import urlparse
 
 from scrapy.selector import Selector
-from w3lib.html import remove_tags_with_content
+from w3lib.html import remove_tags, remove_tags_with_content
 
 # Invisible Unicode format characters that appear in archived source HTML.
 # Soft hyphen (U+00AD), zero-width space/non-joiner/joiner (U+200B-D),
@@ -171,6 +171,24 @@ class ArchiveSpiderMixin:
         if output.endswith('.'):
             return output + ' …'
         return output + '…'
+
+    @staticmethod
+    def _extract_title(response):
+        """Return the best available title for a page.
+
+        Tries h1, h2, then <title> in order. The <title> fallback strips any
+        embedded HTML tags — 1990s archived pages sometimes store markup like
+        <font> or <b> as literal text inside <title> elements, which an HTML
+        parser surfaces verbatim via ::text.
+        """
+        title = (
+            response.css('h1').xpath('string(.)').get(default='').strip()
+            or response.css('h2').xpath('string(.)').get(default='').strip()
+        )
+        if not title:
+            raw = response.css('title::text').get(default='').strip()
+            title = re.sub(r'\s+', ' ', remove_tags(raw)).strip()
+        return title
 
     def _extract_text(self, response, selector):
         match = response.css(selector).get()
