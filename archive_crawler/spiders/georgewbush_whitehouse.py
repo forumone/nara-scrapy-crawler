@@ -13,6 +13,12 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'www.georgewbush-whitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # /911/ pages use <center><img src="/911/images/star.gif"></center> as a
+    # decorative separator between nav links (including the literal text
+    # "<before" and "next>" from prev/next anchors). Stripping the center
+    # element that contains the gif removes the whole nav block.
+    EXTRA_STRIP_XPATH = ('.//center[.//img[@src="/911/images/star.gif"]]',)
+
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
         if not url_file:
@@ -28,7 +34,9 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 # /print/ subdirectories are printer-friendly duplicates of main content (68k URLs).
                 # /text/ subdirectories are plain-text duplicates of main content (94k URLs).
                 # .es.html pages are Spanish-language variants.
-                if '/images/' in url:
+                if url.endswith('template.html'):
+                    self._log_exclusion(url, 'cms_template')
+                elif '/images/' in url:
                     self._log_exclusion(url, 'url_pattern:/images/')
                 elif url.endswith('.v.html'):
                     self._log_exclusion(url, 'url_pattern:.v.html')

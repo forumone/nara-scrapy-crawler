@@ -157,6 +157,13 @@ class ArchiveSpiderMixin:
     # Override in subclasses, e.g.: EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)
     EXTRA_STRIP_SELECTORS = ()
 
+    # XPath expressions for boilerplate that can't be expressed as CSS selectors
+    # (e.g. parent-of conditions). Applied in the same pre-extraction pass as
+    # EXTRA_STRIP_SELECTORS. Each expression is evaluated against the full document.
+    # Override in subclasses, e.g.:
+    #   EXTRA_STRIP_XPATH = ('.//center[.//img[@src="/911/images/star.gif"]]',)
+    EXTRA_STRIP_XPATH = ()
+
     # max_len: hard character cap (default: 200)
     # truncate_after: cut at the first space after max_len rather than the last
     #   space before it (default: False — trim before the boundary)
@@ -266,6 +273,11 @@ class ArchiveSpiderMixin:
             parent = node.root.getparent()
             if parent is not None:
                 parent.remove(node.root)
+        for xpath_expr in self.EXTRA_STRIP_XPATH:
+            for node in sel_pre.xpath(xpath_expr):
+                parent = node.root.getparent()
+                if parent is not None:
+                    parent.remove(node.root)
         cleaned = sel_pre.css('body').get() or cleaned
         # Replace <br> and block-closing tags with a space before parsing so
         # that xpath string() doesn't merge adjacent words across line breaks.
