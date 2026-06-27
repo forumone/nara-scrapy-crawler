@@ -150,6 +150,11 @@ class NavHarvesterMixin:
 
 
 class ArchiveSpiderMixin:
+    # CSS selectors for site-specific boilerplate to strip before text extraction,
+    # in addition to the shared selectors (#menufloat, .mobile-select, etc.).
+    # Override in subclasses, e.g.: EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)
+    EXTRA_STRIP_SELECTORS = ()
+
     # max_len: hard character cap (default: 200)
     # truncate_after: cut at the first space after max_len rather than the last
     #   space before it (default: False — trim before the boundary)
@@ -216,7 +221,10 @@ class ArchiveSpiderMixin:
         # table[summary*="Breadcrumbs"], table[summary*="Print"]: breadcrumb/print
         #   navigation tables common on GWBush-era archived government sites.
         sel_pre = Selector(text=cleaned)
-        for node in sel_pre.css('#menufloat, .mobile-select, table[summary*="Breadcrumbs"], table[summary*="Print"]'):
+        boilerplate = '#menufloat, .mobile-select, table[summary*="Breadcrumbs"], table[summary*="Print"]'
+        if self.EXTRA_STRIP_SELECTORS:
+            boilerplate += ', ' + ', '.join(self.EXTRA_STRIP_SELECTORS)
+        for node in sel_pre.css(boilerplate):
             parent = node.root.getparent()
             if parent is not None:
                 parent.remove(node.root)

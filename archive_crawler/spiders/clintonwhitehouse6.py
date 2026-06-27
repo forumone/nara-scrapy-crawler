@@ -26,6 +26,10 @@ class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'clintonwhitehouse6'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # Each CW6 page has a "View Header" link pointing to its companion .header.html
+    # file. Strip it so the link text doesn't appear at the start of every full_text.
+    EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)
+
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
         if not url_file:
