@@ -206,6 +206,21 @@ class ArchiveSpiderMixin:
             cleaned = remove_tags_with_content(match, which_ones=('script', 'style'))
         except TypeError:
             cleaned = ''
+        # Remove injected/boilerplate UI elements BEFORE the </div>→space
+        # substitution below. If we wait until after, the </div> on #menufloat
+        # is replaced with a space, leaving it unclosed; lxml then re-parses and
+        # nests all subsequent siblings inside #menufloat, so removing it would
+        # silently delete all body content.
+        # #menufloat: NARA's banner on Clinton-era archived sites.
+        # .mobile-select: Biden WH mobile section-nav widget (hidden on desktop).
+        # table[summary*="Breadcrumbs"], table[summary*="Print"]: breadcrumb/print
+        #   navigation tables common on GWBush-era archived government sites.
+        sel_pre = Selector(text=cleaned)
+        for node in sel_pre.css('#menufloat, .mobile-select, table[summary*="Breadcrumbs"], table[summary*="Print"]'):
+            parent = node.root.getparent()
+            if parent is not None:
+                parent.remove(node.root)
+        cleaned = sel_pre.css('body').get() or cleaned
         # Replace <br> and block-closing tags with a space before parsing so
         # that xpath string() doesn't merge adjacent words across line breaks.
         cleaned = re.sub(
@@ -213,15 +228,6 @@ class ArchiveSpiderMixin:
             ' ', cleaned, flags=re.IGNORECASE,
         )
         sel = Selector(text=cleaned)
-        # Remove injected/boilerplate UI elements before text extraction.
-        # #menufloat: NARA's banner on Clinton-era archived sites.
-        # .mobile-select: Biden WH mobile section-nav widget (hidden on desktop).
-        # table[summary*="Breadcrumbs"], table[summary*="Print"]: breadcrumb/print
-        #   navigation tables common on GWBush-era archived government sites.
-        for node in sel.css('#menufloat, .mobile-select, table[summary*="Breadcrumbs"], table[summary*="Print"]'):
-            parent = node.root.getparent()
-            if parent is not None:
-                parent.remove(node.root)
         text = sel.xpath('string(.)').get(default='')
         text = html.unescape(re.sub(r'\s+', ' ', text).strip())
         return _INVISIBLE_RE.sub('', text)
