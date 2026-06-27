@@ -43,17 +43,24 @@ def main():
     harvest_urls = load_urls(args.harvest)
     output_urls = set(load_urls(args.output))
 
-    missing = [u for u in harvest_urls if u not in output_urls]
+    harvest_counts = Counter(harvest_urls)
+    duplicates = sum(c - 1 for c in harvest_counts.values() if c > 1)
+    unique_harvest = list(harvest_counts.keys())
+
+    missing = [u for u in unique_harvest if u not in output_urls]
 
     label = args.source_site or args.harvest
     width = 60
     print(f"\n{'=' * width}")
     print(f"  URL gap report: {label}")
     print(f"{'=' * width}")
-    print(f"  Harvest total : {len(harvest_urls):>7,}")
+    print(f"  Harvest rows  : {len(harvest_urls):>7,}")
+    if duplicates:
+        print(f"  Duplicates    : {duplicates:>7,}  (dropped by Scrapy dupe filter)")
+    print(f"  Unique harvest: {len(unique_harvest):>7,}")
     print(f"  Output total  : {len(output_urls):>7,}")
-    missing_pct = 100 * len(missing) / len(harvest_urls) if harvest_urls else 0
-    print(f"  Missing       : {len(missing):>7,}  ({missing_pct:.1f}% of harvest)")
+    missing_pct = 100 * len(missing) / len(unique_harvest) if unique_harvest else 0
+    print(f"  Missing       : {len(missing):>7,}  ({missing_pct:.1f}% of unique harvest)")
 
     if not missing:
         print("\n  No missing URLs.\n")
