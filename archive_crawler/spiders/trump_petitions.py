@@ -23,6 +23,9 @@ class TrumpPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
                 yield scrapy.Request(row['url'], callback=self.parse_item)
 
     def parse_item(self, response):
+        if response.css('frameset'):
+            self._log_exclusion(response.url, 'frameset')
+            return
         if '/petition/' in response.url:
             yield from self._parse_petition(response)
         else:
@@ -33,6 +36,7 @@ class TrumpPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
         if not title:
             title = response.css('h1::text').get(default='').strip()
         if not title:
+            self._log_exclusion(response.url, 'no_title')
             return
 
         date = re.sub(r'\s+', ' ', response.css('h4.petition-attribution::text').get(default='')).strip()
@@ -53,6 +57,7 @@ class TrumpPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
         if not title:
             title = response.css('h1::text').get(default='').strip()
         if not title:
+            self._log_exclusion(response.url, 'no_title')
             return
 
         body = self._extract_text(response, '.field-name-body .field-items .field-item')

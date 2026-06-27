@@ -22,6 +22,9 @@ class OpenSpider(ArchiveSpiderMixin, scrapy.Spider):
                 yield scrapy.Request(row['url'], callback=self.parse_item)
 
     def parse_item(self, response):
+        if response.css('frameset'):
+            self._log_exclusion(response.url, 'frameset')
+            return
         if 'dataset' in response.url:
             yield from self._parse_dataset(response)
         else:
