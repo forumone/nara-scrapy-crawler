@@ -22,14 +22,20 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 yield scrapy.Request(row['url'], callback=self.parse_item)
 
     def parse_item(self, response):
+        if response.css('frameset'):
+            self._log_exclusion(response.url, 'frameset')
+            return
         if response.css('.views-row'):
+            self._log_exclusion(response.url, 'listing_page')
             return
         body = (self._extract_text(response, '.field-items .field-item') or
                 self._extract_text(response, '.longpage-sections'))
         if not body:
+            self._log_exclusion(response.url, 'no_body')
             return
         title = self._extract_title(response)
         if not title:
+            self._log_exclusion(response.url, 'no_title')
             return
         item = ArchiveItem()
         item['url'] = response.url

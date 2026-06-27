@@ -28,11 +28,23 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 # /print/ subdirectories are printer-friendly duplicates of main content (68k URLs).
                 # /text/ subdirectories are plain-text duplicates of main content (94k URLs).
                 # .es.html pages are Spanish-language variants.
-                if '/images/' in url or url.endswith('.v.html') or '/print/' in url or '/text/' in url or url.endswith('.es.html'):
-                    continue
-                yield scrapy.Request(url, callback=self.parse_item)
+                if '/images/' in url:
+                    self._log_exclusion(url, 'url_pattern:/images/')
+                elif url.endswith('.v.html'):
+                    self._log_exclusion(url, 'url_pattern:.v.html')
+                elif '/print/' in url:
+                    self._log_exclusion(url, 'url_pattern:/print/')
+                elif '/text/' in url:
+                    self._log_exclusion(url, 'url_pattern:/text/')
+                elif url.endswith('.es.html'):
+                    self._log_exclusion(url, 'url_pattern:.es.html')
+                else:
+                    yield scrapy.Request(url, callback=self.parse_item)
 
     def parse_item(self, response):
+        if response.css('frameset'):
+            self._log_exclusion(response.url, 'frameset')
+            return
         # Selector chain across three distinct sub-site layouts on this archive:
         # 1. #news_container — main WH press release layout (inside #whitebox).
         # 2. #whitebox — speeches/remarks on a slightly different WH template.
@@ -46,10 +58,12 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
             or self._extract_text(response, 'font.BDYpixel')
         )
         if not body:
+            self._log_exclusion(response.url, 'no_body')
             return
         # No h1 on most pages; <title> tag matches the bolded article heading.
         title = self._extract_title(response)
         if not title:
+            self._log_exclusion(response.url, 'no_title')
             return
         item = ArchiveItem()
         item['url'] = response.url

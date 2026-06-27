@@ -42,19 +42,25 @@ class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
                 url = row['url']
                 # .header.html files are companion header fragments, not content (20k of 40k URLs).
                 if url.endswith('.header.html'):
-                    continue
-                yield scrapy.Request(url, callback=self.parse_item)
+                    self._log_exclusion(url, 'header_companion')
+                else:
+                    yield scrapy.Request(url, callback=self.parse_item)
 
     def parse_item(self, response):
+        if response.css('frameset'):
+            self._log_exclusion(response.url, 'frameset')
+            return
         # CW6 pages have no <blockquote> wrapper and empty <title> tags.
         # Content is paragraphs directly in <body> beneath nav divs (#menufloat, #frozen-spacer).
         body = self._extract_text(response, 'body')
         if not body:
+            self._log_exclusion(response.url, 'no_body')
             return
         # h1/h2 not present on any inspected pages; title tag is populated on index pages
         # but empty on dated documents; slug derivation handles the dated-document case.
         title = self._extract_title(response) or _title_from_slug(response.url)
         if not title:
+            self._log_exclusion(response.url, 'no_title')
             return
         item = ArchiveItem()
         item['url'] = response.url

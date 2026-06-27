@@ -1,5 +1,6 @@
 import csv
 import html
+import os
 import re
 from urllib.parse import urlparse
 
@@ -200,6 +201,23 @@ class ArchiveSpiderMixin:
         title = html.unescape(title)
         title = _INVISIBLE_RE.sub('', title)
         return re.sub(r'\s+', ' ', title).strip()
+
+    def _log_exclusion(self, url, reason):
+        if not hasattr(self, '_exclusions'):
+            self._exclusions = []
+        self._exclusions.append({'url': url, 'reason': reason})
+
+    def closed(self, reason):
+        exclusions = getattr(self, '_exclusions', [])
+        if not exclusions:
+            return
+        out_dir = os.path.join('data', self.SOURCE_SITE)
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f'{self.SOURCE_SITE}_exclusions.csv')
+        with open(out_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=['url', 'reason'])
+            writer.writeheader()
+            writer.writerows(exclusions)
 
     def _extract_text(self, response, selector):
         if response.css('frameset'):

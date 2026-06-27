@@ -25,11 +25,19 @@ class ClintonWhiteHouse4Spider(ArchiveSpiderMixin, scrapy.Spider):
                 url = row['url']
                 # /textonly/ is a text-only mirror (11k of 25k URLs).
                 # /OMB-upper/ and /omb-lower/ are 100% identical to /OMB/ (1969 paths each).
-                if '/textonly/' in url or '/OMB-upper/' in url or '/omb-lower/' in url:
-                    continue
-                yield scrapy.Request(url, callback=self.parse_item)
+                if '/textonly/' in url:
+                    self._log_exclusion(url, 'url_pattern:/textonly/')
+                elif '/OMB-upper/' in url:
+                    self._log_exclusion(url, 'url_pattern:/OMB-upper/')
+                elif '/omb-lower/' in url:
+                    self._log_exclusion(url, 'url_pattern:/omb-lower/')
+                else:
+                    yield scrapy.Request(url, callback=self.parse_item)
 
     def parse_item(self, response):
+        if response.css('frameset'):
+            self._log_exclusion(response.url, 'frameset')
+            return
         # 1990s static HTML — WH press releases use <blockquote> for content;
         # non-briefing pages (OMB, CEQ, etc.) fall back to full body.
         body = (
@@ -37,9 +45,11 @@ class ClintonWhiteHouse4Spider(ArchiveSpiderMixin, scrapy.Spider):
             or self._extract_text(response, 'body')
         )
         if not body:
+            self._log_exclusion(response.url, 'no_body')
             return
         title = self._extract_title(response)
         if not title:
+            self._log_exclusion(response.url, 'no_title')
             return
         item = ArchiveItem()
         item['url'] = response.url
