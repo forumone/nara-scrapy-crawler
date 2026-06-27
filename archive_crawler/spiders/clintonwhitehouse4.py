@@ -32,7 +32,7 @@ class ClintonWhiteHouse4Spider(ArchiveSpiderMixin, scrapy.Spider):
                 elif '/omb-lower/' in url:
                     self._log_exclusion(url, 'url_pattern:/omb-lower/')
                 else:
-                    yield scrapy.Request(url, callback=self.parse_item)
+                    yield self._make_request(url)
 
     def parse_item(self, response):
         if response.css('frameset'):

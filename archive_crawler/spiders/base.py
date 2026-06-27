@@ -4,6 +4,7 @@ import os
 import re
 from urllib.parse import urlparse
 
+import scrapy
 from scrapy.selector import Selector
 from w3lib.html import remove_tags, remove_tags_with_content
 
@@ -201,6 +202,25 @@ class ArchiveSpiderMixin:
         title = html.unescape(title)
         title = _INVISIBLE_RE.sub('', title)
         return re.sub(r'\s+', ' ', title).strip()
+
+    def _make_request(self, url, **kwargs):
+        kwargs.setdefault('callback', self.parse_item)
+        kwargs.setdefault('errback', self._log_http_error)
+        return scrapy.Request(url, **kwargs)
+
+    def _log_http_error(self, failure):
+        from scrapy.spidermiddlewares.httperror import HttpError
+        if failure.check(HttpError):
+            status = failure.value.response.status
+            if status < 400:
+                reason = 'http_3xx'
+            elif status >= 500:
+                reason = 'http_5xx'
+            else:
+                reason = f'http_{status}'
+            self._log_exclusion(failure.value.response.url, reason)
+        else:
+            self._log_exclusion(failure.request.url, f'network_error:{failure.type.__name__}')
 
     def _log_exclusion(self, url, reason):
         if not hasattr(self, '_exclusions'):

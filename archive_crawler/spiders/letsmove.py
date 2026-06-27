@@ -19,7 +19,7 @@ class LetsMoveSpider(ArchiveSpiderMixin, scrapy.Spider):
             raise ValueError("url_file argument is required: -a url_file=data/letsmove.obamawhitehouse/letsmove_harvest_full.csv")
         with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
-                yield scrapy.Request(row['url'], callback=self.parse_item)
+                yield self._make_request(row['url'])
 
     def parse_item(self, response):
         if response.css('frameset'):

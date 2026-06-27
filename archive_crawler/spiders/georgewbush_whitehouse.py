@@ -39,7 +39,7 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 elif url.endswith('.es.html'):
                     self._log_exclusion(url, 'url_pattern:.es.html')
                 else:
-                    yield scrapy.Request(url, callback=self.parse_item)
+                    yield self._make_request(url)
 
     def parse_item(self, response):
         if response.css('frameset'):

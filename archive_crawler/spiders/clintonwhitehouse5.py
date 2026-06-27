@@ -35,7 +35,7 @@ class ClintonWhiteHouse5Spider(ArchiveSpiderMixin, scrapy.Spider):
                 elif '/OMB-bak/' in url:
                     self._log_exclusion(url, 'url_pattern:/OMB-bak/')
                 else:
-                    yield scrapy.Request(url, callback=self.parse_item)
+                    yield self._make_request(url)
 
     def parse_item(self, response):
         if response.css('frameset'):

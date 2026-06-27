@@ -44,7 +44,7 @@ class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
                 if url.endswith('.header.html'):
                     self._log_exclusion(url, 'header_companion')
                 else:
-                    yield scrapy.Request(url, callback=self.parse_item)
+                    yield self._make_request(url)
 
     def parse_item(self, response):
         if response.css('frameset'):
