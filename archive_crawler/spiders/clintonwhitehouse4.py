@@ -24,7 +24,10 @@ class ClintonWhiteHouse4Spider(ArchiveSpiderMixin, scrapy.Spider):
             for row in csv.DictReader(f):
                 url = row['url']
                 # /textonly/ is a text-only mirror (11k of 25k URLs).
-                # /OMB-upper/ and /omb-lower/ are 100% identical to /OMB/ (1969 paths each).
+                # /OMB-upper/ and /omb-lower/ are alias prefixes for the canonical /OMB/ directory
+                # (1969 paths each, both mapping to uppercase /OMB/). 1932/1969 have a scraped
+                # /OMB/ counterpart; the 37 exceptions are paygo pages also excluded from /OMB/
+                # at parse time (no_title).
                 if '/textonly/' in url:
                     self._log_exclusion(url, 'url_pattern:/textonly/')
                 elif '/OMB-upper/' in url:
