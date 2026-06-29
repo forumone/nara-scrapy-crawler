@@ -249,7 +249,11 @@ class ArchiveSpiderMixin:
     def _extract_text(self, response, selector):
         if response.css('frameset'):
             return ''
-        match = response.css(selector).get()
+        # XPath expressions start with // or .//; everything else is CSS.
+        if selector.startswith('//') or selector.startswith('.//'):
+            match = response.xpath(selector).get()
+        else:
+            match = response.css(selector).get()
         if not match:
             return ''
         try:

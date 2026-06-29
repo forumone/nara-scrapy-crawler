@@ -34,6 +34,7 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 # /print/ subdirectories are printer-friendly duplicates of main content (68k URLs).
                 # /text/ subdirectories are plain-text duplicates of main content (94k URLs).
                 # .es.html pages are Spanish-language variants.
+                # /goodbye/ pages are exit-redirect interstitials with no content.
                 if url.endswith('template.html'):
                     self._log_exclusion(url, 'cms_template')
                 elif '/images/' in url:
@@ -46,6 +47,8 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                     self._log_exclusion(url, 'url_pattern:/text/')
                 elif url.endswith('.es.html'):
                     self._log_exclusion(url, 'url_pattern:.es.html')
+                elif '/goodbye/' in url:
+                    self._log_exclusion(url, 'url_pattern:/goodbye/')
                 else:
                     yield self._make_request(url)
 
@@ -53,17 +56,33 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
         if response.css('frameset'):
             self._log_exclusion(response.url, 'frameset')
             return
-        # Selector chain across three distinct sub-site layouts on this archive:
+        # Selector chain across distinct sub-site layouts on this archive:
         # 1. #news_container — main WH press release layout (inside #whitebox).
         # 2. #whitebox — speeches/remarks on a slightly different WH template.
         # 3. #mainContent — OMB E-Gov sub-site (/omb/) with its own layout.
         # 4. font.BDYpixel — results.gov biographical content (/results/, /v/);
         #    old font-tag layout with no semantic container IDs.
+        # 5. #main-content — OMB standard sub-sites (legislative SAPs, OIRA, circulars,
+        #    pubpress, budget, etc.) and /kids/ educational content pages.
+        # 6. #main-content2col — /kids/ two-column article pages (e.g. ABCs section).
+        # 7. table#header-table ~ div — OMB earmark transparency pages (/omb/kn20drgh/,
+        #    /omb/kn20drgg/, /omb/earmarks-*/); no semantic content ID, content sits in
+        #    the first div sibling after the header nav table.
+        # 8. .popupBodyWrap01 — OMB ExpectMore.gov detail pages.
+        # 9. .content01 — OMB ExpectMore.gov summary pages (different template).
+        # 10. //td[a[@name="content"]] — First Lady news/releases pages; content is in the
+        #     TD that contains the skip-nav anchor (CSS :has() not supported by cssselect).
         body = (
             self._extract_text(response, '#news_container')
             or self._extract_text(response, '#whitebox')
             or self._extract_text(response, '#mainContent')
             or self._extract_text(response, 'font.BDYpixel')
+            or self._extract_text(response, '#main-content')
+            or self._extract_text(response, '#main-content2col')
+            or self._extract_text(response, 'table#header-table ~ div')
+            or self._extract_text(response, '.popupBodyWrap01')
+            or self._extract_text(response, '.content01')
+            or self._extract_text(response, '//td[a[@name="content"]]')
         )
         if not body:
             self._log_exclusion(response.url, 'no_body')
