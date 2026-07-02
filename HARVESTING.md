@@ -2,7 +2,7 @@
 
 This document describes the end-to-end process for adding a new no-sitemap site
 to the crawl pipeline. The two-phase approach (harvest URLs first, scrape content
-second) lets a human or AI audit the full URL list before any content is fetched,
+second) allows for auditing the full URL list before any content is fetched,
 making coverage gaps and unexpected pages visible before they become data problems.
 
 ---
