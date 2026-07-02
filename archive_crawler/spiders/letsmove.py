@@ -1,43 +1,32 @@
-from scrapy.linkextractors import LinkExtractor
-from scrapy.spiders import CrawlSpider, Rule
+import csv
+
+import scrapy
 
 from archive_crawler.items import ArchiveItem
 from archive_crawler.spiders.base import ArchiveSpiderMixin
 
 
-class LetsMoveSpider(ArchiveSpiderMixin, CrawlSpider):
+class LetsMoveSpider(ArchiveSpiderMixin, scrapy.Spider):
     name = "letsmove"
     allowed_domains = ["letsmove.obamawhitehouse.archives.gov"]
-    start_urls = ["https://letsmove.obamawhitehouse.archives.gov/"]
 
     SOURCE_SITE = 'letsmove.obamawhitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
 
-    rules = (
-        Rule(
-            LinkExtractor(
-                deny=(
-                    r'/sites/',     # static assets (CSS, JS, images)
-                    r'/user/',      # Drupal user pages
-                    r'/node/\d',    # raw Drupal node paths (redirect noise)
-                    r'/print/',     # Drupal print views (duplicate content)
-                    r'/category/',  # listing views (low-value, pagination-heavy)
-                ),
-            ),
-            callback='parse_item',
-            follow=True,
-        ),
-    )
+    def start_requests(self):
+        url_file = getattr(self, 'url_file', None)
+        if not url_file:
+            raise ValueError("url_file argument is required: -a url_file=data/letsmove.obamawhitehouse_harvest.csv")
+        with open(url_file, newline='', encoding='utf-8') as f:
+            for row in csv.DictReader(f):
+                yield scrapy.Request(row['url'], callback=self.parse_item)
 
     def parse_item(self, response):
-        # Listing and pagination pages use div.view rather than div.node — their
-        # body extraction returns empty, so they're naturally skipped here while
-        # CrawlSpider still follows links from them (follow=True).
         body = self._extract_text(response, '#maincontent .node .content')
         if not body:
             return
 
-        title = (response.css('#maincontent h1').xpath('string(.)').get(default='')).strip()
+        title = response.css('#maincontent h1').xpath('string(.)').get(default='').strip()
         if not title:
             return
 
