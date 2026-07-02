@@ -28,6 +28,9 @@ ROBOTSTXT_OBEY = False
 CONCURRENT_REQUESTS_PER_DOMAIN = 1
 DOWNLOAD_DELAY = 1
 
+# Enable IPv6 resolution (some archive sites are IPv6-only)
+DNS_RESOLVER = 'scrapy.resolver.CachingHostnameResolver'
+
 if os.getenv('FEED_URI'):
     FEED_URI = os.getenv('FEED_URI')
 FEED_FORMAT = 'jsonl'
