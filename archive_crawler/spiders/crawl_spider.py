@@ -55,7 +55,7 @@ class GenericCrawlSpider(ArchiveSpiderMixin, scrapy.Spider):
         super().__init__(*args, **kwargs)
 
     def start_requests(self):
-        with open(self.url_file, newline='', encoding='utf-8') as f:
+        with open(self.url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 yield scrapy.Request(row['url'], callback=self.parse_item)
 

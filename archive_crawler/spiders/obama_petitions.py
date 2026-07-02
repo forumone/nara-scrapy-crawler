@@ -17,12 +17,15 @@ class ObamaPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
         if not url_file:
-            raise ValueError("url_file argument is required: -a url_file=data/petitions.obamawhitehouse_harvest.csv")
-        with open(url_file, newline='', encoding='utf-8') as f:
+            raise ValueError("url_file argument is required: -a url_file=data/petitions.obamawhitehouse/petitions.obamawhitehouse_harvest.csv")
+        with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
-                yield scrapy.Request(row['url'], callback=self.parse_item)
+                yield self._make_request(row['url'])
 
     def parse_item(self, response):
+        if response.css('frameset'):
+            self._log_exclusion(response.url, 'frameset')
+            return
         if '/petition/' in response.url:
             yield from self._parse_petition(response)
         else:
@@ -33,6 +36,7 @@ class ObamaPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
         if not title:
             title = response.css('h1::text').get(default='').strip()
         if not title:
+            self._log_exclusion(response.url, 'no_title')
             return
 
         date = re.sub(r'\s+', ' ', response.css('h4.petition-attribution::text').get(default='')).strip()
@@ -53,6 +57,7 @@ class ObamaPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
         if not title:
             title = response.css('h1::text').get(default='').strip()
         if not title:
+            self._log_exclusion(response.url, 'no_title')
             return
 
         body = self._extract_text(response, '.field-name-body .field-items .field-item')

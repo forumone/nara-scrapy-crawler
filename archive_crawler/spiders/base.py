@@ -1,9 +1,17 @@
 import csv
+import html
+import os
 import re
 from urllib.parse import urlparse
 
+import scrapy
 from scrapy.selector import Selector
-from w3lib.html import remove_tags_with_content
+from w3lib.html import remove_tags, remove_tags_with_content
+
+# Invisible Unicode format characters that appear in archived source HTML.
+# Soft hyphen (U+00AD), zero-width space/non-joiner/joiner (U+200B-D),
+# directional marks (U+200E-F), BOM/ZWNBSP (U+FEFF).
+_INVISIBLE_RE = re.compile('[\u00ad\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]')
 
 
 # Explicit allowlist rather than a deny list: anything not in here (and not
@@ -100,7 +108,7 @@ class NavHarvesterMixin:
             )
         super().__init__(*args, **kwargs)
         self._listing_urls = set()
-        with open(listing_file, newline='', encoding='utf-8') as f:
+        with open(listing_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 self._listing_urls.add(row['url'])
 
@@ -144,33 +152,144 @@ class NavHarvesterMixin:
 
 
 class ArchiveSpiderMixin:
-    # min_offset skips the first N chars before searching for a sentence boundary,
-    # avoiding false splits on abbreviations like "Mr." or "U.S."
+    # CSS selectors for site-specific boilerplate to strip before text extraction,
+    # in addition to the shared selectors (#menufloat, .mobile-select, etc.).
+    # Override in subclasses, e.g.: EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)
+    EXTRA_STRIP_SELECTORS = ()
+
+    # XPath expressions for boilerplate that can't be expressed as CSS selectors
+    # (e.g. parent-of conditions). Applied in the same pre-extraction pass as
+    # EXTRA_STRIP_SELECTORS. Each expression is evaluated against the full document.
+    # Override in subclasses, e.g.:
+    #   EXTRA_STRIP_XPATH = ('.//center[.//img[@src="/911/images/star.gif"]]',)
+    EXTRA_STRIP_XPATH = ()
+
+    # max_len: hard character cap (default: 200)
+    # truncate_after: cut at the first space after max_len rather than the last
+    #   space before it (default: False — trim before the boundary)
+    # ellipsis: append "…" to truncated results (default: True)
     @staticmethod
-    def _teaser(text, min_offset=60, max_len=200, truncate_after=False, ellipsis=False):
+    def _teaser(text, max_len=200, truncate_after=False, ellipsis=True):
         if not text:
             return ''
-        m = re.search(r'[.!?](?=\s+[A-Z])', text[min_offset:])
-        result = text[:min_offset + m.end()] if m else text
-        suffix = '…' if ellipsis else ''
-        if len(result) <= max_len:
-            return result + suffix
+        # Strip repeated-punctuation runs (separators like "________" or "********").
+        text = re.sub(r'([\W_])\1{2,} ?', '', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        if len(text) <= max_len:
+            return text
         if truncate_after:
-            next_space = result.find(' ', max_len)
-            truncated = result[:next_space] if next_space != -1 else result
+            next_space = text.find(' ', max_len)
+            output = text[:next_space] if next_space != -1 else text[:max_len]
         else:
-            truncated_raw = result[:max_len]
-            last_space = truncated_raw.rfind(' ')
-            truncated = truncated_raw[:last_space] if last_space > 0 else truncated_raw
-        return truncated + suffix
+            last_space = text[:max_len].rfind(' ')
+            output = text[:last_space] if last_space > 0 else text[:max_len]
+        if not ellipsis:
+            return output
+        if output.endswith('.'):
+            return output + ' …'
+        return output + '…'
+
+    @staticmethod
+    def _extract_title(response):
+        """Return the best available title for a page.
+
+        Tries h1, h2, then <title> in order. The <title> fallback strips any
+        embedded HTML tags — 1990s archived pages sometimes store markup like
+        <font> or <b> as literal text inside <title> elements, which an HTML
+        parser surfaces verbatim via ::text.
+        """
+        title = (
+            response.css('h1').xpath('string(.)').get(default='').strip()
+            or response.css('h2').xpath('string(.)').get(default='').strip()
+        )
+        if not title:
+            raw = response.css('title::text').get(default='').strip()
+            title = remove_tags(raw)
+        title = re.sub(r'([\W_])\1{2,}', '', title)
+        title = html.unescape(title)
+        title = _INVISIBLE_RE.sub('', title)
+        return re.sub(r'\s+', ' ', title).strip()
+
+    def _make_request(self, url, **kwargs):
+        kwargs.setdefault('callback', self.parse_item)
+        kwargs.setdefault('errback', self._log_http_error)
+        return scrapy.Request(url, **kwargs)
+
+    def _log_http_error(self, failure):
+        from scrapy.spidermiddlewares.httperror import HttpError
+        if failure.check(HttpError):
+            status = failure.value.response.status
+            if status < 400:
+                reason = 'http_3xx'
+            elif status >= 500:
+                reason = 'http_5xx'
+            else:
+                reason = f'http_{status}'
+            self._log_exclusion(failure.value.response.url, reason)
+        else:
+            self._log_exclusion(failure.request.url, f'network_error:{failure.type.__name__}')
+
+    def _log_exclusion(self, url, reason):
+        if not hasattr(self, '_exclusions'):
+            self._exclusions = []
+        self._exclusions.append({'url': url, 'reason': reason})
+
+    def closed(self, reason):
+        exclusions = getattr(self, '_exclusions', [])
+        if not exclusions:
+            return
+        out_dir = os.path.join('data', self.SOURCE_SITE)
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f'{self.SOURCE_SITE}_exclusions.csv')
+        with open(out_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=['url', 'reason'])
+            writer.writeheader()
+            writer.writerows(exclusions)
 
     def _extract_text(self, response, selector):
-        match = response.css(selector).get()
+        if response.css('frameset'):
+            return ''
+        # XPath expressions start with // or .//; everything else is CSS.
+        if selector.startswith('//') or selector.startswith('.//'):
+            match = response.xpath(selector).get()
+        else:
+            match = response.css(selector).get()
         if not match:
             return ''
         try:
             cleaned = remove_tags_with_content(match, which_ones=('script', 'style'))
         except TypeError:
             cleaned = ''
-        text = Selector(text=cleaned).xpath('string(.)').get(default='')
-        return re.sub(r'\s+', ' ', text).strip()
+        # Remove injected/boilerplate UI elements BEFORE the </div>→space
+        # substitution below. If we wait until after, the </div> on #menufloat
+        # is replaced with a space, leaving it unclosed; lxml then re-parses and
+        # nests all subsequent siblings inside #menufloat, so removing it would
+        # silently delete all body content.
+        # #menufloat: NARA's banner on Clinton-era archived sites.
+        # .mobile-select: Biden WH mobile section-nav widget (hidden on desktop).
+        # table[summary*="Breadcrumbs"], table[summary*="Print"]: breadcrumb/print
+        #   navigation tables common on GWBush-era archived government sites.
+        sel_pre = Selector(text=cleaned)
+        boilerplate = '#menufloat, .mobile-select, table[summary*="Breadcrumbs"], table[summary*="Print"]'
+        if self.EXTRA_STRIP_SELECTORS:
+            boilerplate += ', ' + ', '.join(self.EXTRA_STRIP_SELECTORS)
+        for node in sel_pre.css(boilerplate):
+            parent = node.root.getparent()
+            if parent is not None:
+                parent.remove(node.root)
+        for xpath_expr in self.EXTRA_STRIP_XPATH:
+            for node in sel_pre.xpath(xpath_expr):
+                parent = node.root.getparent()
+                if parent is not None:
+                    parent.remove(node.root)
+        cleaned = sel_pre.css('body').get() or cleaned
+        # Replace <br> and block-closing tags with a space before parsing so
+        # that xpath string() doesn't merge adjacent words across line breaks.
+        cleaned = re.sub(
+            r'<br\s*/?>|</(?:p|div|li|td|th|tr|h[1-6]|blockquote|pre)\s*>',
+            ' ', cleaned, flags=re.IGNORECASE,
+        )
+        sel = Selector(text=cleaned)
+        text = sel.xpath('string(.)').get(default='')
+        text = html.unescape(re.sub(r'\s+', ' ', text).strip())
+        return _INVISIBLE_RE.sub('', text)

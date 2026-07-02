@@ -6,17 +6,20 @@ from archive_crawler.items import ArchiveItem
 from archive_crawler.spiders.base import ArchiveSpiderMixin
 
 
-class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
-    name = "obama_whitehouse"
-    allowed_domains = ["obamawhitehouse.archives.gov"]
+class ClintonWhiteHouse3Spider(ArchiveSpiderMixin, scrapy.Spider):
+    name = "clintonwhitehouse3"
+    allowed_domains = ["clintonwhitehouse3.archives.gov"]
 
-    SOURCE_SITE = 'www.obamawhitehouse'
+    SOURCE_SITE = 'clintonwhitehouse3'
     SOURCE_TYPE = 'Archived White House Websites'
 
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
         if not url_file:
-            raise ValueError("url_file argument is required: -a url_file=data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv")
+            raise ValueError(
+                "url_file argument is required: "
+                "-a url_file=data/clintonwhitehouse3/clintonwhitehouse3_harvest-full.csv"
+            )
         with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 yield self._make_request(row['url'])
@@ -25,12 +28,12 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
         if response.css('frameset'):
             self._log_exclusion(response.url, 'frameset')
             return
-        if response.css('.views-row'):
-            self._log_exclusion(response.url, 'listing_page')
-            return
-        body = (self._extract_text(response, '.field-items .field-item') or
-                self._extract_text(response, '.longpage-sections') or
-                self._extract_text(response, '#content'))
+        # 1990s static HTML — WH press releases use <blockquote> for content;
+        # non-briefing pages (OMB, CEQ, etc.) fall back to full body.
+        body = (
+            self._extract_text(response, 'blockquote')
+            or self._extract_text(response, 'body')
+        )
         if not body:
             self._log_exclusion(response.url, 'no_body')
             return

@@ -16,18 +16,22 @@ class LetsMoveSpider(ArchiveSpiderMixin, scrapy.Spider):
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
         if not url_file:
-            raise ValueError("url_file argument is required: -a url_file=data/letsmove.obamawhitehouse_harvest.csv")
-        with open(url_file, newline='', encoding='utf-8') as f:
+            raise ValueError("url_file argument is required: -a url_file=data/letsmove.obamawhitehouse/letsmove_harvest_full.csv")
+        with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
-                yield scrapy.Request(row['url'], callback=self.parse_item)
+                yield self._make_request(row['url'])
 
     def parse_item(self, response):
+        if response.css('frameset'):
+            self._log_exclusion(response.url, 'frameset')
+            return
         body = self._extract_text(response, '#maincontent .node .content')
         if not body:
+            self._log_exclusion(response.url, 'no_body')
             return
-
         title = response.css('#maincontent h1').xpath('string(.)').get(default='').strip()
         if not title:
+            self._log_exclusion(response.url, 'no_title')
             return
 
         item = ArchiveItem()

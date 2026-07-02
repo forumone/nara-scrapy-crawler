@@ -23,25 +23,22 @@ It is designed to crawl static/archived websites, normalize the data into a stri
 
 ### Local Setup
 
-# 1. Create a virtual environment
 ```bash
+# 1. Create a virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
 
 # 2. Install dependencies
-```bash
 pip install -r requirements.txt
 ```
+
+> **Note:** `legacy-cgi` is listed in `requirements.txt` and is required on Python 3.13+, where the `cgi` standard-library module was removed. It is a no-op on earlier Python versions.
 
 ---
 
 ## 🕷️ Running Locally (Development)
 
-You can run the spider locally to test extraction logic without spinning up Docker.
-
-### Method 1: Dry Run (No S3 Upload)
-Prints JSON to the terminal. Best for debugging selectors and cleaning logic.
+Run a spider locally to test extraction logic without spinning up Docker. Prints JSON to the terminal — best for debugging selectors and cleaning logic.
 
 ```bash
 scrapy crawl generic_crawl \
@@ -54,18 +51,20 @@ scrapy crawl generic_crawl \
   -s CLOSESPIDER_PAGECOUNT=2
 ```
 
+---
+
 ## 🏛️ Obama White House Spider (Three-Phase Crawl)
 
 `obamawhitehouse.archives.gov` has no sitemap, so it uses a three-phase approach: two harvesters collect all content URLs from listing pages and site navigation, then a content spider crawls each URL.
 
-All harvester and content CSV files are stored in the `data/` directory (git-tracked as an empty directory via `data/.gitkeep`; `.csv` files are gitignored).
+All harvester and content CSV files are stored under `data/{source_site}/` subdirectories (the root `data/` is git-tracked via `data/.gitkeep`; `.csv` files are gitignored).
 
 ### Phase A: Listing Harvest
 
 Crawls all briefing-room listing sections and the blog, following pagination, and outputs a flat CSV of content URLs.
 
 ```bash
-scrapy crawl obama_whitehouse_harvest_list -O data/www.obamawhitehouse_harvest-listing.csv
+scrapy crawl obama_whitehouse_harvest_list -O data/www.obamawhitehouse/www.obamawhitehouse_harvest-listing.csv
 ```
 
 Expected output: ~27,000 unique URLs.
@@ -76,11 +75,9 @@ Starts from nav entry points, follows internal links up to depth 2, and outputs 
 
 ```bash
 scrapy crawl obama_whitehouse_harvest_nav \
-  -a listing_file=data/www.obamawhitehouse_harvest-listing.csv \
-  -O data/www.obamawhitehouse_harvest-nav.csv
+  -a listing_file=data/www.obamawhitehouse/www.obamawhitehouse_harvest-listing.csv \
+  -O data/www.obamawhitehouse/www.obamawhitehouse_harvest-nav.csv
 ```
-
-The `-a listing_file` argument is optional — omit it to collect all discovered URLs without exclusions.
 
 ### Merge
 
@@ -88,9 +85,9 @@ Combine both harvest CSVs into a single input file for the content spider:
 
 ```bash
 python merge_harvest.py \
-  -o data/www.obamawhitehouse_harvest-full.csv \
-  data/www.obamawhitehouse_harvest-listing.csv \
-  data/www.obamawhitehouse_harvest-nav.csv
+  -o data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv \
+  data/www.obamawhitehouse/www.obamawhitehouse_harvest-listing.csv \
+  data/www.obamawhitehouse/www.obamawhitehouse_harvest-nav.csv
 ```
 
 ### Phase C: Crawl Content
@@ -99,36 +96,11 @@ Reads the merged URL file and crawls each content page.
 
 ```bash
 scrapy crawl obama_whitehouse \
-  -a url_file=data/www.obamawhitehouse_harvest-full.csv \
-  -O data/www.obamawhitehouse.csv
+  -a url_file=data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv \
+  -O data/www.obamawhitehouse/www.obamawhitehouse.csv
 ```
 
 Expected output: ~27,000 items. At the default `DOWNLOAD_DELAY=1` with ~50% redirect rate, this takes approximately 19 hours — run it on a remote server, not a local machine.
-
-To validate against a smaller subset first, pass a reduced URL file:
-
-```bash
-scrapy crawl obama_whitehouse \
-  -a url_file=data/www.obamawhitehouse_harvest-full-test.csv \
-  -O data/www.obamawhitehouse-test.csv
-```
-
----
-
-## 🗂 CSV Naming Convention
-
-All harvester and content output files follow a consistent naming scheme:
-
-| File | Contents |
-|---|---|
-| `data/{source_site}_harvest-listing.csv` | Phase A listing harvest output |
-| `data/{source_site}_harvest-nav.csv` | Phase B nav harvest output |
-| `data/{source_site}_harvest-full.csv` | Merged input to content spider |
-| `data/{source_site}.csv` | Final content output |
-
-Test subsets append `-test`: `{source_site}_harvest-full-test.csv`, `{source_site}-test.csv`.
-
-`{source_site}` matches the `SOURCE_SITE` value in the spider (e.g., `www.obamawhitehouse`).
 
 ---
 
@@ -139,10 +111,103 @@ Test subsets append `-test`: `{source_site}_harvest-full-test.csv`, `{source_sit
 ```bash
 scrapy crawl sitemap_harvest \
   -a sitemap_url=https://example.archives.gov/sitemap.xml \
-  -O data/example_harvest-full.csv
+  -O data/example/example_harvest-full.csv
 ```
 
 Expected output: one `url` column, one row per content page discovered in the sitemap.
+
+---
+
+## 🏛️ Sitemap-Based Archive Spiders
+
+The Clinton (CW1–6), Biden, and GWBush whitehouse spiders all follow the same two-step pattern: harvest URLs from the sitemap, then scrape content from each URL.
+
+All spiders inherit from `ArchiveSpiderMixin` (see `archive_crawler/spiders/base.py`), which provides shared extraction logic, exclusion tracking, and HTTP error handling.
+
+### Step 1: Harvest
+
+Run `sitemap_harvest` once per site to collect all content URLs:
+
+```bash
+scrapy crawl sitemap_harvest \
+  -a sitemap_url=https://clintonwhitehouse2.archives.gov/sitemap.xml \
+  -O data/clintonwhitehouse2/clintonwhitehouse2_harvest-full.csv
+```
+
+### Step 2: Scrape content
+
+Pass the harvest CSV to the content spider:
+
+```bash
+scrapy crawl clintonwhitehouse2 \
+  -a url_file=data/clintonwhitehouse2/clintonwhitehouse2_harvest-full.csv \
+  -O data/clintonwhitehouse2/clintonwhitehouse2.csv
+```
+
+Replace `clintonwhitehouse2` with any of: `clintonwhitehouse1`, `clintonwhitehouse3`, `clintonwhitehouse4`, `clintonwhitehouse5`, `clintonwhitehouse6`, `bidenwhitehouse`, `georgewbush_whitehouse`.
+
+### Pre-filtering large harvests
+
+Some archives contain large directories of non-content URLs (print-friendly variants, image gallery wrappers, etc.). Each spider's `start_requests` filters these out at request-generation time and records them in the exclusions CSV. No manual pre-filtering of the harvest file is required.
+
+### Exclusion output
+
+Each scrape spider automatically writes a `{source_site}_exclusions.csv` alongside the output CSV when the spider closes. Each row contains the skipped URL and a typed reason:
+
+| Reason | Description |
+|---|---|
+| `url_pattern:/foo/` | URL matched a known non-content path prefix |
+| `frameset` | Page is a frameset with no extractable content |
+| `no_body` | Body selector returned empty text |
+| `no_title` | No title could be extracted |
+| `http_404` | HTTP 404 response |
+| `http_3xx` | Redirect not followed (redirects are disabled globally) |
+| `http_5xx` | Server error |
+| `network_error:<type>` | Connection-level failure |
+
+### URL gap analysis
+
+`audit_url_gaps.py` compares the harvest CSV against the output CSV and groups unaccounted-for URLs by path prefix:
+
+```bash
+python audit_url_gaps.py \
+  --harvest data/clintonwhitehouse2/clintonwhitehouse2_harvest-full.csv \
+  --output  data/clintonwhitehouse2/clintonwhitehouse2.csv \
+  --depth 3 \
+  --source-site clintonwhitehouse2
+```
+
+Use `--depth 0` to report only the total count without path grouping.
+
+### Recommended run settings
+
+Large archives (CW4–6, GWBush) are best run on a remote server. Suggested settings:
+
+```bash
+DOWNLOAD_DELAY=0.25 CONCURRENT_REQUESTS=4 CONCURRENT_REQUESTS_PER_DOMAIN=4 \
+scrapy crawl georgewbush_whitehouse \
+  -a url_file=data/www.georgewbush-whitehouse/georgewbush-whitehouse_harvest-full.csv \
+  -O data/www.georgewbush-whitehouse/www.georgewbush-whitehouse.csv
+```
+
+---
+
+## 🗂 CSV Naming Convention
+
+All harvester and content output files follow a consistent naming scheme:
+
+| File | Contents |
+|---|---|
+| `data/{source_site}/{source_site}_harvest-listing.csv` | Phase A listing harvest output (no-sitemap spiders) |
+| `data/{source_site}/{source_site}_harvest-nav.csv` | Phase B nav harvest output (no-sitemap spiders) |
+| `data/{source_site}/{source_site}_harvest-full.csv` | Merged harvest input to content spider |
+| `data/{source_site}/{source_site}.csv` | Final content output |
+| `data/{source_site}/{source_site}_exclusions.csv` | Skipped URLs with typed reasons (written on spider close) |
+| `data/{source_site}/{source_site}-errors-{timestamp}.log` | Scrapy ERROR-level log (written by `ErrorFileLogger` extension) |
+
+Test subsets append `-test`: `{source_site}_harvest-full-test.csv`, `{source_site}-test.csv`.
+
+`{source_site}` matches the `SOURCE_SITE` value in the spider (e.g., `www.obamawhitehouse`, `clintonwhitehouse2`).
 
 ---
 
@@ -169,42 +234,61 @@ To check whether a site has a sitemap, try `{base_url}/sitemap.xml` and `{base_u
 4. Run Phase B with `-a listing_file=...`, inspect the nav CSV.
 5. Merge and run the content spider.
 
-### Creating a content spider
+### Creating a sitemap-based content spider
 
-Copy `archive_crawler/spiders/obama_whitehouse.py` and update:
+Copy an existing sitemap spider (e.g., `archive_crawler/spiders/clintonwhitehouse2.py`) and update:
 - `name`, `allowed_domains`, `SOURCE_SITE`, `SOURCE_TYPE`
+- The `url_file` error message (for operator clarity)
+- Any URL-pattern exclusions in `start_requests`
 - CSS selectors in `parse_item` to match the new site's content structure
 
-See `archive_crawler/spiders/generic_crawl.py` for a worked example of content extraction logic.
+All sitemap-based spiders inherit from `ArchiveSpiderMixin`, which provides:
+- `_make_request(url)` — sets up the standard callback and HTTP error errback
+- `_extract_title(response)` — h1 → h2 → `<title>` with HTML entity decoding and normalisation
+- `_extract_text(response, selector)` — strips NARA banners, nav boilerplate, and invisible Unicode before returning plain text
+- `_log_exclusion(url, reason)` — records a skipped URL; written to `_exclusions.csv` on spider close
+- `EXTRA_STRIP_SELECTORS` / `EXTRA_STRIP_XPATH` — per-spider hooks for site-specific boilerplate
 
 ### Validating output
 
 ```bash
 # Row count
-wc -l data/{source_site}.csv
+wc -l data/{source_site}/{source_site}.csv
 
 # Check for empty titles or full_text (should return 0)
 python -c "
 import csv
-with open('data/{source_site}.csv') as f:
+with open('data/{source_site}/{source_site}.csv') as f:
     rows = list(csv.DictReader(f))
 print('empty title:', sum(1 for r in rows if not r.get('title')))
 print('empty full_text:', sum(1 for r in rows if not r.get('full_text')))
 print('teaser >200:', sum(1 for r in rows if len(r.get('teaser_text','')) > 200))
 "
+
+# URL gap report (harvest vs. output)
+python audit_url_gaps.py \
+  --harvest data/{source_site}/{source_site}_harvest-full.csv \
+  --output  data/{source_site}/{source_site}.csv \
+  --depth 3 --source-site {source_site}
 ```
 
 ---
 
 ## 📂 Project Structure
 
-`spiders/generic_crawl.py`: The core spider. Uses CrawlSpider and LinkExtractors to walk the site. Dynamically accepts url and urls_to_skip.
+`spiders/generic_crawl.py`: The core production spider. Uses CrawlSpider and LinkExtractors to walk the site. Dynamically accepts url and urls_to_skip.
 
-`items.py`: Defines the strict JSON schema (Title, Full Text, Teaser, Date).
+`spiders/base.py`: `ArchiveSpiderMixin` — shared extraction, exclusion tracking, and boilerplate stripping for all archive content spiders.
 
-`run_crawl.sh`: The Entrypoint script used by the Docker container. It accepts CLI args and translates them into Scrapy commands.
+`items.py`: Defines the strict schema (Title, Full Text, Teaser, Source Site, Source Type).
 
-Dockerfile: Python 3.9 Slim image configuration.
+`extensions/error_log.py`: `ErrorFileLogger` — mirrors Scrapy ERROR-level log output to a per-run file alongside the output CSV.
+
+`audit_url_gaps.py`: Post-hoc URL gap analysis tool.
+
+`run_crawl.sh`: Entrypoint script used by the Docker container. Accepts CLI args and translates them into Scrapy commands.
+
+`Dockerfile`: Python 3.9 Slim image configuration.
 
 
 ## 🛠 Deployment to AWS

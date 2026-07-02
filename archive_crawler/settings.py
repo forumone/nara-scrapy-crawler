@@ -28,6 +28,13 @@ ROBOTSTXT_OBEY = False
 CONCURRENT_REQUESTS_PER_DOMAIN = 1
 DOWNLOAD_DELAY = 1
 
+# Archived sites often redirect to live external government domains we don't
+# want to scrape. Disable both HTTP 3xx and <meta http-equiv="refresh">
+# redirect following globally; individual spiders can re-enable via
+# custom_settings if needed.
+REDIRECT_ENABLED = False
+METAREFRESH_ENABLED = False
+
 # Enable IPv6 resolution (some archive sites are IPv6-only)
 DNS_RESOLVER = 'scrapy.resolver.CachingHostnameResolver'
 
@@ -74,9 +81,9 @@ if depth_env:
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html
-#EXTENSIONS = {
-#    "scrapy.extensions.telnet.TelnetConsole": None,
-#}
+EXTENSIONS = {
+    "archive_crawler.extensions.error_log.ErrorFileLogger": 100,
+}
 
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
@@ -106,4 +113,4 @@ if depth_env:
 #HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"
 
 # Set settings whose default value is deprecated to a future-proof value
-FEED_EXPORT_ENCODING = "utf-8"
+FEED_EXPORT_ENCODING = "utf-8-sig"
