@@ -181,14 +181,17 @@ Use `--depth 0` to report only the total count without path grouping.
 
 ### Recommended run settings
 
-Large archives (CW4–6, GWBush) are best run on a remote server. Suggested settings:
+Large archives (CW4–6, GWBush) are best run on a remote server. Override the default throttling with Scrapy's `-s` flag, not bare environment variables — `settings.py` doesn't read `DOWNLOAD_DELAY`/`CONCURRENT_REQUESTS*` from the environment (only `FEED_URI`, `CLOSESPIDER_PAGECOUNT`, and `DEPTH_LIMIT` are), so prefixing the command with `DOWNLOAD_DELAY=0.25 ...` silently has no effect and the crawl runs at the settings.py defaults (`CONCURRENT_REQUESTS_PER_DOMAIN=1`, `DOWNLOAD_DELAY=1`):
 
 ```bash
-DOWNLOAD_DELAY=0.25 CONCURRENT_REQUESTS=4 CONCURRENT_REQUESTS_PER_DOMAIN=4 \
 scrapy crawl georgewbush_whitehouse \
+  -s DOWNLOAD_DELAY=0.25 \
+  -s CONCURRENT_REQUESTS_PER_DOMAIN=4 \
   -a url_file=data/www.georgewbush-whitehouse/georgewbush-whitehouse_harvest-full.csv \
   -O data/www.georgewbush-whitehouse/www.georgewbush-whitehouse.csv
 ```
+
+Before raising throttling further, check the target domain's `robots.txt` for a `Crawl-delay` directive — `ROBOTSTXT_OBEY = False` means Scrapy won't enforce it automatically, so it's easy to run faster than the site operator has asked for without noticing.
 
 ---
 
