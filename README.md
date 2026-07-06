@@ -38,16 +38,27 @@ pip install -r requirements.txt
 
 ## 🕷️ Running Locally (Development)
 
-Run a spider locally to test extraction logic without spinning up Docker. Prints JSON to the terminal — best for debugging selectors and cleaning logic.
+`generic_crawl` is a two-phase spider pair, not a single spider — run both to test locally without spinning up Docker.
+
+**Phase 1** (`generic_crawl_harvest`, a `CrawlSpider`) discovers URLs by following links from a seed URL:
+
+```bash
+scrapy crawl generic_crawl_harvest \
+  -a url="https://letsmove.obamawhitehouse.archives.gov/" \
+  -a urls_to_skip="/blog/all" \
+  -s DEPTH_LIMIT=1 \
+  -s CLOSESPIDER_PAGECOUNT=2 \
+  -O data/letsmove/letsmove_harvest-full.csv
+```
+
+**Phase 2** (`generic_crawl`, a plain `Spider`) reads that harvest CSV and extracts title/body/teaser from each URL — this is where selector/extraction logic actually runs, so it's the one to point at `-s FEED_URI=stdout://` when debugging cleaning logic:
 
 ```bash
 scrapy crawl generic_crawl \
-  -a url="https://letsmove.obamawhitehouse.archives.gov/" \
+  -a url_file=data/letsmove/letsmove_harvest-full.csv \
   -a site_id="letsmove" \
-  -a urls_to_skip="/blog/all" \
   -s FEED_URI=stdout:// \
   -s FEED_FORMAT=json \
-  -s DEPTH_LIMIT=1 \
   -s CLOSESPIDER_PAGECOUNT=2
 ```
 
@@ -279,7 +290,9 @@ python audit_url_gaps.py \
 
 ## 📂 Project Structure
 
-`spiders/generic_crawl.py`: The core production spider. Uses CrawlSpider and LinkExtractors to walk the site. Dynamically accepts url and urls_to_skip.
+`spiders/generic_crawl_harvest.py`: Phase 1 of the generic two-phase spider pair. Uses CrawlSpider and LinkExtractors to walk the site from a seed URL and write a URL-per-row CSV. Dynamically accepts `url` and `urls_to_skip`.
+
+`spiders/crawl_spider.py`: Phase 2 (spider name `generic_crawl`). Reads the phase-1 harvest CSV and extracts title/body/teaser from each URL. Dynamically accepts `url_file`, `site_id`, and `source_type`.
 
 `spiders/base.py`: `ArchiveSpiderMixin` — shared extraction, exclusion tracking, and boilerplate stripping for all archive content spiders.
 
