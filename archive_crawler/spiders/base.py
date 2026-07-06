@@ -65,6 +65,18 @@ PRESS_RELEASE_LETTERHEAD_PATTERNS = (
     re.compile(r'^\s*' + _MONTHS + r'\s+\d{1,2},?\s*\d{4}\s*', re.IGNORECASE),
 )
 
+# Clinton-era press-release pages (CW1-5) often have the masthead as its own
+# h1/h2 ("THE WHITE HOUSE" or "THE WHITE HOUSE Office of the Press
+# Secretary") followed by a second heading with the real subject; _extract_title
+# only ever reads the first heading, so it picks up the masthead instead of
+# the title. Matches only when the ENTIRE heading text is masthead
+# (+ optional office line) and nothing else, so it doesn't misfire on a
+# single heading that already contains real content after the masthead.
+_MASTHEAD_TITLE_RE = re.compile(
+    r'^\s*THE\s+WHITE\s+HOUSE\b(?:\s+Office\s+of\s+(?:the\s+)?[A-Za-z][A-Za-z \'-]*)?\s*$',
+    re.IGNORECASE,
+)
+
 
 # Explicit allowlist rather than a deny list: anything not in here (and not
 # extension-free) is treated as a non-page asset and skipped.
@@ -278,6 +290,14 @@ class ArchiveSpiderMixin:
             sel.css('h1').xpath('string(.)').get(default='').strip()
             or sel.css('h2').xpath('string(.)').get(default='').strip()
         )
+        if _MASTHEAD_TITLE_RE.match(title):
+            # The heading is just the masthead - the real subject, if the
+            # page has one at all, is in a second heading _extract_title
+            # never reads. <title> reliably holds it on this template
+            # (e.g. "Remarks - Alice Deal Jr. High School"), so prefer it
+            # over the masthead when present.
+            title_tag = remove_tags(sel.css('title::text').get(default='').strip())
+            title = title_tag or title
         if not title:
             raw = sel.css('title::text').get(default='').strip()
             title = remove_tags(raw)
