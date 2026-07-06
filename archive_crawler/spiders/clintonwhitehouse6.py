@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 import scrapy
 
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin
+from archive_crawler.spiders.base import ArchiveSpiderMixin, PRESS_RELEASE_LETTERHEAD_PATTERNS
 
 
 def _title_from_slug(url):
@@ -29,6 +29,8 @@ class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
     # Each CW6 page has a "View Header" link pointing to its companion .header.html
     # file. Strip it so the link text doesn't appear at the start of every full_text.
     EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)
+
+    LEADING_TEXT_STRIP_PATTERNS = PRESS_RELEASE_LETTERHEAD_PATTERNS
 
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)

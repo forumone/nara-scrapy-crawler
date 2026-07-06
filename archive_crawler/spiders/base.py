@@ -13,6 +13,58 @@ from w3lib.html import remove_tags, remove_tags_with_content
 # directional marks (U+200E-F), BOM/ZWNBSP (U+FEFF).
 _INVISIBLE_RE = re.compile('[\u00ad\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]')
 
+# Matches a single h1/h2 element and its content, non-greedy so it stops at
+# the first closing tag encountered in the source, the same span lxml uses
+# when deciding where the element ends.
+_HEADING_SPAN_RE = re.compile(r'(<h[12]\b[^>]*>)(.*?)(</h[12]>)', re.IGNORECASE | re.DOTALL)
+# Block-level tags that, when left unclosed inside a heading (e.g. archived
+# pages that omit </p> in "<h1>Foo<p>Bar</h1>"), make lxml auto-close the
+# still-open h1/h2 the moment it hits the nested tag, silently truncating
+# the heading and stranding the rest as an orphan sibling no selector can
+# recover. Stripping these tags out of the heading span before parsing keeps
+# the heading text intact.
+_NESTED_BLOCK_TAG_RE = re.compile(
+    r'</?(?:p|div|table|ul|ol|li|center|blockquote|tr|td|th)\b[^>]*>', re.IGNORECASE,
+)
+
+_MONTHS = (
+    r'(?:January|February|March|April|May|June|July|August'
+    r'|September|October|November|December)'
+)
+_WEEKDAYS = r'(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)'
+
+# Shared press-release letterhead used by CW1-6 and GWBush (and appended
+# after the CW4/CW5 nav-banner pattern for pages that use the plain
+# letterhead instead). Components appear in varying combinations and order
+# (e.g. GWBush puts "For Immediate Release" before "Office of the Press
+# Secretary"), so these are meant to be applied in a fixpoint loop rather
+# than a single pass - see _extract_text.
+#
+# The masthead only strips when immediately followed by a recognized
+# continuation, never unconditionally, so it doesn't eat legitimate titles
+# that happen to start with "The White House" (e.g. "The White House
+# Visitors Office" or "The White House Conference on the New Economy").
+PRESS_RELEASE_LETTERHEAD_PATTERNS = (
+    re.compile(
+        r'^\s*T\s*H\s*E\s+W\s*H\s*I\s*T\s*E\s+H\s*O\s*U\s*S\s*E\b\s*'
+        r'(?=Office\s+of\s+the\s+(?:Press\s+Secretary|Vice\s+President)\b'
+        r'|AT\s+WORK\b'
+        r'|For\s+Immediate\s+Release\b'
+        r'|Washington\b'
+        r'|\('
+        r'|' + _MONTHS + r'\s+\d{1,2}\b'
+        r')',
+        re.IGNORECASE,
+    ),
+    re.compile(r'^\s*Office\s+of\s+the\s+Press\s+Secretary\b\s*', re.IGNORECASE),
+    re.compile(r'^\s*\([A-Za-z .,\'’-]{2,80}\)\s*'),
+    re.compile(r'^\s*For\s+Immediate\s+Release\b\s*:?\s*', re.IGNORECASE),
+    re.compile(r'^\s*posted\s+by:?\s*The\s+White\s+House\b\s*', re.IGNORECASE),
+    re.compile(r'^\s*Contact:?\s*[\d\-() ]{7,20}\s*', re.IGNORECASE),
+    re.compile(r'^\s*' + _WEEKDAYS + r',?\s+' + _MONTHS + r'\s+\d{1,2},?\s*\d{4}\s*', re.IGNORECASE),
+    re.compile(r'^\s*' + _MONTHS + r'\s+\d{1,2},?\s*\d{4}\s*', re.IGNORECASE),
+)
+
 
 # Explicit allowlist rather than a deny list: anything not in here (and not
 # extension-free) is treated as a non-page asset and skipped.
@@ -164,6 +216,25 @@ class ArchiveSpiderMixin:
     #   EXTRA_STRIP_XPATH = ('.//center[.//img[@src="/911/images/star.gif"]]',)
     EXTRA_STRIP_XPATH = ()
 
+    # Compiled regexes matched against the START of the fully-extracted text
+    # (after all DOM-level stripping above) and removed if found. For
+    # boilerplate that isn't a removable DOM node but a fixed run of text at
+    # the front of the page (nav banners, letterhead, repeated widget
+    # content) that DOM-selector stripping can't target cleanly.
+    # Override in subclasses, e.g.:
+    #   LEADING_TEXT_STRIP_PATTERNS = (re.compile(r'^\s*Foo\b.*?\bBar\b\s*', re.IGNORECASE),)
+    LEADING_TEXT_STRIP_PATTERNS = ()
+
+    # Compiled regexes removed wherever they occur in the fully-extracted
+    # text, not just at the start. For boilerplate inserted mid-page (e.g. a
+    # breadcrumb/section label between the headline and body) that isn't
+    # confined to a leading position. Verify the pattern never matches
+    # legitimate content before adding one - unlike the leading patterns,
+    # there's no position-based safety net here.
+    # Override in subclasses, e.g.:
+    #   MIDTEXT_STRIP_PATTERNS = (re.compile(r'\s*Foo Bar\b\s*'),)
+    MIDTEXT_STRIP_PATTERNS = ()
+
     # max_len: hard character cap (default: 200)
     # truncate_after: cut at the first space after max_len rather than the last
     #   space before it (default: False — trim before the boundary)
@@ -198,12 +269,17 @@ class ArchiveSpiderMixin:
         <font> or <b> as literal text inside <title> elements, which an HTML
         parser surfaces verbatim via ::text.
         """
+        html_text = _HEADING_SPAN_RE.sub(
+            lambda m: m.group(1) + _NESTED_BLOCK_TAG_RE.sub(' ', m.group(2)) + m.group(3),
+            response.text,
+        )
+        sel = Selector(text=html_text)
         title = (
-            response.css('h1').xpath('string(.)').get(default='').strip()
-            or response.css('h2').xpath('string(.)').get(default='').strip()
+            sel.css('h1').xpath('string(.)').get(default='').strip()
+            or sel.css('h2').xpath('string(.)').get(default='').strip()
         )
         if not title:
-            raw = response.css('title::text').get(default='').strip()
+            raw = sel.css('title::text').get(default='').strip()
             title = remove_tags(raw)
         title = re.sub(r'([\W_])\1{2,}', '', title)
         title = html.unescape(title)
@@ -292,4 +368,30 @@ class ArchiveSpiderMixin:
         sel = Selector(text=cleaned)
         text = sel.xpath('string(.)').get(default='')
         text = html.unescape(re.sub(r'\s+', ' ', text).strip())
-        return _INVISIBLE_RE.sub('', text)
+        text = _INVISIBLE_RE.sub('', text)
+        # Loop to a fixpoint rather than a single pass: letterhead components
+        # (masthead, office, location, dateline) don't always appear in the
+        # same order across pages (e.g. GWBush has "For Immediate Release"
+        # before "Office of the Press Secretary"), so a later pattern in the
+        # tuple may need to fire before an earlier one gets its turn.
+        pre_strip_text = text
+        for _ in range(8):
+            new_text = text
+            for pattern in self.LEADING_TEXT_STRIP_PATTERNS:
+                new_text = pattern.sub('', new_text, count=1)
+            if new_text == text:
+                break
+            text = new_text
+        if not text.strip() and pre_strip_text.strip():
+            # A page whose entire extracted text was just a dateline or
+            # similar (e.g. a malformed <blockquote> that only captured
+            # "November 22, 1996" from a formal letter's letterhead, a
+            # pre-existing extraction gap unrelated to this stripping)
+            # would otherwise end up completely empty. Keep the original
+            # rather than trade a near-useless value for a useless one.
+            text = pre_strip_text
+        for pattern in self.MIDTEXT_STRIP_PATTERNS:
+            text = pattern.sub(' ', text)
+        if self.MIDTEXT_STRIP_PATTERNS:
+            text = re.sub(r'\s+', ' ', text).strip()
+        return text

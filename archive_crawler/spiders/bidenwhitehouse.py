@@ -1,4 +1,5 @@
 import csv
+import re
 
 import scrapy
 
@@ -12,6 +13,17 @@ class BidenWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
 
     SOURCE_SITE = 'www.bidenwhitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
+
+    # Presidential bio pages (/about-the-white-house/presidents/*) embed the
+    # full nav list of all U.S. presidents ahead of the actual bio text.
+    # Strip through the last name in that list, kept fixed since these are
+    # frozen archive snapshots.
+    LEADING_TEXT_STRIP_PATTERNS = (
+        re.compile(
+            r'^\s*Presidents\s+George\s+Washington\b.*?\bJoseph\s+R\.\s+Biden\s+Jr\.\s*',
+            re.IGNORECASE,
+        ),
+    )
 
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)

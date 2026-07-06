@@ -1,9 +1,10 @@
 import csv
+import re
 
 import scrapy
 
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin
+from archive_crawler.spiders.base import ArchiveSpiderMixin, PRESS_RELEASE_LETTERHEAD_PATTERNS
 
 
 class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
@@ -18,6 +19,16 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
     # "<before" and "next>" from prev/next anchors). Stripping the center
     # element that contains the gif removes the whole nav block.
     EXTRA_STRIP_XPATH = ('.//center[.//img[@src="/911/images/star.gif"]]',)
+
+    LEADING_TEXT_STRIP_PATTERNS = PRESS_RELEASE_LETTERHEAD_PATTERNS
+
+    # "White House News" is a breadcrumb/section label this template inserts
+    # between the headline and the body text on ~6% of pages. Confirmed via
+    # sampling it never appears as part of real content, always as this
+    # exact standalone label.
+    MIDTEXT_STRIP_PATTERNS = (
+        re.compile(r'\s*White House News\s*'),
+    )
 
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
