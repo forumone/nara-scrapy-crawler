@@ -60,19 +60,9 @@ class GenericCrawlSpider(ArchiveSpiderMixin, scrapy.Spider):
                 yield scrapy.Request(row['url'], callback=self.parse_item)
 
     def parse_item(self, response):
-        item = ArchiveItem()
-        item['url'] = response.url
-
-        title_xpath = (
-            "//div[@id='hero-caption']//h1"
-            " | //h1[@class='maincontent_title']"
-            " | //*[@id='maincontent']/div/div[1]/h2"
-            " | //*[@id='maincontent']/h1"
-            " | //h1[@class='title'][normalize-space()]"
-            " | //div[contains(@class, 'pane-whr-achievement-page-intro-pane')]//h1"
-        )
-        default_title = response.xpath('//head/title[1]').xpath('string(.)').get(default='missing_title').strip()
-        item['title'] = response.xpath(title_xpath).xpath('string(.)').get(default=default_title).strip()
+        if response.css('frameset'):
+            self._log_exclusion(response.url, 'frameset')
+            return
 
         body_xpath = (
             "//div[contains(@class, 'hero-page-content')]"
@@ -88,9 +78,29 @@ class GenericCrawlSpider(ArchiveSpiderMixin, scrapy.Spider):
             cleaned = remove_tags_with_content(match_body, which_ones=('script', 'style'))
         except TypeError:
             cleaned = ''
-
-        raw_body = Selector(text=cleaned).xpath('string(.)').get(default='missing_body')
+        raw_body = Selector(text=cleaned).xpath('string(.)').get(default='')
         body = re.sub(r'\s+', ' ', raw_body).strip()
+        if not body:
+            self._log_exclusion(response.url, 'no_body')
+            return
+
+        title_xpath = (
+            "//div[@id='hero-caption']//h1"
+            " | //h1[@class='maincontent_title']"
+            " | //*[@id='maincontent']/div/div[1]/h2"
+            " | //*[@id='maincontent']/h1"
+            " | //h1[@class='title'][normalize-space()]"
+            " | //div[contains(@class, 'pane-whr-achievement-page-intro-pane')]//h1"
+        )
+        default_title = response.xpath('//head/title[1]').xpath('string(.)').get(default='').strip()
+        title = response.xpath(title_xpath).xpath('string(.)').get(default=default_title).strip()
+        if not title:
+            self._log_exclusion(response.url, 'no_title')
+            return
+
+        item = ArchiveItem()
+        item['url'] = response.url
+        item['title'] = title
         item['full_text'] = body
         item['teaser_text'] = self._teaser(body)
         item['source_site'] = self.site_id
