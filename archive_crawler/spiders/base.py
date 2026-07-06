@@ -273,6 +273,34 @@ class ArchiveSpiderMixin:
         return output + '…'
 
     @staticmethod
+    def _combine_headings(texts):
+        """Join sibling heading elements into one title when there are
+        exactly two (e.g. "III. New Community -" + "Fighting Crime"), since
+        _extract_title otherwise only ever reads the first one. Three or
+        more is ambiguous about what belongs together, so only the first is
+        used in that case, same as before this existed.
+
+        Skips the join when the first heading is masthead-only text (see
+        _MASTHEAD_TITLE_RE) - joining would just prepend that boilerplate to
+        the real title instead of letting _extract_title's masthead handling
+        fall back to <title>, which gives a cleaner result on that template.
+
+        Also skips the join when the two headings are the same text (some
+        pages render an identical heading twice, just re-wrapped with a
+        <br> in a different spot) - joining would just repeat the title.
+        """
+        texts = [t.strip() for t in texts if t.strip()]
+        if not texts:
+            return ''
+        if _MASTHEAD_TITLE_RE.match(texts[0]):
+            return texts[0]
+        if len(texts) == 2:
+            normalized = [re.sub(r'\s+', ' ', t).strip().lower() for t in texts]
+            if normalized[0] != normalized[1]:
+                return ' '.join(texts)
+        return texts[0]
+
+    @staticmethod
     def _extract_title(response):
         """Return the best available title for a page.
 
@@ -287,8 +315,8 @@ class ArchiveSpiderMixin:
         )
         sel = Selector(text=html_text)
         title = (
-            sel.css('h1').xpath('string(.)').get(default='').strip()
-            or sel.css('h2').xpath('string(.)').get(default='').strip()
+            ArchiveSpiderMixin._combine_headings(sel.css('h1').xpath('string(.)').getall())
+            or ArchiveSpiderMixin._combine_headings(sel.css('h2').xpath('string(.)').getall())
         )
         if _MASTHEAD_TITLE_RE.match(title):
             # The heading is just the masthead - the real subject, if the
