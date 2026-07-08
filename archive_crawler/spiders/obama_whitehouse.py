@@ -22,8 +22,7 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 yield self._make_request(row['url'])
 
     def parse_item(self, response):
-        if response.css('frameset'):
-            self._log_exclusion(response.url, 'frameset')
+        if self._is_excluded_response(response):
             return
         if response.css('.views-row'):
             self._log_exclusion(response.url, 'listing_page')

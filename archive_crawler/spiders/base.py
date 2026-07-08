@@ -358,6 +358,21 @@ class ArchiveSpiderMixin:
             self._exclusions = []
         self._exclusions.append({'url': url, 'reason': reason})
 
+    def _is_excluded_response(self, response):
+        """Common parse_item entry check. A response can be non-text (e.g. a
+        binary file served from an extension-less URL a link-following crawl
+        swept up, indistinguishable from a real page by URL shape alone) or a
+        frameset with no extractable content; css()/xpath() raise
+        NotSupported on the former. Logs the appropriate exclusion and
+        returns True if the response should be skipped."""
+        if not isinstance(response, scrapy.http.TextResponse):
+            self._log_exclusion(response.url, 'non_text_response')
+            return True
+        if response.css('frameset'):
+            self._log_exclusion(response.url, 'frameset')
+            return True
+        return False
+
     def closed(self, reason):
         exclusions = getattr(self, '_exclusions', [])
         if not exclusions:

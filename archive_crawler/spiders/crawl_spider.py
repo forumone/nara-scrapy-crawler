@@ -51,6 +51,7 @@ class GenericCrawlSpider(ArchiveSpiderMixin, scrapy.Spider):
             raise ValueError("url_file argument is required: -a url_file=path/to/harvest.csv")
         self.url_file = url_file
         self.site_id = site_id
+        self.SOURCE_SITE = site_id
         self.source_type = source_type
         super().__init__(*args, **kwargs)
 
@@ -60,8 +61,7 @@ class GenericCrawlSpider(ArchiveSpiderMixin, scrapy.Spider):
                 yield scrapy.Request(row['url'], callback=self.parse_item)
 
     def parse_item(self, response):
-        if response.css('frameset'):
-            self._log_exclusion(response.url, 'frameset')
+        if self._is_excluded_response(response):
             return
 
         body_xpath = (
@@ -72,6 +72,7 @@ class GenericCrawlSpider(ArchiveSpiderMixin, scrapy.Spider):
             " | //div[contains(@class, 'forall-body')]"
             " | //div[@id='microsite']"
             " | //div[contains(@class,'longpage-section')]"
+            " | //div[contains(@class, 'field-name-body')]"
         )
         match_body = response.xpath(body_xpath).get()
         try:

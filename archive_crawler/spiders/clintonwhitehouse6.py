@@ -49,8 +49,7 @@ class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
                     yield self._make_request(url)
 
     def parse_item(self, response):
-        if response.css('frameset'):
-            self._log_exclusion(response.url, 'frameset')
+        if self._is_excluded_response(response):
             return
         # CW6 pages have no <blockquote> wrapper and empty <title> tags.
         # Content is paragraphs directly in <body> beneath nav divs (#menufloat, #frozen-spacer).

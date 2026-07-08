@@ -64,8 +64,7 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                     yield self._make_request(url)
 
     def parse_item(self, response):
-        if response.css('frameset'):
-            self._log_exclusion(response.url, 'frameset')
+        if self._is_excluded_response(response):
             return
         # Selector chain across distinct sub-site layouts on this archive:
         # 1. #news_container — main WH press release layout (inside #whitebox).

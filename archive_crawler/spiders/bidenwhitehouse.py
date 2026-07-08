@@ -37,8 +37,7 @@ class BidenWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 yield self._make_request(row['url'])
 
     def parse_item(self, response):
-        if response.css('frameset'):
-            self._log_exclusion(response.url, 'frameset')
+        if self._is_excluded_response(response):
             return
         # WordPress site — standard .entry-content post body.
         # Some non-post pages (e.g. office landing pages) use .body-content instead.
