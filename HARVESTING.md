@@ -1,13 +1,44 @@
-# Harvesting a New No-Sitemap Site
+# Harvesting a New Site
 
-This document describes the end-to-end process for adding a new no-sitemap site
-to the crawl pipeline. The two-phase approach (harvest URLs first, scrape content
-second) allows for auditing the full URL list before any content is fetched,
-making coverage gaps and unexpected pages visible before they become data problems.
+This document describes the end-to-end process for adding a new site to the crawl
+pipeline. The two-phase approach (harvest URLs first, scrape content second) allows
+for auditing the full URL list before any content is fetched, making coverage gaps
+and unexpected pages visible before they become data problems.
+
+Check for a sitemap first (`/sitemap.xml`, `/sitemap_index.xml`, or a `Sitemap:`
+directive in `robots.txt`) — if one exists, skip everything else in this document
+and use the sitemap harvester below. The remaining sections (choosing a harvester
+pattern, the split harvester, the generic harvester) are all for sites with **no**
+sitemap.
+
+---
+
+## Sitemap harvester
+
+If the site has a sitemap, use `sitemap_harvest` — a single-phase, one-size-fits-all
+harvester with no site-specific code to write:
+
+```
+scrapy crawl sitemap_harvest \
+    -a sitemap_url=https://example.archives.gov/sitemap.xml \
+    -O data/example/example_harvest-full.csv
+```
+
+It fetches the sitemap (or sitemap index, recursing into all sub-sitemaps),
+deduplicates URLs case-insensitively, drops non-web assets (PDFs, images, etc.), and
+outputs a harvest CSV — one `url` column, one row per content page — without
+fetching any content pages itself. Used by all of Clinton (CW1–6), Biden, and GWBush.
+
+Then write a dedicated content spider using `ArchiveSpiderMixin` (same pattern as
+Step 5 in the split-harvester walkthrough below) to scrape from that harvest CSV.
+See README's "Sitemap-Based Archive Spiders" section for a worked example against
+an existing spider.
 
 ---
 
 ## Choosing a harvester pattern
+
+The following patterns are for sites with no sitemap.
 
 **Use `generic_crawl_harvest`** for small, simple sites. It follows `?page=`/`/page/`-style
 pagination automatically (without recording the listing pages themselves as content —
