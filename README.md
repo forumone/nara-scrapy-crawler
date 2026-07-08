@@ -40,6 +40,8 @@ pip install -r requirements.txt
 
 `generic_crawl` is a two-phase spider pair, not a single spider — run both to test locally without spinning up Docker.
 
+It's starter/example tooling, not a production-ready scraper for an arbitrary new site: phase 2's selectors are tuned to the site templates already seen in this repo, not universal. Expect to get zero or few items on a genuinely new site's first run — that means the template needs its own selectors added (or a subclass, see `crawl_spider.py`'s docstring), not that the crawl failed. `run_crawl.sh` / `run_crawl_interactive.sh` wrap this same pair for convenience; the same caveat applies to their output.
+
 **Phase 1** (`generic_crawl_harvest`, a `CrawlSpider`) discovers URLs by following links from a seed URL:
 
 ```bash
@@ -169,6 +171,7 @@ Each scrape spider automatically writes a `{source_site}_exclusions.csv` alongsi
 |---|---|
 | `url_pattern:/foo/` | URL matched a known non-content path prefix |
 | `frameset` | Page is a frameset with no extractable content |
+| `non_text_response` | Response body isn't text (e.g. a binary file served from an extension-less URL a link-following crawl swept up) |
 | `no_body` | Body selector returned empty text |
 | `no_title` | No title could be extracted |
 | `http_404` | HTTP 404 response |
@@ -203,6 +206,8 @@ scrapy crawl georgewbush_whitehouse \
 ```
 
 Before raising throttling further, check the target domain's `robots.txt` for a `Crawl-delay` directive — `ROBOTSTXT_OBEY = False` means Scrapy won't enforce it automatically, so it's easy to run faster than the site operator has asked for without noticing.
+
+`settings.py` also sets `MEMUSAGE_LIMIT_MB=8192` (matching `run_crawl.sh`'s default, on the assumption these run on a resource-rich remote server): if a crawl's memory footprint exceeds that (e.g. a crawler trap on a faceted-search or listing-heavy site generates unbounded unique URLs), Scrapy closes the spider gracefully and flushes the feed export, rather than the OS OOM-killing the process and losing all buffered output. Override with `-s MEMUSAGE_LIMIT_MB=N`, or via `run_crawl.sh --memory-limit=N`. `run_crawl_interactive.sh` — intended for local dev testing — prompts with half that default (4096).
 
 ---
 

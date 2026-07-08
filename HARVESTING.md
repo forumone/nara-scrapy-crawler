@@ -9,16 +9,21 @@ making coverage gaps and unexpected pages visible before they become data proble
 
 ## Choosing a harvester pattern
 
-**Use the split harvester pattern** (`*_harvest_list` + `*_harvest_nav`) when the
-site has paginated listing sections — blogs, news archives, press releases, or any
-section that spreads content across many pages reachable only through pagination.
-The nav spider alone will miss content behind pagination; the list spider alone will
+**Use `generic_crawl_harvest`** for small, simple sites. It follows `?page=`/`/page/`-style
+pagination automatically (without recording the listing pages themselves as content —
+only the content links found on them), so ordinary paginated listing sections don't
+by themselves require the split pattern anymore.
+
+**Use the split harvester pattern** (`*_harvest_list` + `*_harvest_nav`) when a site's
+pagination doesn't follow the `?page=`/`/page/` convention (custom offset/cursor
+params, JS-driven infinite scroll, etc.), or when listing rows need a specific CSS
+selector to identify the real content link rather than generic link-following. The
+nav spider alone will miss content behind pagination; the list spider alone will
 miss nav-only pages.
 
-**Use `generic_crawl_harvest`** when the site is small and all content is reachable
-by following navigation links, with no deep paginated listing sections. If you are
-not sure, start with site discovery (step 1) — if you find listing sections with
-more than one page of results, use the split pattern.
+If you are not sure, start with site discovery (step 1) and try `generic_crawl_harvest`
+first — if the pagination doesn't match the standard convention or content links can't
+be reliably distinguished from navigation/facet noise, fall back to the split pattern.
 
 ---
 
@@ -189,7 +194,7 @@ scrapy crawl mysite \
 
 ## Step-by-step: generic harvester
 
-For simple sites with no paginated listing sections, skip to a single harvest phase:
+For simple sites, skip to a single harvest phase:
 
 ```
 scrapy crawl generic_crawl_harvest \
@@ -197,6 +202,14 @@ scrapy crawl generic_crawl_harvest \
     -a urls_to_skip='/print/,/user/,/node/\d' \
     -o data/example/example_harvest.csv
 ```
+
+`?page=`/`/page/` links are followed but not recorded as content. Every followed
+link also has its query string reduced to just the pagination param, if present —
+Scrapy's duplicate-request filter then collapses facet/sort/tracking-decorated
+variants of the same page into a single crawl. This does not stop distinct facet
+*paths* (e.g. chained `/field_tags/X/field_tags/Y/` segments on faceted-search
+sites) from each being crawled once each — block those per-site with `urls_to_skip`
+(e.g. `-a urls_to_skip='/field_tags/,/search/'`).
 
 Then scrape using `generic_crawl` or a custom scraper spider:
 
@@ -207,6 +220,11 @@ scrapy crawl generic_crawl \
     -a source_type='Archived White House Websites' \
     -o data/example/example.csv
 ```
+
+`generic_crawl`'s selectors (`crawl_spider.py`) are a union tuned to the site
+templates already seen in this repo, not a universal HTML-content detector. A new
+site's first run commonly yields zero items — extend the XPath union or subclass
+with site-specific selectors, same as any other new site's scraper.
 
 ---
 
