@@ -55,12 +55,18 @@ prompt_number() {
     done
 }
 
+echo "Note: this runs example/starter selectors, not a tuned scraper for your site — a zero-item result means the site needs its own selectors, not that the crawl failed."
+echo
 echo "=== Interactive crawl setup ==="
 TARGET_URL=$(prompt_url)
 SITE_ID=$(prompt_site_id)
 SKIP_PATTERNS=$(prompt_skip_patterns)
 DOWNLOAD_DELAY=$(prompt_number "Download delay in seconds" 1)
 CONCURRENCY=$(prompt_number "Concurrent requests per domain" 1)
+MEMORY_LIMIT=$(prompt_number "Memory limit in MB" 4096)
+
+CMD=("$SCRIPT_DIR/run_crawl.sh" "$TARGET_URL" "$SITE_ID" "$SKIP_PATTERNS" \
+    "--download-delay=$DOWNLOAD_DELAY" "--concurrency=$CONCURRENCY" "--memory-limit=$MEMORY_LIMIT")
 
 echo
 echo "=== Review ==="
@@ -69,6 +75,9 @@ echo "Site ID:        $SITE_ID"
 echo "Skip patterns:  ${SKIP_PATTERNS:-<none>}"
 echo "Download delay: ${DOWNLOAD_DELAY}s"
 echo "Concurrency:    $CONCURRENCY"
+echo "Memory limit:   ${MEMORY_LIMIT}MB"
+echo
+echo "Command: ${CMD[*]}"
 echo
 
 read -rp "Proceed? [y/N]: " confirm
@@ -77,5 +86,4 @@ if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-exec "$SCRIPT_DIR/run_crawl.sh" "$TARGET_URL" "$SITE_ID" "$SKIP_PATTERNS" \
-    "--download-delay=$DOWNLOAD_DELAY" "--concurrency=$CONCURRENCY"
+exec "${CMD[@]}"
