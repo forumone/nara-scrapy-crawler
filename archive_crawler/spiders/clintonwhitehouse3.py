@@ -29,12 +29,7 @@ class ClintonWhiteHouse3Spider(ArchiveSpiderMixin, scrapy.Spider):
     def parse_item(self, response):
         if self._is_excluded_response(response):
             return
-        # 1990s static HTML — WH press releases use <blockquote> for content;
-        # non-briefing pages (OMB, CEQ, etc.) fall back to full body.
-        body = (
-            self._extract_text(response, 'blockquote')
-            or self._extract_text(response, 'body')
-        )
+        body = self._extract_press_release_body(response)
         if not body:
             self._log_exclusion(response.url, 'no_body')
             return

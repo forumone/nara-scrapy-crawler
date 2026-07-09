@@ -29,10 +29,7 @@ class ClintonWhiteHouse1Spider(ArchiveSpiderMixin, scrapy.Spider):
     def parse_item(self, response):
         if self._is_excluded_response(response):
             return
-        body = (
-            self._extract_text(response, 'blockquote')
-            or self._extract_text(response, 'body')
-        )
+        body = self._extract_press_release_body(response)
         if not body:
             self._log_exclusion(response.url, 'no_body')
             return

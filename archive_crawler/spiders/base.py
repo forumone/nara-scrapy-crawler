@@ -77,6 +77,15 @@ _MASTHEAD_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Matches when extracted text is nothing but a dateline (e.g. "June 27,
+# 1996" or "December 8-9, 1998") - the signature of a <blockquote> that was
+# auto-closed by the parser right after the dateline rather than where the
+# archived HTML's author intended (see _extract_press_release_body).
+_DATELINE_ONLY_RE = re.compile(
+    r'^\s*(?:' + _WEEKDAYS + r',?\s+)?' + _MONTHS + r'\s+\d{1,2}(?:-\d{1,2})?,?\s*\d{4}\.?\s*$',
+    re.IGNORECASE,
+)
+
 
 # Explicit allowlist rather than a deny list: anything not in here (and not
 # extension-free) is treated as a non-page asset and skipped.
@@ -384,6 +393,30 @@ class ArchiveSpiderMixin:
             writer = csv.DictWriter(f, fieldnames=['url', 'reason'])
             writer.writeheader()
             writer.writerows(exclusions)
+
+    def _extract_press_release_body(self, response):
+        """Return the best available body text for Clinton-era pages.
+
+        WH press releases wrap their entire body in <blockquote>, purely for
+        its default indentation styling - a convenient way to skip the
+        masthead/nav chrome that sits outside it, without needing the
+        regex-based letterhead stripping used elsewhere. Non-press-release
+        pages (OMB, CEQ, etc.) don't use blockquote at all, so this falls
+        back to full body when there's no blockquote.
+
+        Some archived pages never close that <blockquote> where the
+        author's markup implies they meant to (the matching closing tag is
+        often the very last one in the document, evidently meant to span
+        the whole letter) - lxml's error correction then closes it early,
+        right after a short leading fragment such as the dateline, leaving
+        the real letter content stranded as body-level siblings the
+        blockquote selector never sees. Falls through to body in that case
+        rather than trusting a blockquote result that's just a dateline.
+        """
+        blockquote = self._extract_text(response, 'blockquote')
+        if blockquote and not _DATELINE_ONLY_RE.match(blockquote):
+            return blockquote
+        return self._extract_text(response, 'body') or blockquote
 
     def _extract_text(self, response, selector):
         if response.css('frameset'):
