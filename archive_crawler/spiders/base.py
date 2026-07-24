@@ -2,7 +2,6 @@ import csv
 import html
 import os
 import re
-from urllib.parse import urlparse
 
 import scrapy
 from scrapy.selector import Selector
@@ -97,27 +96,22 @@ _DATELINE_ONLY_RE = re.compile(
 )
 
 
-# Explicit allowlist rather than a deny list: anything not in here (and not
-# extension-free) is treated as a non-page asset and skipped.
-_WEB_EXTENSIONS = frozenset({'html', 'htm', 'php', 'asp', 'aspx', 'shtml', 'cfm', 'cgi'})
+def _spider_exclusion_rules(spider):
+    """Load (and cache) a spider's exclusion_rules.ExclusionRules.
 
-
-def _is_web_url(url):
-    """Return True if the URL looks like a web page rather than a downloadable asset.
-
-    Rules, applied in order:
-    1. No dot in the last path segment → no extension → allow (e.g. /about/page).
-    2. "Extension" longer than 4 characters → not a real extension → allow
-       (e.g. /page.xhtml; common asset extensions are 2–4 chars: .js, .pdf, .docx).
-    3. Extension is in _WEB_EXTENSIONS → allow.
-    4. Anything else (e.g. .pdf, .txt, .csv, .png) → deny.
+    Shared by ArchiveSpiderMixin and NavHarvesterMixin - both require a
+    SOURCE_SITE class attribute naming the archive_crawler/exclusion_rules/
+    <SOURCE_SITE>.yml file to load. Reads -a rules_file=<path> and
+    -a rules_mode=append|replace for a per-run override; neither the
+    committed file nor rules_file is ever written to.
     """
-    path = urlparse(url).path.rstrip('/')
-    last_segment = path.rsplit('/', 1)[-1] if path else ''
-    if '.' not in last_segment:
-        return True
-    ext = last_segment.rsplit('.', 1)[-1].lower()
-    return len(ext) > 4 or ext in _WEB_EXTENSIONS
+    if not hasattr(spider, '_exclusion_rules_cache'):
+        spider._exclusion_rules_cache = _exclusion_rules_module.load_rules(
+            spider.SOURCE_SITE,
+            getattr(spider, 'rules_file', None),
+            getattr(spider, 'rules_mode', 'append'),
+        )
+    return spider._exclusion_rules_cache
 
 
 class NavHarvesterMixin:
@@ -195,8 +189,25 @@ class NavHarvesterMixin:
             for row in csv.DictReader(f):
                 self._listing_urls.add(row['url'])
 
+    def _get_exclusion_rules(self):
+        return _spider_exclusion_rules(self)
+
     def _filter_web_urls(self, links):
-        return [lnk for lnk in links if _is_web_url(lnk.url)]
+        rules = self._get_exclusion_rules()
+        return [lnk for lnk in links if _exclusion_rules_module.is_web_url(lnk.url, rules)]
+
+    def _apply_nav_deny(self, links):
+        """Rule process_links hook: drop links matching this domain's
+        nav_deny regex patterns (archive_crawler/exclusion_rules/<SOURCE_SITE>.yml).
+        Referenced by name ('_apply_nav_deny') in subclasses' Rule(...) so it
+        resolves against the spider instance at _compile_rules() time, after
+        -a rules_file/-a rules_mode are already set - unlike a Rule built at
+        class-definition time, which can't see per-run CLI overrides.
+        """
+        patterns = _exclusion_rules_module.nav_deny_patterns(self._get_exclusion_rules())
+        if not patterns:
+            return links
+        return [lnk for lnk in links if not any(re.search(p, lnk.url) for p in patterns)]
 
     def _is_listing_page(self, response):
         """Return True if this response is a listing page that should be skipped.
@@ -223,7 +234,7 @@ class NavHarvesterMixin:
         links because CrawlSpider's Rule dispatches links directly to this
         callback before _filter_web_urls has a chance to screen them.
         """
-        if not _is_web_url(response.url):
+        if not _exclusion_rules_module.is_web_url(response.url, self._get_exclusion_rules()):
             return
         if self._is_listing_page(response):
             return
@@ -378,21 +389,7 @@ class ArchiveSpiderMixin:
         self._exclusions.append({'url': url, 'reason': reason})
 
     def _get_exclusion_rules(self):
-        """Load (and cache) this spider's URL exclusion rules.
-
-        Reads archive_crawler/exclusion_rules/<SOURCE_SITE>.yml, optionally
-        overlaid with -a rules_file=<path> -a rules_mode=append|replace
-        (append is the default when rules_file is given). Neither the
-        committed file nor rules_file is ever written to - this is a
-        runtime-only override for the current run.
-        """
-        if not hasattr(self, '_exclusion_rules_cache'):
-            self._exclusion_rules_cache = _exclusion_rules_module.load_rules(
-                self.SOURCE_SITE,
-                getattr(self, 'rules_file', None),
-                getattr(self, 'rules_mode', 'append'),
-            )
-        return self._exclusion_rules_cache
+        return _spider_exclusion_rules(self)
 
     def _is_excluded_response(self, response):
         """Common parse_item entry check. A response can be non-text (e.g. a

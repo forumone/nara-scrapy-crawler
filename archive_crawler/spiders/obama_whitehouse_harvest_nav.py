@@ -8,6 +8,10 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
     name = "obama_whitehouse_harvest_nav"
     allowed_domains = ["obamawhitehouse.archives.gov"]
 
+    # Matches the content spider's SOURCE_SITE - shares its
+    # archive_crawler/exclusion_rules/<SOURCE_SITE>.yml file.
+    SOURCE_SITE = 'www.obamawhitehouse'
+
     start_urls = [
         'https://obamawhitehouse.archives.gov/',
         'https://obamawhitehouse.archives.gov/briefing-room',
@@ -61,5 +65,9 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
             ),
             callback='parse_nav',
             follow=False,  # links followed manually in parse_nav, only from non-listing pages
+            # No nav_deny patterns for this domain today, but wired through
+            # the same mechanism as every other nav harvester for consistency
+            # (see NavHarvesterMixin._apply_nav_deny).
+            process_links='_apply_nav_deny',
         ),
     )
