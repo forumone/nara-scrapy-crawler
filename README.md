@@ -47,11 +47,13 @@ It's starter/example tooling, not a production-ready scraper for an arbitrary ne
 ```bash
 scrapy crawl generic_crawl_harvest \
   -a url="https://letsmove.obamawhitehouse.archives.gov/" \
-  -a urls_to_skip="/blog/all" \
+  -a rules_file=data/letsmove/one_off_denies.yml \
   -s DEPTH_LIMIT=1 \
   -s CLOSESPIDER_PAGECOUNT=2 \
   -O data/letsmove/letsmove_harvest-full.csv
 ```
+
+`-a urls_to_skip=...` is retired — pass `-a rules_file=<path to a YAML file with a nav_deny: [...] list>` instead (optionally `-a rules_mode=replace` to override rather than append to the default). See `archive_crawler/exclusion_rules/generic_crawl_harvest.yml` for the shape, or `-a source_site=<name>` to load a specific site's own committed rules file instead of this spider's generic default.
 
 **Phase 2** (`generic_crawl`, a plain `Spider`) reads that harvest CSV and extracts title/body/teaser from each URL — this is where selector/extraction logic actually runs, so it's the one to point at `-s FEED_URI=stdout://` when debugging cleaning logic:
 
@@ -163,7 +165,7 @@ Replace `clintonwhitehouse2` with any of: `clintonwhitehouse1`, `clintonwhitehou
 
 ### Pre-filtering large harvests
 
-Some archives contain large directories of non-content URLs (print-friendly variants, image gallery wrappers, etc.). Each spider's `start_requests` filters these out at request-generation time and records them in the exclusions CSV. No manual pre-filtering of the harvest file is required.
+Some archives contain large directories of non-content URLs (print-friendly variants, image gallery wrappers, etc.). Each spider's `start_requests` filters these out at request-generation time (per `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`) and records them in the exclusions CSV. No manual pre-filtering of the harvest file is required.
 
 ### Exclusion output
 
@@ -260,7 +262,11 @@ To check whether a site has a sitemap, try `{base_url}/sitemap.xml` and `{base_u
 Copy an existing sitemap spider (e.g., `archive_crawler/spiders/clintonwhitehouse2.py`) and update:
 - `name`, `allowed_domains`, `SOURCE_SITE`, `SOURCE_TYPE`
 - The `url_file` error message (for operator clarity)
-- Any URL-pattern exclusions in `start_requests`
+- Create `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml` for any
+  URL-pattern exclusions `start_requests` needs (`rules: [{match, pattern,
+  reason}, ...]`) — see `www.georgewbush-whitehouse.yml` for an example.
+  `start_requests` itself just calls `self._get_exclusion_rules()` and
+  `exclusion_rules.match_exclude(url, rules)`; no per-site Python needed.
 - CSS selectors in `parse_item` to match the new site's content structure
 
 All sitemap-based spiders inherit from `ArchiveSpiderMixin`, which provides:
@@ -268,6 +274,7 @@ All sitemap-based spiders inherit from `ArchiveSpiderMixin`, which provides:
 - `_extract_title(response)` — h1 → h2 → `<title>` with HTML entity decoding and normalisation
 - `_extract_text(response, selector)` — strips NARA banners, nav boilerplate, and invisible Unicode before returning plain text
 - `_log_exclusion(url, reason)` — records a skipped URL; written to `_exclusions.csv` on spider close
+- `_get_exclusion_rules()` — loads `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`, overlaid with `-a rules_file=<path>` `-a rules_mode=append|replace` if given
 - `EXTRA_STRIP_SELECTORS` / `EXTRA_STRIP_XPATH` — per-spider hooks for site-specific boilerplate
 
 ### Validating output
@@ -297,11 +304,15 @@ python audit_url_gaps.py \
 
 ## 📂 Project Structure
 
-`spiders/generic_crawl_harvest.py`: Phase 1 of the generic two-phase spider pair. Uses CrawlSpider and LinkExtractors to walk the site from a seed URL and write a URL-per-row CSV. Dynamically accepts `url` and `urls_to_skip`.
+`spiders/generic_crawl_harvest.py`: Phase 1 of the generic two-phase spider pair. Uses CrawlSpider and LinkExtractors to walk the site from a seed URL and write a URL-per-row CSV. Dynamically accepts `url`, `source_site`, `rules_file`, and `rules_mode`.
 
 `spiders/crawl_spider.py`: Phase 2 (spider name `generic_crawl`). Reads the phase-1 harvest CSV and extracts title/body/teaser from each URL. Dynamically accepts `url_file`, `site_id`, and `source_type`.
 
 `spiders/base.py`: `ArchiveSpiderMixin` — shared extraction, exclusion tracking, and boilerplate stripping for all archive content spiders.
+
+`exclusion_rules.py`: Loads per-domain URL exclusion rules from `exclusion_rules/<SOURCE_SITE>.yml` (extension allow/deny list, `contains`/`regex` URL-pattern rules, nav-crawl deny patterns, generic-crawl pagination/query-param config). Every harvest-capable spider accepts `-a rules_file=<path>` and `-a rules_mode=append|replace` to overlay a per-run override on the committed file without editing it.
+
+`exclusion_rules/`: One committed YAML file per domain (see `exclusion_rules.py` above). New sites should get one even if empty, so `-a rules_file`/`-a rules_mode` always has a base to overlay onto.
 
 `items.py`: Defines the strict schema (Title, Full Text, Teaser, Source Site, Source Type).
 

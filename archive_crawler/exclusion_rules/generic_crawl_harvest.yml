@@ -1,0 +1,39 @@
+# Default rules for generic_crawl_harvest when -a source_site isn't given
+# (its usual mode: a one-off starter crawl of a brand-new site with no
+# committed rules file of its own yet). extensions uses deny mode here,
+# unlike every other site's allow-mode list, since this spider follows an
+# unbounded variety of sites and it's safer to block known-binary/data-dump
+# formats than to allowlist every possible content extension.
+#
+# To scope rules to one specific site instead, commit a
+# archive_crawler/exclusion_rules/<name>.yml and pass -a source_site=<name>;
+# -a rules_file/-a rules_mode=append|replace still overlay on top of
+# whichever of these two gets loaded, same as every other spider.
+
+extensions:
+  mode: deny
+  values:
+    [
+      "7z", "7zip", "bz2", "rar", "tar", "tar.gz", "xz", "zip",
+      "mng", "pct", "bmp", "gif", "jpg", "jpeg", "png", "pst", "psp",
+      "tif", "tiff", "ai", "drw", "dxf", "eps", "ps", "svg", "cdr",
+      "ico", "webp",
+      "mp3", "wma", "ogg", "wav", "ra", "aac", "mid", "au", "aiff",
+      "3gp", "asf", "asx", "avi", "mov", "mp4", "mpg", "qt", "rm",
+      "swf", "wmv", "m4a", "m4v", "flv", "webm",
+      "xls", "xlsx", "ppt", "pptx", "pps", "doc", "docx", "odt",
+      "ods", "odg", "odp", "css", "pdf", "exe", "bin", "rss", "dmg",
+      "iso", "apk",
+      "csv", "json", "xml", "tsv", "txt",
+    ]
+
+rules: []
+
+nav_deny: []
+
+pagination:
+  - '\?page='
+  - '/page/'
+
+query_params_allow:
+  - page

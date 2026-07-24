@@ -70,7 +70,9 @@ Inspect the live site to answer these questions before writing any code:
   (e.g. `.views-row .views-field-title a`, `article h3 a`)
 - What are the top-level nav sections? These become `start_urls` for the nav spider.
 - Are there path prefixes that should be excluded from the nav crawl?
-  (e.g. `/sites/` for Drupal assets, `/user/`, `/print/`, `/category/`)
+  (e.g. `/sites/` for Drupal assets, `/user/`, `/print/`, `/category/`) These
+  go in the new site's `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`
+  `nav_deny` list (step 3), not hardcoded into the spider.
 - What is the domain? Are there subdomains that should be handled by separate spiders?
 
 ### Step 2 — Harvest listing pages
@@ -115,6 +117,12 @@ The list harvest from step 2 **must** be passed as `listing_file` — the nav sp
 will not run without it. This ensures the nav spider skips all URLs already captured
 by the list harvester and does not recurse into listing sections.
 
+Also set `SOURCE_SITE` to match the content spider's own `SOURCE_SITE` (they
+share one `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml` file), and put
+any path-prefix exclusions from step 1 in that file's `nav_deny` list rather
+than a hardcoded `deny=` tuple — `process_links='_apply_nav_deny'` reads them
+at run time (and picks up `-a rules_file`/`-a rules_mode` overrides too):
+
 ```python
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
@@ -123,6 +131,7 @@ from archive_crawler.spiders.base import NavHarvesterMixin
 class MySiteHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
     name = "mysite_harvest_nav"
     allowed_domains = ["example.archives.gov"]
+    SOURCE_SITE = 'example'  # matches the content spider's SOURCE_SITE
     start_urls = [
         "https://example.archives.gov/",
         "https://example.archives.gov/about/",
@@ -134,12 +143,25 @@ class MySiteHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
             LinkExtractor(
                 allow=r'//example\.archives\.gov/',
                 allow_domains=['example.archives.gov'],
-                deny=(r'/sites/', r'/user/', r'/print/'),
             ),
             callback='parse_nav',
             follow=False,
+            process_links='_apply_nav_deny',
         ),
     )
+```
+
+And in `archive_crawler/exclusion_rules/example.yml`:
+
+```yaml
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+rules: []
+nav_deny:
+  - '/sites/'
+  - '/user/'
+  - '/print/'
 ```
 
 Run it, feeding the list harvest:
@@ -230,17 +252,23 @@ For simple sites, skip to a single harvest phase:
 ```
 scrapy crawl generic_crawl_harvest \
     -a url=https://example.archives.gov/ \
-    -a urls_to_skip='/print/,/user/,/node/\d' \
+    -a rules_file=data/example/one_off_denies.yml \
     -o data/example/example_harvest.csv
 ```
+
+Where `one_off_denies.yml` has a `nav_deny: ['/print/', '/user/', '/node/\d']` list.
+`extensions`/`rules`/`pagination`/`query_params_allow` default to
+`archive_crawler/exclusion_rules/generic_crawl_harvest.yml` unless `-a
+source_site=<name>` points at a specific site's own committed file instead;
+either way, `rules_file` (default mode: append) overlays on top.
 
 `?page=`/`/page/` links are followed but not recorded as content. Every followed
 link also has its query string reduced to just the pagination param, if present —
 Scrapy's duplicate-request filter then collapses facet/sort/tracking-decorated
 variants of the same page into a single crawl. This does not stop distinct facet
 *paths* (e.g. chained `/field_tags/X/field_tags/Y/` segments on faceted-search
-sites) from each being crawled once each — block those per-site with `urls_to_skip`
-(e.g. `-a urls_to_skip='/field_tags/,/search/'`).
+sites) from each being crawled once each — block those per-site with a
+`nav_deny` entry (e.g. `-a rules_file=... ` with `nav_deny: ['/field_tags/', '/search/']`).
 
 Then scrape using `generic_crawl` or a custom scraper spider:
 

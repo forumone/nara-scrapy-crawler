@@ -1,0 +1,13 @@
+# URL exclusion rules for clintonwhitehouse3. No start_requests-level URL-pattern rules
+# today - every harvested row reaches the content spider, which relies
+# entirely on content-based checks (no_body/no_title) instead. Present so
+# the domain has a rules file to append/replace against, same as every
+# other site.
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules: []
+
+nav_deny: []
