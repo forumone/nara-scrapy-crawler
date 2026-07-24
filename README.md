@@ -129,6 +129,8 @@ scrapy crawl sitemap_harvest \
 
 Expected output: one `url` column, one row per content page discovered in the sitemap.
 
+Pass `-a dropped_file=data/example/example_harvest-dropped.csv` to also record every non-web-extension URL dropped during the harvest (PDFs, images, etc.) — a `url`/`reason` CSV, same shape as the content spiders' exclusions CSV. Without it, drops are only summarized as a count in the crawl log.
+
 ---
 
 ## 🏛️ Sitemap-Based Archive Spiders
