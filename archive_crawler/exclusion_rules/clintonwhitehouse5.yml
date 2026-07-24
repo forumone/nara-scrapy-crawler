@@ -1,0 +1,26 @@
+# URL-pattern exclusion rules for clintonwhitehouse5. Evaluated in order at
+# start_requests time; first match wins. Case-sensitive substring matches,
+# same as the Python `in` operator this replaces - /omb/ and /OMB/ are
+# deliberately distinct rules.
+#
+# /textonly/ is a text-only mirror (11k of 26k URLs).
+# OMB dirs: OMB-upper (1984 URLs) = omb (1815) + OMB (169); OMB-bak ~ OMB-upper.
+# Keep /OMB-upper/ as the most complete unique set; skip the rest.
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules:
+  - match: contains
+    pattern: "/textonly/"
+    reason: "url_pattern:/textonly/"
+  - match: contains
+    pattern: "/omb/"
+    reason: "url_pattern:/omb/"
+  - match: contains
+    pattern: "/OMB/"
+    reason: "url_pattern:/OMB/"
+  - match: contains
+    pattern: "/OMB-bak/"
+    reason: "url_pattern:/OMB-bak/"

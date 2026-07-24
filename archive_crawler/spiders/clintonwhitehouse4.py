@@ -3,6 +3,7 @@ import re
 
 import scrapy
 
+from archive_crawler import exclusion_rules
 from archive_crawler.items import ArchiveItem
 from archive_crawler.spiders.base import ArchiveSpiderMixin, PRESS_RELEASE_LETTERHEAD_PATTERNS
 
@@ -37,20 +38,13 @@ class ClintonWhiteHouse4Spider(ArchiveSpiderMixin, scrapy.Spider):
                 "url_file argument is required: "
                 "-a url_file=data/clintonwhitehouse4/clintonwhitehouse4_harvest-full.csv"
             )
+        rules = self._get_exclusion_rules()
         with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 url = row['url']
-                # /textonly/ is a text-only mirror (11k of 25k URLs).
-                # /OMB-upper/ and /omb-lower/ are alias prefixes for the canonical /OMB/ directory
-                # (1969 paths each, both mapping to uppercase /OMB/). 1932/1969 have a scraped
-                # /OMB/ counterpart; the 37 exceptions are paygo pages also excluded from /OMB/
-                # at parse time (no_title).
-                if '/textonly/' in url:
-                    self._log_exclusion(url, 'url_pattern:/textonly/')
-                elif '/OMB-upper/' in url:
-                    self._log_exclusion(url, 'url_pattern:/OMB-upper/')
-                elif '/omb-lower/' in url:
-                    self._log_exclusion(url, 'url_pattern:/omb-lower/')
+                reason = exclusion_rules.match_exclude(url, rules)
+                if reason:
+                    self._log_exclusion(url, reason)
                 else:
                     yield self._make_request(url)
 

@@ -3,6 +3,7 @@ import re
 
 import scrapy
 
+from archive_crawler import exclusion_rules
 from archive_crawler.items import ArchiveItem
 from archive_crawler.spiders.base import ArchiveSpiderMixin, PRESS_RELEASE_LETTERHEAD_PATTERNS
 
@@ -37,20 +38,13 @@ class ClintonWhiteHouse5Spider(ArchiveSpiderMixin, scrapy.Spider):
                 "url_file argument is required: "
                 "-a url_file=data/clintonwhitehouse5/clintonwhitehouse5_harvest-full.csv"
             )
+        rules = self._get_exclusion_rules()
         with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 url = row['url']
-                # /textonly/ is a text-only mirror (11k of 26k URLs).
-                # OMB dirs: OMB-upper (1984 URLs) = omb (1815) + OMB (169); OMB-bak ≈ OMB-upper.
-                # Keep /OMB-upper/ as the most complete unique set; skip the rest.
-                if '/textonly/' in url:
-                    self._log_exclusion(url, 'url_pattern:/textonly/')
-                elif '/omb/' in url:
-                    self._log_exclusion(url, 'url_pattern:/omb/')
-                elif '/OMB/' in url:
-                    self._log_exclusion(url, 'url_pattern:/OMB/')
-                elif '/OMB-bak/' in url:
-                    self._log_exclusion(url, 'url_pattern:/OMB-bak/')
+                reason = exclusion_rules.match_exclude(url, rules)
+                if reason:
+                    self._log_exclusion(url, reason)
                 else:
                     yield self._make_request(url)
 

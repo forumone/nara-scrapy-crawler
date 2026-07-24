@@ -1,0 +1,14 @@
+# URL-pattern exclusion rules for clintonwhitehouse6. Evaluated in order at
+# start_requests time; first match wins.
+#
+# .header.html files are companion header fragments, not content (20k of
+# 40k URLs).
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules:
+  - match: regex
+    pattern: '\.header\.html$'
+    reason: "header_companion"
