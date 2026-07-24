@@ -10,8 +10,11 @@ from w3lib.html import remove_tags, remove_tags_with_content
 
 # Invisible Unicode format characters that appear in archived source HTML.
 # Soft hyphen (U+00AD), zero-width space/non-joiner/joiner (U+200B-D),
-# directional marks (U+200E-F), BOM/ZWNBSP (U+FEFF).
-_INVISIBLE_RE = re.compile('[\u00ad\u200b\u200c\u200d\u200e\u200f\u2060\ufeff]')
+# directional marks (U+200E-F), BOM/ZWNBSP (U+FEFF). Also strips the Unicode
+# replacement character (U+FFFD) here too: genuine mojibake from a non-UTF8
+# byte in the archived source, not invisible, but the same "junk artifact to
+# remove" treatment applies.
+_INVISIBLE_RE = re.compile('[\u00ad\u200b\u200c\u200d\u200e\u200f\u2060\ufeff\ufffd]')
 
 # Matches a single h1/h2 element and its content, non-greedy so it stops at
 # the first closing tag encountered in the source, the same span lxml uses
@@ -58,11 +61,16 @@ PRESS_RELEASE_LETTERHEAD_PATTERNS = (
     ),
     re.compile(r'^\s*Office\s+of\s+the\s+Press\s+Secretary\b\s*', re.IGNORECASE),
     re.compile(r'^\s*\([A-Za-z .,\'’-]{2,80}\)\s*'),
-    re.compile(r'^\s*For\s+Immediate\s+Release\b\s*:?\s*', re.IGNORECASE),
+    re.compile(r'^\s*For\s+Immediate\s+Release\b\s*[:,]?\s*', re.IGNORECASE),
     re.compile(r'^\s*posted\s+by:?\s*The\s+White\s+House\b\s*', re.IGNORECASE),
     re.compile(r'^\s*Contact:?\s*[\d\-() ]{7,20}\s*', re.IGNORECASE),
     re.compile(r'^\s*' + _WEEKDAYS + r',?\s+' + _MONTHS + r'\s+\d{1,2},?\s*\d{4}\s*', re.IGNORECASE),
     re.compile(r'^\s*' + _MONTHS + r'\s+\d{1,2},?\s*\d{4}\s*', re.IGNORECASE),
+    # Anchor text for a page's plain-text/no-graphics twin, e.g.
+    # "[Text version]" linking wf-work.html to wf-work-plain.html. Flattened
+    # into ordinary text by _extract_text's tag-stripping, indistinguishable
+    # from real content by the time this pattern runs.
+    re.compile(r'^\s*\[\s*(?:Text|Graphics)\s+Version\s*\]\s*', re.IGNORECASE),
 )
 
 # Clinton-era press-release pages (CW1-5) often have the masthead as its own
@@ -464,6 +472,10 @@ class ArchiveSpiderMixin:
         sel = Selector(text=cleaned)
         text = sel.xpath('string(.)').get(default='')
         text = html.unescape(re.sub(r'\s+', ' ', text).strip())
+        # Strip repeated-punctuation runs (separators like "________" or
+        # "********"), same as _teaser() already does for the teaser text.
+        text = re.sub(r'([\W_])\1{2,} ?', '', text)
+        text = re.sub(r'\s+', ' ', text).strip()
         text = _INVISIBLE_RE.sub('', text)
         # Loop to a fixpoint rather than a single pass: letterhead components
         # (masthead, office, location, dateline) don't always appear in the
