@@ -8,6 +8,8 @@ import scrapy
 from scrapy.selector import Selector
 from w3lib.html import remove_tags, remove_tags_with_content
 
+from archive_crawler import exclusion_rules as _exclusion_rules_module
+
 # Invisible Unicode format characters that appear in archived source HTML.
 # Soft hyphen (U+00AD), zero-width space/non-joiner/joiner (U+200B-D),
 # directional marks (U+200E-F), BOM/ZWNBSP (U+FEFF). Also strips the Unicode
@@ -374,6 +376,23 @@ class ArchiveSpiderMixin:
         if not hasattr(self, '_exclusions'):
             self._exclusions = []
         self._exclusions.append({'url': url, 'reason': reason})
+
+    def _get_exclusion_rules(self):
+        """Load (and cache) this spider's URL exclusion rules.
+
+        Reads archive_crawler/exclusion_rules/<SOURCE_SITE>.yml, optionally
+        overlaid with -a rules_file=<path> -a rules_mode=append|replace
+        (append is the default when rules_file is given). Neither the
+        committed file nor rules_file is ever written to - this is a
+        runtime-only override for the current run.
+        """
+        if not hasattr(self, '_exclusion_rules_cache'):
+            self._exclusion_rules_cache = _exclusion_rules_module.load_rules(
+                self.SOURCE_SITE,
+                getattr(self, 'rules_file', None),
+                getattr(self, 'rules_mode', 'append'),
+            )
+        return self._exclusion_rules_cache
 
     def _is_excluded_response(self, response):
         """Common parse_item entry check. A response can be non-text (e.g. a

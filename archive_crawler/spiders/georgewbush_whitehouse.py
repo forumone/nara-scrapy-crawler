@@ -3,6 +3,7 @@ import re
 
 import scrapy
 
+from archive_crawler import exclusion_rules
 from archive_crawler.items import ArchiveItem
 from archive_crawler.spiders.base import ArchiveSpiderMixin, PRESS_RELEASE_LETTERHEAD_PATTERNS
 
@@ -37,29 +38,13 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 "url_file argument is required: "
                 "-a url_file=data/www.georgewbush-whitehouse/georgewbush-whitehouse_harvest-full.csv"
             )
+        rules = self._get_exclusion_rules()
         with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 url = row['url']
-                # /images/ subdirectory pages are photo gallery wrappers with no text (28k URLs).
-                # .v.html pages are video transcript variants (11k URLs); skip to avoid duplicates.
-                # /print/ subdirectories are printer-friendly duplicates of main content (68k URLs).
-                # /text/ subdirectories are plain-text duplicates of main content (94k URLs).
-                # .es.html pages are Spanish-language variants.
-                # /goodbye/ pages are exit-redirect interstitials with no content.
-                if url.endswith('template.html'):
-                    self._log_exclusion(url, 'cms_template')
-                elif '/images/' in url:
-                    self._log_exclusion(url, 'url_pattern:/images/')
-                elif url.endswith('.v.html'):
-                    self._log_exclusion(url, 'url_pattern:.v.html')
-                elif '/print/' in url:
-                    self._log_exclusion(url, 'url_pattern:/print/')
-                elif '/text/' in url:
-                    self._log_exclusion(url, 'url_pattern:/text/')
-                elif url.endswith('.es.html'):
-                    self._log_exclusion(url, 'url_pattern:.es.html')
-                elif '/goodbye/' in url:
-                    self._log_exclusion(url, 'url_pattern:/goodbye/')
+                reason = exclusion_rules.match_exclude(url, rules)
+                if reason:
+                    self._log_exclusion(url, reason)
                 else:
                     yield self._make_request(url)
 

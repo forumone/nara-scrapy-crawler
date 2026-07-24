@@ -1,0 +1,36 @@
+# URL-pattern exclusion rules for georgewbush-whitehouse (SOURCE_SITE =
+# www.georgewbush-whitehouse). Evaluated in order at start_requests time;
+# first match wins. See url-exclusion-rules-yaml-plan.md for the mechanism.
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules:
+  - match: regex
+    pattern: 'template\.html$'
+    reason: "cms_template"
+  # Photo-essay gallery pages with real, scrapable captions (28,268 URLs
+  # live, confirmed 2026-07-24: 14,218 of those are not also /print/ or
+  # /text/ nested, and a 45-sample check across two sessions found captions
+  # on 45/45). Kept excluded here pending a scoped re-scrape - deleting this
+  # rule is the actual fix once that's ready to go (see
+  # project_deferred_fixes_202607 memory / deferred-fixes-202607-plan.md).
+  - match: contains
+    pattern: "/images/"
+    reason: "url_pattern:/images/"
+  - match: regex
+    pattern: '\.v\.html$'
+    reason: "url_pattern:.v.html"
+  - match: contains
+    pattern: "/print/"
+    reason: "url_pattern:/print/"
+  - match: contains
+    pattern: "/text/"
+    reason: "url_pattern:/text/"
+  - match: regex
+    pattern: '\.es\.html$'
+    reason: "url_pattern:.es.html"
+  - match: contains
+    pattern: "/goodbye/"
+    reason: "url_pattern:/goodbye/"
