@@ -203,9 +203,26 @@ class NavHarvesterMixin:
             )
     """
 
-    # Subclasses that need a different depth can override custom_settings entirely.
+    # Subclasses that need a different depth can override custom_settings
+    # entirely, but keep CRAWLSPIDER_FOLLOW_LINKS: False if they do.
+    # CrawlSpider's own built-in _requests_to_follow runs unconditionally for
+    # every start_urls response (triggered by _parse()'s hardcoded
+    # follow=True), entirely independent of parse_nav/parse_start_url - it
+    # extracts links via each Rule's LinkExtractor and applies only
+    # rule.process_links, bypassing _filter_web_urls and
+    # LISTING_VIEW_LINK_EXTRACTOR entirely. Confirmed empirically: a listing
+    # page placed directly in start_urls leaks both its pager link and its
+    # .view container's item links into the crawl via this path, even though
+    # parse_nav's own manual loop correctly excludes both - undermining the
+    # fan-out protection specifically for start_urls entries. Every
+    # subsequent hop is unaffected (reached via this mixin's own
+    # response.follow(..., callback=self.parse_nav) calls, a plain Request
+    # with no CrawlSpider follow-machinery involvement), so this only ever
+    # matters for start_urls, but disabling it entirely costs nothing since
+    # parse_nav's manual loop is a complete replacement.
     custom_settings = {
         'DEPTH_LIMIT': 2,
+        'CRAWLSPIDER_FOLLOW_LINKS': False,
     }
 
     # Optional per-subclass hook: a LinkExtractor scoped to the container a
@@ -234,20 +251,26 @@ class NavHarvesterMixin:
         return [lnk for lnk in links if _exclusion_rules_module.is_web_url(lnk.url, rules)]
 
     def _apply_nav_deny(self, links):
-        """Rule process_links hook: drop links matching this domain's
-        nav_deny regex patterns OR its rules: entries
-        (archive_crawler/exclusion_rules/<SOURCE_SITE>.yml). Checking rules:
-        here too means an out-of-scope URL (e.g. a non-English mirror) only
-        needs one entry to be excluded from both the nav crawl and the
-        content spider, instead of a duplicate in each list. nav_deny stays
-        available for exclusions that should hold the nav crawler back
-        without also excluding the URL from a content scrape reached some
-        other way (e.g. a known-duplicate URL shape not worth nav-following
-        into, but fine to scrape if it ends up in a url_file regardless).
-        Referenced by name ('_apply_nav_deny') in subclasses' Rule(...) so it
-        resolves against the spider instance at _compile_rules() time, after
-        -a rules_file/-a rules_mode are already set - unlike a Rule built at
-        class-definition time, which can't see per-run CLI overrides.
+        """Drop links matching this domain's nav_deny regex patterns OR its
+        rules: entries (archive_crawler/exclusion_rules/<SOURCE_SITE>.yml).
+        Checking rules: here too means an out-of-scope URL (e.g. a
+        non-English mirror) only needs one entry to be excluded from both
+        the nav crawl and the content spider, instead of a duplicate in each
+        list. nav_deny stays available for exclusions that should hold the
+        nav crawler back without also excluding the URL from a content
+        scrape reached some other way (e.g. a known-duplicate URL shape not
+        worth nav-following into, but fine to scrape if it ends up in a
+        url_file regardless).
+
+        Called directly from parse_nav's own manual link-following loop, not
+        via a Rule's process_links= - CRAWLSPIDER_FOLLOW_LINKS is set False
+        in custom_settings specifically so CrawlSpider's own built-in
+        Rule-dispatch machinery (which would call rule.process_links, but
+        skips _filter_web_urls and LISTING_VIEW_LINK_EXTRACTOR entirely)
+        never runs at all. Do not wire this as a Rule's process_links= in a
+        subclass - it would be dead configuration since that codepath never
+        executes, and reads as if a second, redundant filtering mechanism is
+        in play when there isn't one.
         """
         rules = self._get_exclusion_rules()
         patterns = _exclusion_rules_module.nav_deny_patterns(rules)
@@ -286,12 +309,16 @@ class NavHarvesterMixin:
 
         Links are followed manually (rather than via follow=True in the Rule)
         so that we can gate following on these per-page checks. Subclass
-        rules must set follow=False and omit process_links; filtering is
-        applied here.
+        rules must set follow=False and omit process_links - the latter
+        would be dead configuration, since CRAWLSPIDER_FOLLOW_LINKS: False in
+        custom_settings means CrawlSpider's own Rule-dispatch machinery
+        (which calls rule.process_links) never runs.
 
         The web-URL guard is applied to response.url as well as to extracted
-        links because CrawlSpider's Rule dispatches links directly to this
-        callback before _filter_web_urls has a chance to screen them.
+        links because start_urls entries reach this callback (via
+        parse_start_url) without ever passing through _filter_web_urls -
+        that only runs on links extracted from an already-fetched response,
+        not on the seed URLs themselves.
         """
         if not _exclusion_rules_module.is_web_url(response.url, self._get_exclusion_rules()):
             return

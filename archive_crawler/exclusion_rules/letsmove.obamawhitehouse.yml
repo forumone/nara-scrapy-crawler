@@ -1,7 +1,8 @@
 # URL exclusion rules for letsmove.obamawhitehouse. nav_deny feeds
-# LetsMoveHarvestNavSpider's nav-crawl link filtering (NavHarvesterMixin's
-# process_links='_apply_nav_deny'); this domain has no start_requests-level
-# URL-pattern rules today (content spider yields every harvested row).
+# LetsMoveHarvestNavSpider's nav-crawl link filtering (checked directly by
+# NavHarvesterMixin._apply_nav_deny inside parse_nav, unioned with rules:
+# below); this domain has no start_requests-level URL-pattern rules today
+# (content spider yields every harvested row).
 
 extensions:
   mode: allow

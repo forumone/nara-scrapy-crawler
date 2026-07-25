@@ -22,8 +22,14 @@ class LetsMoveHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
         "https://letsmove.obamawhitehouse.archives.gov/share-your-story-lets-move-olympic-fun-day",
     ]
 
+    # Overrides NavHarvesterMixin.custom_settings entirely (Python class
+    # attributes don't merge) - CRAWLSPIDER_FOLLOW_LINKS: False must be
+    # repeated here, or CrawlSpider's own built-in link-following silently
+    # re-enables for this spider specifically (see the mixin's own
+    # custom_settings comment for why that matters).
     custom_settings = {
         'DEPTH_LIMIT': 4,
+        'CRAWLSPIDER_FOLLOW_LINKS': False,
     }
 
     rules = (
@@ -31,9 +37,5 @@ class LetsMoveHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
             LinkExtractor(),
             callback='parse_nav',
             follow=False,
-            # deny patterns come from archive_crawler/exclusion_rules/
-            # letsmove.obamawhitehouse.yml's nav_deny list, resolved at
-            # _compile_rules() time (see NavHarvesterMixin._apply_nav_deny).
-            process_links='_apply_nav_deny',
         ),
     )

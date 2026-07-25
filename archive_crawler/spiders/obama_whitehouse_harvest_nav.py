@@ -45,9 +45,5 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
             ),
             callback='parse_nav',
             follow=False,  # links followed manually in parse_nav, only from non-listing pages
-            # No nav_deny patterns for this domain today, but wired through
-            # the same mechanism as every other nav harvester for consistency
-            # (see NavHarvesterMixin._apply_nav_deny).
-            process_links='_apply_nav_deny',
         ),
     )
