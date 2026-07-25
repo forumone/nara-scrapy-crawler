@@ -151,21 +151,25 @@ class NavHarvesterMixin:
     the list harvester's seed set never covered — the failure mode this is
     for is discovering that gap, not avoiding a false positive on it.
 
-    Subclasses opt in by setting PAGER_LINK_EXTRACTOR to a LinkExtractor
-    scoped to that site's pagination/filter controls (e.g.
-    LinkExtractor(restrict_css='.pager')). Unlike .views-row, a populated
-    pager block reliably distinguishes an actual listing from a content page
-    that merely embeds a single-item view (confirmed empirically on
-    obamawhitehouse: known listing pages carry .pager, a known .views-row
-    content-page false positive does not). When set, parse_nav flags any
-    page matching it in the output (url + is_listing + depth) instead of
-    excluding it — a human decides afterward whether it's real listing
-    content to fold into the harvest or exclude — and does not follow the
-    matched pager/filter links themselves, so discovering one doesn't cause
-    the crawler to fan out across its entire pagination range. Other,
-    non-pager links on the same page are still followed normally. The
-    default (None) leaves parse_nav's behavior exactly as before for
-    subclasses that don't set it.
+    Subclasses opt in by setting LISTING_VIEW_LINK_EXTRACTOR to a
+    LinkExtractor scoped to the container a listing's pagination is attached
+    to (e.g. Drupal Views' own wrapper, LinkExtractor(restrict_css='.view') —
+    confirmed on obamawhitehouse to enclose both the item rows and the pager
+    across multiple distinct view templates, teaser-card and table-gallery
+    alike). A populated match reliably distinguishes an actual listing from
+    a content page that merely embeds a single-item view (confirmed
+    empirically: known listing pages carry a .pager inside their .view,  a
+    known single-item-view content-page false positive does not). When set,
+    parse_nav flags any page matching it in the output (url + is_listing +
+    depth) instead of excluding it — a human decides afterward whether it's
+    real listing content to fold into the harvest (typically via its own
+    listing_file/listing_urls entry and a dedicated pagination walk, not by
+    the nav harvester itself) — and does not follow any link inside the
+    matched container, item links and pager/filter controls alike, so
+    discovering one doesn't cause the crawler to fan out across its entire
+    item set or pagination range. Links elsewhere on the same page are still
+    followed normally. The default (None) leaves parse_nav's behavior
+    exactly as before for subclasses that don't set it.
 
     Usage:
         # Step 1: run the list harvester first
@@ -200,10 +204,11 @@ class NavHarvesterMixin:
         'DEPTH_LIMIT': 2,
     }
 
-    # Optional per-subclass hook: a LinkExtractor scoped to this site's
-    # pagination/filter controls. See "Flagging listing pages the list
-    # harvester missed" above. None (the default) disables the feature.
-    PAGER_LINK_EXTRACTOR = None
+    # Optional per-subclass hook: a LinkExtractor scoped to the container a
+    # listing's pagination/filter controls live in. See "Flagging listing
+    # pages the list harvester missed" above. None (the default) disables
+    # the feature.
+    LISTING_VIEW_LINK_EXTRACTOR = None
 
     def __init__(self, listing_file=None, *args, **kwargs):
         if not listing_file:
@@ -255,11 +260,12 @@ class NavHarvesterMixin:
         spider from fanning out into known listing sections and their
         thousands of content URLs.
 
-        Pages matched by PAGER_LINK_EXTRACTOR (previously *unknown* listing
-        pages found only by wandering the nav graph) are still yielded, just
-        flagged via is_listing/depth for human review — see this mixin's
-        docstring. Only the matched pager/filter links themselves are held
-        back from following; other links on the page are followed normally.
+        Pages matched by LISTING_VIEW_LINK_EXTRACTOR (previously *unknown*
+        listing pages found only by wandering the nav graph) are still
+        yielded, just flagged via is_listing/depth for human review — see
+        this mixin's docstring. No link inside the matched container is
+        followed — items and pager/filter controls alike; other links on
+        the page are followed normally.
 
         Links are followed manually (rather than via follow=True in the Rule)
         so that we can gate following on these per-page checks. Subclass
@@ -274,20 +280,28 @@ class NavHarvesterMixin:
             return
         if self._is_listing_page(response):
             return
-        pager_urls = set()
-        if self.PAGER_LINK_EXTRACTOR is not None:
-            pager_urls = {lnk.url for lnk in self.PAGER_LINK_EXTRACTOR.extract_links(response)}
+        view_urls = set()
+        if self.LISTING_VIEW_LINK_EXTRACTOR is not None:
+            view_urls = {lnk.url for lnk in self.LISTING_VIEW_LINK_EXTRACTOR.extract_links(response)}
         yield {
             'url': response.url,
-            'is_listing': bool(pager_urls),
+            'is_listing': bool(view_urls),
             'depth': response.request.meta.get('depth', 0) if response.request else 0,
         }
         for rule in self._rules:
             links = self._filter_web_urls(rule.link_extractor.extract_links(response))
             for link in links:
-                if link.url in pager_urls:
+                if link.url in view_urls:
                     continue
                 yield response.follow(link.url, callback=self.parse_nav)
+
+    # CrawlSpider routes each start_urls response through parse_start_url
+    # instead of the Rule's callback, so without this override a listing
+    # page placed directly in start_urls would bypass _is_listing_page and
+    # LISTING_VIEW_LINK_EXTRACTOR entirely on its first fetch - fanning out
+    # into its full item/pager range unfiltered. Delegating unifies the two
+    # entry points onto identical logic.
+    parse_start_url = parse_nav
 
 
 class ArchiveSpiderMixin:

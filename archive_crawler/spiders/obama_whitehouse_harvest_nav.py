@@ -12,12 +12,16 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
     # archive_crawler/exclusion_rules/<SOURCE_SITE>.yml file.
     SOURCE_SITE = 'www.obamawhitehouse'
 
-    # A populated .pager block reliably distinguishes a real listing page
-    # from a content page that merely embeds a single-item view (confirmed:
-    # /blog and /briefing-room/speeches-and-remarks carry .pager, the known
-    # .views-row false positive on Weekly Address transcripts does not).
-    PAGER_LINK_EXTRACTOR = LinkExtractor(
-        restrict_css='.pager',
+    # .view is Drupal Views' own wrapper and reliably encloses both a
+    # listing's item rows and its pager/filter controls, confirmed across
+    # two distinct templates (teaser-card blog/author listings and the
+    # table-based photo/video gallery view both render inside a .view
+    # div). A populated match distinguishes an actual listing from a content
+    # page that merely embeds a single-item view (confirmed: known listing
+    # pages carry a .pager inside their .view, the known Weekly Address
+    # single-item-view false positive does not).
+    LISTING_VIEW_LINK_EXTRACTOR = LinkExtractor(
+        restrict_css='.view',
         allow_domains=['obamawhitehouse.archives.gov'],
     )
 
@@ -62,6 +66,15 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
         'https://obamawhitehouse.archives.gov/participate',
         'https://obamawhitehouse.archives.gov/omb',
         'https://obamawhitehouse.archives.gov/we-the-geeks',
+        # Added after a discovery run found these office/initiative
+        # micro-sites cut off purely by DEPTH_LIMIT, not because they're
+        # dead ends.
+        'https://obamawhitehouse.archives.gov/administration/eop/ceq',
+        'https://obamawhitehouse.archives.gov/administration/eop/ostp',
+        'https://obamawhitehouse.archives.gov/administration/eop/oceans',
+        'https://obamawhitehouse.archives.gov/administration/eop/sicp',
+        'https://obamawhitehouse.archives.gov/recovery',
+        'https://obamawhitehouse.archives.gov/open',
     ]
 
     rules = (
