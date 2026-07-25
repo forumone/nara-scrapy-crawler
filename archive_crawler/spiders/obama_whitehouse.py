@@ -33,7 +33,8 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
             return
         body = (self._extract_text(response, '.field-items .field-item') or
                 self._extract_text(response, '.longpage-sections') or
-                self._extract_text(response, '#content'))
+                self._extract_text(response, '#content') or
+                self._extract_text(response, '#video-info .caption'))
         if not body:
             self._log_exclusion(response.url, 'no_body')
             return
