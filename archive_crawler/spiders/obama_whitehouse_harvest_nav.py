@@ -25,6 +25,18 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
         allow_domains=['obamawhitehouse.archives.gov'],
     )
 
+    # Raised from the mixin's default of 2: a full run at DEPTH_LIMIT=10
+    # left only 3 confirmed-real content pages permanently unreachable (out
+    # of 171 unique depth-exceeded URLs, the other 168 were just longer
+    # paths to things already found via a shorter route) - 12 gives another
+    # small margin. Overrides custom_settings entirely rather than just
+    # DEPTH_LIMIT, so CRAWLSPIDER_FOLLOW_LINKS: False must be repeated here
+    # too (see the mixin's own custom_settings comment for why).
+    custom_settings = {
+        'DEPTH_LIMIT': 12,
+        'CRAWLSPIDER_FOLLOW_LINKS': False,
+    }
+
     # A large curated start_urls list used to be necessary to get reasonable
     # coverage within the old DEPTH_LIMIT=2. At DEPTH_LIMIT=10, a single
     # entry point reaches virtually everything within budget on a full
