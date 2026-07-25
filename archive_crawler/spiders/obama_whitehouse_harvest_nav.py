@@ -15,15 +15,19 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
     # .view is Drupal Views' own wrapper and reliably encloses both a
     # listing's item rows and its pager/filter controls, confirmed across
     # two distinct templates (teaser-card blog/author listings and the
-    # table-based photo/video gallery view both render inside a .view
-    # div). A populated match distinguishes an actual listing from a content
-    # page that merely embeds a single-item view (confirmed: known listing
-    # pages carry a .pager inside their .view, the known Weekly Address
-    # single-item-view false positive does not).
+    # table-based photo/video gallery view both render inside a .view div).
+    # .view presence ALONE is not enough, though - ordinary topic/content
+    # pages that merely embed a "related videos"/"related blog posts" widget
+    # also render inside a .view container with real links, but carry no
+    # pager (confirmed: /issues/education/k-12 and the Cairo speech page
+    # both do this). LISTING_PAGER_SELECTOR requires an actual populated
+    # pager - .pager-current, confirmed present on both real listing
+    # templates - before a page counts as a listing at all.
     LISTING_VIEW_LINK_EXTRACTOR = LinkExtractor(
         restrict_css='.view',
         allow_domains=['obamawhitehouse.archives.gov'],
     )
+    LISTING_PAGER_SELECTOR = '.pager-current'
 
     # Raised from the mixin's default of 2: a full run at DEPTH_LIMIT=10
     # left only 3 confirmed-real content pages permanently unreachable (out

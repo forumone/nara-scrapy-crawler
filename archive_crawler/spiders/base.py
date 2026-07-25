@@ -159,21 +159,33 @@ class NavHarvesterMixin:
     to (e.g. Drupal Views' own wrapper, LinkExtractor(restrict_css='.view') —
     confirmed on obamawhitehouse to enclose both the item rows and the pager
     across multiple distinct view templates, teaser-card and table-gallery
-    alike). A populated match reliably distinguishes an actual listing from
-    a content page that merely embeds a single-item view (confirmed
-    empirically: known listing pages carry a .pager inside their .view,  a
-    known single-item-view content-page false positive does not). When set,
-    parse_nav flags any page matching it in the output (url + is_listing +
-    depth) instead of excluding it — a human decides afterward whether it's
+    alike) AND LISTING_PAGER_SELECTOR to a CSS selector matching only when a
+    real pager is present (e.g. '.pager-current', confirmed on both
+    templates). Both must be set together and both must match for a page to
+    be treated as a listing - a "view" container alone is NOT sufficient.
+    Confirmed empirically this matters: ordinary content/topic pages that
+    merely embed a "related videos"/"related blog posts" widget also render
+    inside a .view-classed container with real links, but carry no pager at
+    all (unlike the single-item-embed false positive this was originally
+    built to avoid, which doesn't even have a .view wrapper) - restrict_css
+    alone flags these as false-positive listings and, worse, excludes their
+    related-content links from being followed, which can genuinely miss a
+    page only ever linked from inside one of these widgets. Requiring a
+    populated pager closes both problems at once.
+
+    When both match, parse_nav flags the page in the output (url + is_listing
+    + depth) instead of excluding it — a human decides afterward whether it's
     real listing content worth a dedicated pagination walk of its own
     (feeding its content items into listing_file, the same way the
     *_harvest_list spider's own known sections do — never the listing page's
-    own URL) — and does not follow any link inside the
-    matched container, item links and pager/filter controls alike, so
-    discovering one doesn't cause the crawler to fan out across its entire
-    item set or pagination range. Links elsewhere on the same page are still
-    followed normally. The default (None) leaves parse_nav's behavior
-    exactly as before for subclasses that don't set it.
+    own URL) — and does not follow any link inside the matched container,
+    item links and pager/filter controls alike, so discovering one doesn't
+    cause the crawler to fan out across its entire item set or pagination
+    range. Links elsewhere on the same page are still followed normally
+    (and, now, so are a .view container's own links when no pager is
+    present - it's just an ordinary embedded widget, not a listing). The
+    default (None for both) leaves parse_nav's behavior exactly as before
+    for subclasses that don't set them.
 
     Usage:
         # Step 1: run the list harvester first
@@ -225,11 +237,13 @@ class NavHarvesterMixin:
         'CRAWLSPIDER_FOLLOW_LINKS': False,
     }
 
-    # Optional per-subclass hook: a LinkExtractor scoped to the container a
-    # listing's pagination/filter controls live in. See "Flagging listing
-    # pages the list harvester missed" above. None (the default) disables
-    # the feature.
+    # Optional per-subclass hooks, both required together: a LinkExtractor
+    # scoped to the container a listing's pagination/filter controls live
+    # in, AND a CSS selector matching only when a real pager is present. See
+    # "Flagging listing pages the list harvester missed" above. None (the
+    # default) disables the feature.
     LISTING_VIEW_LINK_EXTRACTOR = None
+    LISTING_PAGER_SELECTOR = None
 
     def __init__(self, listing_file=None, *args, **kwargs):
         if not listing_file:
@@ -325,8 +339,9 @@ class NavHarvesterMixin:
         if self._is_listing_page(response):
             return
         view_urls = set()
-        if self.LISTING_VIEW_LINK_EXTRACTOR is not None:
-            view_urls = {lnk.url for lnk in self.LISTING_VIEW_LINK_EXTRACTOR.extract_links(response)}
+        if self.LISTING_VIEW_LINK_EXTRACTOR is not None and self.LISTING_PAGER_SELECTOR is not None:
+            if response.css(self.LISTING_PAGER_SELECTOR):
+                view_urls = {lnk.url for lnk in self.LISTING_VIEW_LINK_EXTRACTOR.extract_links(response)}
         yield {
             'url': response.url,
             'is_listing': bool(view_urls),

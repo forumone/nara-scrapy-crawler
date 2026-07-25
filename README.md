@@ -76,11 +76,16 @@ discovery pass, and the listing harvester runs second, seeded from what the
 nav crawl found — the reverse of the general split-harvester order described
 in `HARVESTING.md` (see that doc's "list-first alternative" callout for why
 a site might instead want the older ordering). This works because
-`obama_whitehouse_harvest_nav.py` sets `LISTING_VIEW_LINK_EXTRACTOR`, which
-lets the nav crawler safely wander into a listing page it's never seen
-before: it flags the page (`is_listing=True`) instead of excluding it, and
-never follows any link inside the listing's `.view` container, so it can't
-fan out into that listing's own item/pagination range.
+`obama_whitehouse_harvest_nav.py` sets `LISTING_VIEW_LINK_EXTRACTOR` (scoped
+to `.view`) and `LISTING_PAGER_SELECTOR` (`'.pager-current'`), required
+together, which let the nav crawler safely wander into a listing page it's
+never seen before: it flags the page (`is_listing=True`) instead of
+excluding it, and never follows any link inside the listing's `.view`
+container, so it can't fan out into that listing's own item/pagination
+range. Both hooks are required together — `.view` presence alone
+false-positives on ordinary topic pages that merely embed a "related videos"
+widget with real links but no actual pagination; requiring a populated pager
+is what tells a real listing apart from one of those.
 
 All harvester and content CSV files are stored under `data/{source_site}/` subdirectories (the root `data/` is git-tracked via `data/.gitkeep`; `.csv` files are gitignored).
 
@@ -307,7 +312,7 @@ To check whether a site has a sitemap, try `{base_url}/sitemap.xml` and `{base_u
 ### Discovery before writing code
 
 1. Identify listing pages (paginated archives of content — look for `.views-row` or similar list containers). Check more than one listing template if the site has more than one visual shape for listings.
-2. Identify the container that wraps *both* a listing's item rows and its pager/filter controls (e.g. Drupal Views' `.view` wrapper) — this is what a nav spider's optional `LISTING_VIEW_LINK_EXTRACTOR` uses to safely flag an unknown listing page instead of needing to know about it in advance. Verify on a confirmed listing and a content page that merely embeds a single-item view — `.views-row` presence alone isn't a reliable signal, a populated pager block is.
+2. Identify the container that wraps *both* a listing's item rows and its pager/filter controls (e.g. Drupal Views' `.view` wrapper), and a selector that only matches when a real pager is present (e.g. `.pager-current`) — a nav spider's optional `LISTING_VIEW_LINK_EXTRACTOR` + `LISTING_PAGER_SELECTOR` (required together) use these to safely flag an unknown listing page instead of needing to know about it in advance. Verify on a confirmed listing and a content page that merely embeds a single-item view or a "related content" widget — `.views-row`/`.view` presence alone isn't a reliable signal (both false-positive on embedded widgets that carry the same markup but no pagination), a populated pager is.
 3. Identify nav entry points (top-level pages reachable from navigation that aren't on any listing) — often just the homepage is enough at a generous `DEPTH_LIMIT`.
 4. Identify content selectors (the CSS selectors for body text and title on content pages).
 
@@ -319,8 +324,9 @@ Briefly: copy `archive_crawler/spiders/obama_whitehouse_harvest_nav.py` and
 `archive_crawler/spiders/obama_whitehouse_harvest_list.py`, update `name`,
 `allowed_domains`, `SOURCE_SITE`, `start_urls`, and the listing selectors in
 `harvest_list.py`'s `parse()`; run nav-first with an empty `listing_file` if
-`LISTING_VIEW_LINK_EXTRACTOR` is set, review the `is_listing=True` output,
-promote confirmed listings into the listing harvester's `start_urls`, then
+`LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_PAGER_SELECTOR` are set, review the
+`is_listing=True` output, promote confirmed listings into the listing
+harvester's `start_urls`, then
 merge and run the content spider.
 
 ### Creating a sitemap-based content spider

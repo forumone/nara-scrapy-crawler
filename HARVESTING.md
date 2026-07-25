@@ -109,12 +109,19 @@ Inspect the live site to answer these questions before writing any code:
 Create `archive_crawler/spiders/<site>_harvest_nav.py` using `NavHarvesterMixin`.
 Set `SOURCE_SITE` to match the content spider's own `SOURCE_SITE` (they share
 one `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml` file), and — if step 1
-found a reliable listing-container selector — set `LISTING_VIEW_LINK_EXTRACTOR`
-so the crawler can safely wander into a listing it's never seen before: it
-flags the page (`is_listing=True` in the output) instead of excluding it, and
-does not follow any link inside the matched container (item links and
-pager/filter controls alike), so discovering a huge listing can't make the
-crawler fan out across its full item or pagination range.
+found a reliable listing-container selector and pager selector — set both
+`LISTING_VIEW_LINK_EXTRACTOR` and `LISTING_PAGER_SELECTOR` (required
+together) so the crawler can safely wander into a listing it's never seen
+before: it flags the page (`is_listing=True` in the output) instead of
+excluding it, and does not follow any link inside the matched container (item
+links and pager/filter controls alike), so discovering a huge listing can't
+make the crawler fan out across its full item or pagination range.
+`LISTING_VIEW_LINK_EXTRACTOR` alone is not enough — an ordinary content page
+that merely embeds a "related content" widget can render inside the exact
+same container with real links but no pager at all; `LISTING_PAGER_SELECTOR`
+requiring an actual populated pager is what tells the two apart (confirmed:
+`restrict_css='.view'` alone false-positived on topic pages embedding a
+"related videos" block with zero pagination).
 
 ```python
 from scrapy.linkextractors import LinkExtractor
@@ -126,11 +133,14 @@ class MySiteHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
     allowed_domains = ["example.archives.gov"]
     SOURCE_SITE = 'example'  # matches the content spider's SOURCE_SITE
 
-    # Optional: only set this if step 1 found a reliable listing container.
+    # Optional, required together: only set these if step 1 found a
+    # reliable listing container AND a pager selector that reliably
+    # indicates real pagination (not just any link inside the container).
     LISTING_VIEW_LINK_EXTRACTOR = LinkExtractor(
         restrict_css='.view',
         allow_domains=['example.archives.gov'],
     )
+    LISTING_PAGER_SELECTOR = '.pager-current'
 
     start_urls = [
         "https://example.archives.gov/",
@@ -291,8 +301,9 @@ unexpectedly large gaps before proceeding. Categories of expected non-matches:
   Spot-check a sample to confirm they are real content pages, not noise.
 
 > **List-first alternative.** If step 1 couldn't identify a reliable listing
-> container, or the site's listings are already fully known and small: skip
-> `LISTING_VIEW_LINK_EXTRACTOR`, run step 4 first against a manually-curated
+> container and pager selector, or the site's listings are already fully
+> known and small: skip both `LISTING_VIEW_LINK_EXTRACTOR` and
+> `LISTING_PAGER_SELECTOR`, run step 4 first against a manually-curated
 > set of known listing URLs (no step 3 needed), then run step 2's nav crawl
 > second with that step's output as a real, non-empty `listing_file` — the
 > nav crawl will skip everything already captured and only needs to cover
