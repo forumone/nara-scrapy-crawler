@@ -43,7 +43,6 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
         'https://obamawhitehouse.archives.gov/administration/cabinet/exit-memos',
         'https://obamawhitehouse.archives.gov/administration/eop',
         'https://obamawhitehouse.archives.gov/administration/senior-leadership',
-        'https://obamawhitehouse.archives.gov/espanol',
         'https://obamawhitehouse.archives.gov/accessibility',
         'https://obamawhitehouse.archives.gov/joiningforces',
         'https://obamawhitehouse.archives.gov/reach-higher',
