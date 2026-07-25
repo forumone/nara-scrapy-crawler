@@ -12,6 +12,15 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
     # archive_crawler/exclusion_rules/<SOURCE_SITE>.yml file.
     SOURCE_SITE = 'www.obamawhitehouse'
 
+    # A populated .pager block reliably distinguishes a real listing page
+    # from a content page that merely embeds a single-item view (confirmed:
+    # /blog and /briefing-room/speeches-and-remarks carry .pager, the known
+    # .views-row false positive on Weekly Address transcripts does not).
+    PAGER_LINK_EXTRACTOR = LinkExtractor(
+        restrict_css='.pager',
+        allow_domains=['obamawhitehouse.archives.gov'],
+    )
+
     start_urls = [
         'https://obamawhitehouse.archives.gov/',
         'https://obamawhitehouse.archives.gov/briefing-room',
