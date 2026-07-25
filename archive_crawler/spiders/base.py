@@ -235,16 +235,27 @@ class NavHarvesterMixin:
 
     def _apply_nav_deny(self, links):
         """Rule process_links hook: drop links matching this domain's
-        nav_deny regex patterns (archive_crawler/exclusion_rules/<SOURCE_SITE>.yml).
+        nav_deny regex patterns OR its rules: entries
+        (archive_crawler/exclusion_rules/<SOURCE_SITE>.yml). Checking rules:
+        here too means an out-of-scope URL (e.g. a non-English mirror) only
+        needs one entry to be excluded from both the nav crawl and the
+        content spider, instead of a duplicate in each list. nav_deny stays
+        available for exclusions that should hold the nav crawler back
+        without also excluding the URL from a content scrape reached some
+        other way (e.g. a known-duplicate URL shape not worth nav-following
+        into, but fine to scrape if it ends up in a url_file regardless).
         Referenced by name ('_apply_nav_deny') in subclasses' Rule(...) so it
         resolves against the spider instance at _compile_rules() time, after
         -a rules_file/-a rules_mode are already set - unlike a Rule built at
         class-definition time, which can't see per-run CLI overrides.
         """
-        patterns = _exclusion_rules_module.nav_deny_patterns(self._get_exclusion_rules())
-        if not patterns:
-            return links
-        return [lnk for lnk in links if not any(re.search(p, lnk.url) for p in patterns)]
+        rules = self._get_exclusion_rules()
+        patterns = _exclusion_rules_module.nav_deny_patterns(rules)
+        return [
+            lnk for lnk in links
+            if _exclusion_rules_module.match_exclude(lnk.url, rules) is None
+            and not any(re.search(p, lnk.url) for p in patterns)
+        ]
 
     def _is_listing_page(self, response):
         """Return True if this URL should be skipped entirely.

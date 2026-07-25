@@ -9,5 +9,8 @@ rules:
     pattern: "/espanol"
     reason: "url_pattern:/espanol"
 
-nav_deny:
-  - 'archives\.gov/espanol(/|$)'
+# nav_deny is for exclusions that should hold the nav crawler back without
+# also excluding the URL from a content scrape reached some other way - see
+# NavHarvesterMixin._apply_nav_deny. Empty today: /espanol above is excluded
+# from both nav and content-scrape via rules: alone.
+nav_deny: []
