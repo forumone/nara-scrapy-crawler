@@ -127,11 +127,14 @@ class NavHarvesterMixin:
     Every nav harvester must be given the output of its companion
     *_harvest_list spider via -a listing_file=<path>. This is not optional.
 
-    The listing file provides URL-based pre-filtering: known listing-page URLs
-    are loaded into _listing_urls at startup and checked before any request is
-    made. A URL in that set is never fetched, never emitted, and its links are
-    never followed. This is the definitive mechanism for keeping listing content
-    out of the nav harvest.
+    The listing file is the *_harvest_list spider's own output: individual
+    content-item URLs it extracted from known listing pages' .views-row
+    entries while walking their pagination - NOT the listing pages'
+    own URLs. It is loaded into _listing_urls at startup as a dedup set: a
+    URL in that set is already known good content harvested the efficient
+    way (direct pagination walk), so the nav crawler must not re-fetch,
+    re-emit, or re-follow it - doing so would just waste budget rediscovering
+    thousands of already-known content URLs by wandering the nav graph.
 
     CSS-based listing detection (overriding _is_listing_page to inspect the
     response body) is intentionally not used to *exclude* pages in split
@@ -162,9 +165,10 @@ class NavHarvesterMixin:
     known single-item-view content-page false positive does not). When set,
     parse_nav flags any page matching it in the output (url + is_listing +
     depth) instead of excluding it — a human decides afterward whether it's
-    real listing content to fold into the harvest (typically via its own
-    listing_file/listing_urls entry and a dedicated pagination walk, not by
-    the nav harvester itself) — and does not follow any link inside the
+    real listing content worth a dedicated pagination walk of its own
+    (feeding its content items into listing_file, the same way the
+    *_harvest_list spider's own known sections do — never the listing page's
+    own URL) — and does not follow any link inside the
     matched container, item links and pager/filter controls alike, so
     discovering one doesn't cause the crawler to fan out across its entire
     item set or pagination range. Links elsewhere on the same page are still
@@ -243,12 +247,14 @@ class NavHarvesterMixin:
         return [lnk for lnk in links if not any(re.search(p, lnk.url) for p in patterns)]
 
     def _is_listing_page(self, response):
-        """Return True if this response is a listing page that should be skipped.
+        """Return True if this URL should be skipped entirely.
 
-        Default implementation checks only _listing_urls (populated from
-        listing_file). Subclasses add site-specific detection — for example,
-        checking for .views-row on sites where that selector reliably identifies
-        listing pages and does not appear on content pages with embedded views.
+        Despite the name, this checks whether the URL is already-known
+        content (from listing_file), not whether the page itself is a
+        listing - see the "listing_file is required" section above. Kept as
+        an overridable hook in case a subclass ever needs a genuinely
+        different skip condition, but do not add CSS-based listing detection
+        here - use LISTING_VIEW_LINK_EXTRACTOR (flag, don't exclude) instead.
         """
         return response.url in self._listing_urls
 
