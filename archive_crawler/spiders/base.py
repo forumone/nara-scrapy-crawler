@@ -289,7 +289,7 @@ class NavHarvesterMixin:
             'depth': response.request.meta.get('depth', 0) if response.request else 0,
         }
         for rule in self._rules:
-            links = self._filter_web_urls(rule.link_extractor.extract_links(response))
+            links = self._apply_nav_deny(self._filter_web_urls(rule.link_extractor.extract_links(response)))
             for link in links:
                 if link.url in view_urls:
                     continue
