@@ -25,55 +25,14 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
         allow_domains=['obamawhitehouse.archives.gov'],
     )
 
+    # A large curated start_urls list used to be necessary to get reasonable
+    # coverage within the old DEPTH_LIMIT=2. At DEPTH_LIMIT=10, a single
+    # entry point reaches virtually everything within budget on a full
+    # (non-timed-out) run - additional seeds should only be added back if
+    # such a run still logs genuine depth-exceeded ignores for a section,
+    # not preemptively.
     start_urls = [
         'https://obamawhitehouse.archives.gov/',
-        'https://obamawhitehouse.archives.gov/briefing-room',
-        'https://obamawhitehouse.archives.gov/briefing-room/disclosures',
-        'https://obamawhitehouse.archives.gov/briefing-room/disclosures/visitor-records',
-        'https://obamawhitehouse.archives.gov/briefing-room/disclosures/financial-disclosures',
-        'https://obamawhitehouse.archives.gov/briefing-room/disclosures/ethics-pledge-waivers',
-        'https://obamawhitehouse.archives.gov/the-record',
-        'https://obamawhitehouse.archives.gov/issues',
-        'https://obamawhitehouse.archives.gov/administration',
-        'https://obamawhitehouse.archives.gov/administration/president-obama',
-        'https://obamawhitehouse.archives.gov/vp',
-        'https://obamawhitehouse.archives.gov/administration/first-lady-michelle-obama',
-        'https://obamawhitehouse.archives.gov/administration/jill-biden',
-        'https://obamawhitehouse.archives.gov/administration/cabinet',
-        'https://obamawhitehouse.archives.gov/administration/cabinet/exit-memos',
-        'https://obamawhitehouse.archives.gov/administration/eop',
-        'https://obamawhitehouse.archives.gov/administration/senior-leadership',
-        'https://obamawhitehouse.archives.gov/accessibility',
-        'https://obamawhitehouse.archives.gov/joiningforces',
-        'https://obamawhitehouse.archives.gov/reach-higher',
-        'https://obamawhitehouse.archives.gov/my-brothers-keeper',
-        'https://obamawhitehouse.archives.gov/precision-medicine',
-        'https://obamawhitehouse.archives.gov/champions',
-        'https://obamawhitehouse.archives.gov/climate-change',
-        'https://obamawhitehouse.archives.gov/economy',
-        'https://obamawhitehouse.archives.gov/education',
-        'https://obamawhitehouse.archives.gov/trade',
-        'https://obamawhitehouse.archives.gov/21stcenturygov',
-        'https://obamawhitehouse.archives.gov/1600',
-        'https://obamawhitehouse.archives.gov/1600/Presidents',
-        'https://obamawhitehouse.archives.gov/1600/first-ladies',
-        'https://obamawhitehouse.archives.gov/about/inside-white-house',
-        'https://obamawhitehouse.archives.gov/sotu',
-        'https://obamawhitehouse.archives.gov/farewell',
-        'https://obamawhitehouse.archives.gov/medal-of-freedom',
-        'https://obamawhitehouse.archives.gov/inauguration-2013',
-        'https://obamawhitehouse.archives.gov/participate',
-        'https://obamawhitehouse.archives.gov/omb',
-        'https://obamawhitehouse.archives.gov/we-the-geeks',
-        # Added after a discovery run found these office/initiative
-        # micro-sites cut off purely by DEPTH_LIMIT, not because they're
-        # dead ends.
-        'https://obamawhitehouse.archives.gov/administration/eop/ceq',
-        'https://obamawhitehouse.archives.gov/administration/eop/ostp',
-        'https://obamawhitehouse.archives.gov/administration/eop/oceans',
-        'https://obamawhitehouse.archives.gov/administration/eop/sicp',
-        'https://obamawhitehouse.archives.gov/recovery',
-        'https://obamawhitehouse.archives.gov/open',
     ]
 
     rules = (
