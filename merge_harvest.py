@@ -6,6 +6,13 @@ depth output can be merged with a listing harvester's url-only output. The
 merged file's header is the union of all input columns, in first-seen order;
 rows from a file missing a given column get '' for it.
 
+Rows are deduplicated by 'url': for a URL appearing in more than one input,
+only the row from the first file listing it is kept (so listing a nav CSV
+before a listing-harvest CSV keeps the nav row's is_listing/depth metadata).
+This matters because the listing harvester has no awareness of what the nav
+harvester already found via cross-links - without this, a content item
+reachable both ways would be scraped twice by the content spider.
+
 Usage:
     python merge_harvest.py \\
         -o data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv \\
@@ -35,18 +42,31 @@ def main():
                     seen.add(name)
                     fieldnames.append(name)
 
+    seen_urls = set()
+    merged_rows = []
     total = 0
+    duplicates = 0
+    for path in args.inputs:
+        with open(path, newline='', encoding='utf-8-sig') as in_f:
+            rows = list(csv.DictReader(in_f))
+            total += len(rows)
+            kept = 0
+            for row in rows:
+                if row['url'] in seen_urls:
+                    duplicates += 1
+                    continue
+                seen_urls.add(row['url'])
+                merged_rows.append(row)
+                kept += 1
+            print(f'  {len(rows):>6} rows ({kept} new)  {path}')
+
     with open(args.output, 'w', newline='', encoding='utf-8-sig') as out_f:
         writer = csv.DictWriter(out_f, fieldnames=fieldnames, restval='')
         writer.writeheader()
-        for path in args.inputs:
-            with open(path, newline='', encoding='utf-8-sig') as in_f:
-                rows = list(csv.DictReader(in_f))
-                writer.writerows(rows)
-                total += len(rows)
-                print(f'  {len(rows):>6} rows  {path}')
+        writer.writerows(merged_rows)
 
-    print(f'  {total:>6} rows total -> {args.output}')
+    print(f'  {total:>6} rows read, {duplicates} duplicate url(s) dropped, '
+          f'{len(merged_rows)} rows written -> {args.output}')
     print(f'  columns: {fieldnames}')
 
 
