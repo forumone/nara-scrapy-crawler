@@ -9,6 +9,25 @@ rules:
     pattern: "/espanol"
     reason: "url_pattern:/espanol"
 
+  # This archived site "solidifies" what were originally live query-string
+  # parameters into literal /index__q_KEY=VALUE.html path segments (there is
+  # no real '?' in these URLs - confirmed via urlparse, the whole thing is
+  # part of .path). Scoped to tracking-only parameter names (tw_p: Twitter
+  # referral; utm_source/utm_medium/utm_content/utm_campaign/utm_expid:
+  # marketing/email campaign tracking) that don't affect what's rendered -
+  # confirmed via a live diff that a tw_p-decorated URL and its bare
+  # counterpart are byte-identical except for a per-request random CSRF
+  # theme_token, both reporting the same Drupal node id. Deliberately does
+  # NOT match /index__q_page=, /index__q_order=, or /index__q_category= -
+  # those are genuine pagination/sort/filter variants with different
+  # content, not duplicates of the bare URL. Surveyed the full known corpus
+  # (2026-07-26): only 26 URLs match this pattern out of ~35,482 total
+  # (~0.07%) - a real but small-scale issue, not a meaningful driver of any
+  # content-count gap.
+  - match: regex
+    pattern: '/index__q_(tw_p|utm_source|utm_expid)=[^/]*\.html$'
+    reason: "duplicate_tracking_param_suffix"
+
   # Discovered by walking /espanol/blog and /espanol/prensa's own
   # pagination (2026-07-26) - both are real listings (confirmed .view +
   # .pager-current present) whose items are ordinary /blog/* and
