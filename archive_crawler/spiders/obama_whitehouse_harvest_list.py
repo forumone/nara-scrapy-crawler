@@ -572,20 +572,6 @@ class ObamaWhiteHouseHarvestListSpider(scrapy.Spider):
     # entries include 42 author blogs not otherwise in start_urls - those 42
     # are listed above individually instead.
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Spans the whole run, not just one seed's own pagination walk: some
-        # listing templates embed the *same* underlying view on every page in
-        # the set rather than one scoped to that specific page, so two
-        # different start_urls can walk into an identical, already-known item
-        # range. Confirmed empirically: every /photos-and-video/video/*
-        # permalink embeds the same sitewide "latest videos" catalog (not a
-        # per-video "related content" widget - two different videos' pages
-        # showed byte-identical item lists), so without this, ~30 separate
-        # video-permalink seeds would each independently re-walk the same
-        # 740-page catalog.
-        self._seen_urls = set()
-
     def parse(self, response):
         # Three known listing templates: teaser-card (.views-row h2/h3 a,
         # e.g. blog/author pages), table-based gallery (.views-field-title,
@@ -603,14 +589,8 @@ class ObamaWhiteHouseHarvestListSpider(scrapy.Spider):
         if not links:
             return
 
-        new_count = 0
         for href in links:
-            url = response.urljoin(href)
-            if url in self._seen_urls:
-                continue
-            self._seen_urls.add(url)
-            new_count += 1
-            yield {'url': url}
+            yield {'url': response.urljoin(href)}
 
         # .pager-current's immediately-following sibling <li> holds the
         # forward link in both templates (a "Next" link in the teaser-card
@@ -618,13 +598,6 @@ class ObamaWhiteHouseHarvestListSpider(scrapy.Spider):
         # empirically on both, so one selector covers both rather than
         # branching on .pager-next (which the gallery template doesn't use
         # at all).
-        #
-        # Stop paginating once a page yields zero new items: a shared view
-        # (see _seen_urls above) is confirmed deterministic and identical
-        # regardless of entry point, so once a seed has walked into a range
-        # another seed already fully covered, every further page will also
-        # be 100% duplicate - continuing would just re-fetch the rest of
-        # that other seed's own walk for no new content.
         next_page = response.css('.pager-current + li a::attr(href)').get()
-        if next_page and new_count > 0:
+        if next_page:
             yield response.follow(next_page, callback=self.parse)
