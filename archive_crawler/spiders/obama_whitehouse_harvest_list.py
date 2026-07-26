@@ -505,17 +505,77 @@ class ObamaWhiteHouseHarvestListSpider(scrapy.Spider):
         "https://obamawhitehouse.archives.gov/photos-and-video/video/white-house-easter-prayer-breakfast",
         "https://obamawhitehouse.archives.gov/youngafrica/blog",
         "https://obamawhitehouse.archives.gov/youngamericans/blog",
+        # Found via /blog/authors (a person-directory listing of every blog
+        # author - NOT itself added here, see the note above parse() for
+        # why) - these 42 author blogs were never surfaced by nav wandering
+        # at all, only by walking that directory's own pagination as a
+        # one-off discovery pass.
+        "https://obamawhitehouse.archives.gov/blog/author/Tania-Simoncelli",
+        "https://obamawhitehouse.archives.gov/blog/author/alefiyah-mesiwala",
+        "https://obamawhitehouse.archives.gov/blog/author/alissa-ko",
+        "https://obamawhitehouse.archives.gov/blog/author/amanda-lucidon",
+        "https://obamawhitehouse.archives.gov/blog/author/anita-breckenridge",
+        "https://obamawhitehouse.archives.gov/blog/author/asra-najam",
+        "https://obamawhitehouse.archives.gov/blog/author/bess-evans",
+        "https://obamawhitehouse.archives.gov/blog/author/brian-mosteller",
+        "https://obamawhitehouse.archives.gov/blog/author/candace-vahlsing",
+        "https://obamawhitehouse.archives.gov/blog/author/cassandra-marketos",
+        "https://obamawhitehouse.archives.gov/blog/author/christine-harada-0",
+        "https://obamawhitehouse.archives.gov/blog/author/christy-goldfuss",
+        "https://obamawhitehouse.archives.gov/blog/author/contessa-jin",
+        "https://obamawhitehouse.archives.gov/blog/author/cristin-dorgelo",
+        "https://obamawhitehouse.archives.gov/blog/author/david-simas",
+        "https://obamawhitehouse.archives.gov/blog/author/denis-mcdonough",
+        "https://obamawhitehouse.archives.gov/blog/author/fred-p-hochberg",
+        "https://obamawhitehouse.archives.gov/blog/author/ginette-maga%C3%B1a",
+        "https://obamawhitehouse.archives.gov/blog/author/jamal-brown",
+        "https://obamawhitehouse.archives.gov/blog/author/jason-goldman",
+        "https://obamawhitehouse.archives.gov/blog/author/jennifer-lee",
+        "https://obamawhitehouse.archives.gov/blog/author/jesse-moore",
+        "https://obamawhitehouse.archives.gov/blog/author/jillian-maryonovich",
+        "https://obamawhitehouse.archives.gov/blog/author/john-p-holdren",
+        "https://obamawhitehouse.archives.gov/blog/author/katy-kale",
+        "https://obamawhitehouse.archives.gov/blog/author/keith-maley",
+        "https://obamawhitehouse.archives.gov/blog/author/kimberlyn-leary",
+        "https://obamawhitehouse.archives.gov/blog/author/laura-s-h-holgate",
+        "https://obamawhitehouse.archives.gov/blog/author/maya-shankar",
+        "https://obamawhitehouse.archives.gov/blog/author/michael-d-smith",
+        "https://obamawhitehouse.archives.gov/blog/author/michael-robertson",
+        "https://obamawhitehouse.archives.gov/blog/author/parker-liautaud",
+        "https://obamawhitehouse.archives.gov/blog/author/paulette-aniskoff",
+        "https://obamawhitehouse.archives.gov/blog/author/rohan-patel",
+        "https://obamawhitehouse.archives.gov/blog/author/secretary-ashton-carter",
+        "https://obamawhitehouse.archives.gov/blog/author/secretary-john-kerry",
+        "https://obamawhitehouse.archives.gov/blog/author/sheila-nix",
+        "https://obamawhitehouse.archives.gov/blog/author/vice-president-joe-biden",
+        "https://obamawhitehouse.archives.gov/blog/author/yohannes-abraham",
     ]
 
+    # /blog/authors is a person-directory listing (view-person-listings) of
+    # every blog author - deliberately NOT in start_urls above, even though
+    # parse() below can now extract it via .views-field-nid. Its "items" are
+    # themselves listing pages (/blog/author/X), not content - walking it
+    # normally would yield listing-page URLs into harvest-listing.csv as if
+    # they were leaf content, the same mistake made and corrected earlier
+    # this session (see NavHarvesterMixin's listing_file docstring). Confirmed
+    # via a one-off discovery pass (not a start_urls entry) that its 110
+    # entries include 42 author blogs not otherwise in start_urls - those 42
+    # are listed above individually instead.
+
     def parse(self, response):
-        # Two known listing templates: teaser-card (.views-row, e.g. blog/
-        # author pages) and table-based gallery (.views-field-title, e.g.
-        # photo/video galleries). Try the first, fall back to the second.
+        # Three known listing templates: teaser-card (.views-row h2/h3 a,
+        # e.g. blog/author pages), table-based gallery (.views-field-title,
+        # e.g. photo/video galleries), and person-directory
+        # (.views-field-nid, e.g. /blog/authors - see the note above this
+        # method for why that specific page isn't walked as a normal seed
+        # despite this selector supporting it). Try each in turn.
         links = response.css(
             '.views-row h2 a::attr(href), .views-row h3 a::attr(href)'
         ).getall()
         if not links:
             links = response.css('.views-field-title a::attr(href)').getall()
+        if not links:
+            links = response.css('.views-row .views-field-nid a::attr(href)').getall()
         if not links:
             return
 
