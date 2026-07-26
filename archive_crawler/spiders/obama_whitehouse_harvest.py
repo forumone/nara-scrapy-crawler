@@ -244,8 +244,20 @@ class ObamaWhiteHouseHarvestSpider(NavHarvesterMixin, CrawlSpider):
         "https://obamawhitehouse.archives.gov/photos-and-video/video/2009/12/22/gingerbread-white-house",
         "https://obamawhitehouse.archives.gov/recovery/blog",
         "https://obamawhitehouse.archives.gov/strongmiddleclass/blog",
-        "https://obamawhitehouse.archives.gov/video/President-Obama-Speaks-to-the-Muslim-World-from-Cairo-Egypt",
-        "https://obamawhitehouse.archives.gov/video/President-Obama-on-Urban-Policy",
+        # /video/President-Obama-Speaks-to-the-Muslim-World-from-Cairo-Egypt
+        # and /video/President-Obama-on-Urban-Policy were REMOVED from here
+        # 2026-07-26, run 1 of this unified spider - both were pre-existing
+        # entries the original 2026-07-25 video-seed trim (231 -> 1) missed
+        # entirely, since they use an older /video/Title-Case-Slug URL
+        # convention rather than the /photos-and-video/video/* shape that
+        # trim was scoped to. Confirmed via this spider's own first full run:
+        # both walked to exactly page 740 - the same page count as the one
+        # intended video seed above, gingerbread-white-house - the exact
+        # signature already used to prove byte-identical shared catalogs
+        # elsewhere in this project. Two more redundant re-walks of the
+        # identical ~5,920-item catalog, zero unique content, ~1,480 wasted
+        # page fetches. Do not re-add either without first diffing their
+        # item lists against gingerbread-white-house's own.
         # Discovered via the nav harvester run 5 (DEPTH_LIMIT=12, tightened
         # is_listing check), reviewed and confirmed as real listings.
         # Excluded from promotion: 4 congress.gov-linked legislation
