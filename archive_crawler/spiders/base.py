@@ -290,9 +290,19 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     populated pager closes both problems at once.
 
     When both match, parse_nav flags the page in the output (url + is_listing
-    + depth) AND fingerprints the container's extracted item-URL set (sha1 of
-    the sorted tuple - see _listing_fingerprint). If the fingerprint is new
-    (this exact item set has never been walked this run), the listing's full
+    + depth) AND fingerprints the page's clean, template-specific item set -
+    _listing_pagination_items(response), sha1 of the sorted tuple, see
+    _listing_fingerprint - NOT the wider view_urls set LISTING_VIEW_LINK_EXTRACTOR
+    extracts from the whole .view container. That wider set also includes the
+    container's own numbered pager links (a Drupal pager renders nearby page
+    numbers, not just a single "next" arrow), which point back to THAT
+    permalink's own URL and so differ per permalink even when the real catalog
+    items are byte-identical - fingerprinting view_urls directly would silently
+    defeat the whole dedup mechanism (confirmed during smoke-testing: two
+    photogallery permalinks sharing an identical 8-item catalog hashed
+    differently until the fingerprint was switched to the clean item set).
+    If the fingerprint is new (this exact item set has never been walked this
+    run), the listing's full
     pagination gets walked automatically via _walk_listing_pagination, and
     each extracted item is fetched through this same parse_nav callback
     (response.follow(item_url, callback=self.parse_nav)) rather than merely
@@ -545,10 +555,28 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         }
         self._census_links(response)
         if view_urls and response.url not in self.FORCE_SKIP_LISTING_URLS:
+            # Fingerprint the clean, template-specific item set
+            # (_listing_pagination_items), NOT view_urls - view_urls comes
+            # from LISTING_VIEW_LINK_EXTRACTOR's wide .view-container scan,
+            # which also picks up the container's own numbered pager links
+            # (e.g. a Drupal pager rendering nearby page numbers, not just a
+            # single "next" arrow). Those pager links point back to THIS
+            # permalink's own URL, so every permalink's view_urls differs
+            # even when the real catalog items are byte-identical -
+            # confirmed empirically: two photogallery permalinks sharing the
+            # exact same 8-item catalog hashed to different view_urls
+            # fingerprints (16 raw links each, 8 of them self-referential
+            # index__q_page=N.html pager links unique to that permalink) but
+            # the identical fingerprint once computed from
+            # _listing_pagination_items alone. Using the contaminated
+            # view_urls set here would silently defeat the entire dedup
+            # mechanism - the exact fan-out failure mode this was built to
+            # prevent.
+            item_urls = {response.urljoin(href) for href in self._listing_pagination_items(response)}
             # Register before walking, not after - avoids a race where two
             # near-simultaneous discoveries of the same shared catalog both
             # start walking before either finishes.
-            fingerprint = self._listing_fingerprint(view_urls)
+            fingerprint = self._listing_fingerprint(item_urls)
             if fingerprint not in self._seen_listing_fingerprints:
                 self._seen_listing_fingerprints.add(fingerprint)
                 yield from self._walk_listing_pagination(response, _skip_census=True)
