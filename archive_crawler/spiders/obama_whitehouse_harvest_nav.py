@@ -29,15 +29,21 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
     )
     LISTING_PAGER_SELECTOR = '.pager-current'
 
-    # Raised from the mixin's default of 2: a full run at DEPTH_LIMIT=10
-    # left only 3 confirmed-real content pages permanently unreachable (out
-    # of 171 unique depth-exceeded URLs, the other 168 were just longer
-    # paths to things already found via a shorter route) - 12 gives another
-    # small margin. Overrides custom_settings entirely rather than just
+    # Raised from the mixin's default of 2, then 10, then 12: each full run
+    # left only a small, fully-explained residual of real content one hop
+    # past the ceiling (3 pages at 10, 11 more at 12 - clustered around
+    # holidays/year-end content and per-item budget-amendment pages), never
+    # a large unexplained gap. Raised again to 20 under BFS - since the
+    # crawler now exhausts each depth layer before going deeper (unlike the
+    # old DFS/LIFO default, which could dive down one long thread first),
+    # a generous ceiling costs nothing once the frontier is actually
+    # exhausted; it should catch everything except content only reachable
+    # by repeatedly clicking "next item" in a series with no shortcut back
+    # to a hub page. Overrides custom_settings entirely rather than just
     # DEPTH_LIMIT, so CRAWLSPIDER_FOLLOW_LINKS: False must be repeated here
     # too (see the mixin's own custom_settings comment for why).
     custom_settings = {
-        'DEPTH_LIMIT': 12,
+        'DEPTH_LIMIT': 20,
         'CRAWLSPIDER_FOLLOW_LINKS': False,
     }
 
