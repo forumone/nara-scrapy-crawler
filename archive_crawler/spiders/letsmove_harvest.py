@@ -1,7 +1,6 @@
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
 
-from archive_crawler import exclusion_rules
 from archive_crawler.spiders.base import NavHarvesterMixin
 
 
@@ -10,15 +9,20 @@ class LetsMoveHarvestSpider(NavHarvesterMixin, CrawlSpider):
     letsmove_harvest_nav/_list spiders and merge_harvest.py's reconciliation
     step for this site - same pattern as obama_whitehouse_harvest.py (see
     that spider's own docstring for the full rationale). One CrawlSpider:
-    ordinary nav link-following flags a listing (is_listing=True) and never
-    follows into its .view container; a still-curated LISTING_SEEDS list
-    (just /blog/ for this site - the only known listing section) gets its
-    pagination walked inline instead of merely flagged.
+    ordinary nav link-following flags a listing (is_listing=True), fingerprints
+    its item-URL set, and auto-walks its pagination the first time that
+    fingerprint is seen (NavHarvesterMixin's fingerprint mechanism - no
+    curated seed list).
 
-    Much smaller/lower-risk than the Obama WH version: one listing section
-    (~98 pages, ~1,458 items, confirmed by a live walk 2026-07-26), not 255
-    seeds across multiple shared-catalog-risk templates - no
-    video/photogallery-style duplicate-catalog concern here.
+    Much smaller/lower-risk than the Obama WH version: one main listing
+    section (~98 pages, ~1,458 items, confirmed by a live walk 2026-07-26),
+    not 255 seeds across multiple shared-catalog-risk templates - no
+    video/photogallery-style duplicate-catalog concern here. Individual blog
+    posts also embed a "recent posts" widget sharing the same view id
+    (most_recent) and pager-token scheme as /blog/'s own listing - if its
+    item set is identical across posts, the fingerprint mechanism collapses
+    it the same way as any other shared catalog; if it varies per post, each
+    gets walked once, which is harmless at this site's scale either way.
     """
 
     name = "letsmove_harvest"
@@ -59,13 +63,6 @@ class LetsMoveHarvestSpider(NavHarvesterMixin, CrawlSpider):
         'FEED_EXPORT_FIELDS': ['url', 'is_listing', 'depth'],
     }
 
-    # The one known listing section on this site. Unlike Obama WH's 255
-    # human-curated entries, this list has never needed growing - the old
-    # split-harvester model only ever seeded /blog/ here too.
-    LISTING_SEEDS = [
-        "https://letsmove.obamawhitehouse.archives.gov/blog/",
-    ]
-
     start_urls = [
         "https://letsmove.obamawhitehouse.archives.gov/",
         # Pages confirmed beyond depth 4 from the homepage under the old,
@@ -76,7 +73,7 @@ class LetsMoveHarvestSpider(NavHarvesterMixin, CrawlSpider):
         "https://letsmove.obamawhitehouse.archives.gov/meetup",
         "https://letsmove.obamawhitehouse.archives.gov/promote-affordable-accessible-food",
         "https://letsmove.obamawhitehouse.archives.gov/share-your-story-lets-move-olympic-fun-day",
-    ] + LISTING_SEEDS
+    ]
 
     rules = (
         Rule(
@@ -86,44 +83,8 @@ class LetsMoveHarvestSpider(NavHarvesterMixin, CrawlSpider):
         ),
     )
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._listing_seed_urls = set(self.LISTING_SEEDS)
+    def _listing_pagination_items(self, response):
+        return response.css('.views-row .views-field-title a::attr(href)').getall()
 
-    def parse_start_url(self, response):
-        """CrawlSpider routes every start_urls response here instead of the
-        Rule's own callback - same dispatch as obama_whitehouse_harvest.py."""
-        if response.url in self._listing_seed_urls:
-            yield {
-                'url': response.url,
-                'is_listing': True,
-                'depth': response.request.meta.get('depth', 0) if response.request else 0,
-            }
-            yield from self._walk_listing_pagination(response)
-        else:
-            yield from self.parse_nav(response)
-
-    def _walk_listing_pagination(self, response):
-        """Extract this listing page's items and follow its own pager,
-        recursing through subsequent pages via this same callback - ported
-        from the old letsmove_harvest_list.py's parse(). Does NOT flag
-        subsequent pagination pages as their own is_listing record - only
-        the seed's entry point gets one, via parse_start_url."""
-        links = response.css('.views-row .views-field-title a::attr(href)').getall()
-        if not links:
-            return
-
-        rules = self._get_exclusion_rules()
-        for href in links:
-            url = response.urljoin(href)
-            reason = exclusion_rules.match_exclude(url, rules)
-            if reason is not None:
-                self._log_exclusion(url, reason)
-                continue
-            yield {'url': url}
-
-        self._census_links(response)
-
-        next_page = response.css('.pager-next a::attr(href)').get()
-        if next_page:
-            yield response.follow(next_page, callback=self._walk_listing_pagination)
+    def _listing_pagination_next_url(self, response):
+        return response.css('.pager-next a::attr(href)').get()

@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import html
 import os
 import re
@@ -262,16 +263,12 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     If a site is simple enough that a listing_file is unnecessary, it does not
     need a split harvester — use generic_crawl_harvest instead.
 
-    Flagging listing pages outside the list harvester's seed set
-    ------------------------------------------------------------
-    listing_file only pre-filters *known* listing URLs. A nav harvester can
-    still wander into a genuine listing page buried in site navigation that
-    isn't yet in the list harvester's start_urls — closing that gap was
-    never something the list harvester itself could do (it only paginates
-    through URLs it's already been given, whether those were seeded by
-    manual curation or grown from this mechanism's own reviewed output).
-    This is what discovers such a gap in the first place, not a safety net
-    for some discovery attempt happening inside the list harvester.
+    Automatic listing discovery, walk, and dedup
+    ---------------------------------------------
+    listing_file only pre-filters *known* content URLs from a prior run (see
+    above). Listing discovery and pagination-walking themselves are fully
+    automatic, driven by a runtime fingerprint - no curated seed list, no
+    human review step between discovery and walking.
 
     Subclasses opt in by setting LISTING_VIEW_LINK_EXTRACTOR to a
     LinkExtractor scoped to the container a listing's pagination is attached
@@ -293,18 +290,51 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     populated pager closes both problems at once.
 
     When both match, parse_nav flags the page in the output (url + is_listing
-    + depth) instead of excluding it — a human decides afterward whether it's
-    real listing content worth a dedicated pagination walk of its own
-    (feeding its content items into listing_file, the same way the
-    *_harvest_list spider's own known sections do — never the listing page's
-    own URL) — and does not follow any link inside the matched container,
-    item links and pager/filter controls alike, so discovering one doesn't
-    cause the crawler to fan out across its entire item set or pagination
-    range. Links elsewhere on the same page are still followed normally
-    (and, now, so are a .view container's own links when no pager is
-    present - it's just an ordinary embedded widget, not a listing). The
-    default (None for both) leaves parse_nav's behavior exactly as before
-    for subclasses that don't set them.
+    + depth) AND fingerprints the container's extracted item-URL set (sha1 of
+    the sorted tuple - see _listing_fingerprint). If the fingerprint is new
+    (this exact item set has never been walked this run), the listing's full
+    pagination gets walked automatically via _walk_listing_pagination, and
+    each extracted item is fetched through this same parse_nav callback
+    (response.follow(item_url, callback=self.parse_nav)) rather than merely
+    recorded - so an item's own outbound links get explored too, and if the
+    item itself turns out to be another listing-shaped page (e.g. a video
+    permalink embedding the sitewide "browse other videos" catalog), the same
+    fingerprint check flags-and-skips it with no special-casing. If the
+    fingerprint has already been seen, the page is flagged and nothing inside
+    the container is walked or followed - this is what stops a byte-identical
+    shared catalog embedded on thousands of distinct permalinks from being
+    re-walked once per permalink (see obama_whitehouse_harvest.py's own
+    module docstring for the concrete case this defends against).
+    self._seen_listing_fingerprints is in-memory only, built up over one
+    crawl run, matching how _logged_exclusion_urls already works.
+
+    FORCE_SKIP_LISTING_URLS is an escape hatch (empty by default, not
+    required for normal operation): a URL in this set is always flagged
+    is_listing and never auto-walked, regardless of its fingerprint - a
+    manual override in case fingerprinting is ever confirmed to miss a real
+    duplicate on some future site, without reintroducing a curation
+    dependency for the common case.
+
+    LISTING_MAX_PAGES bounds a single listing's pagination walk (default
+    2000): if walking exceeds it, _walk_listing_pagination stops and logs a
+    warning rather than continuing silently. Curation used to implicitly
+    bound scope by only ever seeding known-good listings; with curation gone
+    this is the automatic backstop against a fingerprinting bug re-walking an
+    unbounded shared catalog.
+
+    In all cases, no link inside the matched container is ever followed via
+    parse_nav's own ordinary link-following loop - item links and
+    pager/filter controls alike - only ever via the dedicated walk above.
+    Links elsewhere on the same page are still followed normally (and, so
+    are a .view container's own links when no pager is present - it's just
+    an ordinary embedded widget, not a listing). The default (None for both
+    LISTING_VIEW_LINK_EXTRACTOR/LISTING_PAGER_SELECTOR) leaves parse_nav's
+    behavior exactly as before for subclasses that don't set them.
+
+    Subclasses that set LISTING_VIEW_LINK_EXTRACTOR/LISTING_PAGER_SELECTOR
+    must also implement _listing_pagination_items (return this page's item
+    hrefs, template-specific) and _listing_pagination_next_url (return the
+    next pagination page's href, or None) - see _walk_listing_pagination.
 
     Usage:
         # Step 1: run the list harvester first
@@ -359,10 +389,20 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     # Optional per-subclass hooks, both required together: a LinkExtractor
     # scoped to the container a listing's pagination/filter controls live
     # in, AND a CSS selector matching only when a real pager is present. See
-    # "Flagging listing pages outside the list harvester's seed set" above.
-    # None (the default) disables the feature.
+    # "Automatic listing discovery, walk, and dedup" above. None (the
+    # default) disables the feature.
     LISTING_VIEW_LINK_EXTRACTOR = None
     LISTING_PAGER_SELECTOR = None
+
+    # Escape hatch: a URL in this set is always flagged is_listing and never
+    # auto-walked, regardless of its fingerprint. Empty by default and not
+    # required for normal operation - see "Automatic listing discovery,
+    # walk, and dedup" above.
+    FORCE_SKIP_LISTING_URLS = frozenset()
+
+    # Defense-in-depth cap on a single listing's pagination walk. See
+    # "Automatic listing discovery, walk, and dedup" above.
+    LISTING_MAX_PAGES = 2000
 
     # Distinct from ArchiveSpiderMixin's default 'exclusions' - a nav
     # harvester and its companion content spider share the same SOURCE_SITE,
@@ -381,6 +421,9 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         with open(listing_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 self._listing_urls.add(row['url'])
+        # In-memory only, built up over one crawl run - see "Automatic
+        # listing discovery, walk, and dedup" above.
+        self._seen_listing_fingerprints = set()
 
     def _filter_web_urls(self, links):
         rules = self._get_exclusion_rules()
@@ -445,6 +488,20 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         """
         return response.url in self._listing_urls
 
+    @staticmethod
+    def _listing_fingerprint(view_urls):
+        """sha1 of the sorted item-URL set extracted from a listing's
+        container, as first encountered. Two listing pages that render the
+        exact same item set (e.g. every video permalink's embedded "browse
+        other videos" catalog) hash identically regardless of which
+        textually-distinct URL each copy lives at - see "Automatic listing
+        discovery, walk, and dedup" above."""
+        digest = hashlib.sha1()
+        for url in sorted(view_urls):
+            digest.update(url.encode('utf-8'))
+            digest.update(b'\n')
+        return digest.hexdigest()
+
     def parse_nav(self, response):
         """Yield the URL and follow links if this is a nav content page.
 
@@ -453,12 +510,12 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         spider from fanning out into known listing sections and their
         thousands of content URLs.
 
-        Pages matched by LISTING_VIEW_LINK_EXTRACTOR (previously *unknown*
-        listing pages found only by wandering the nav graph) are still
-        yielded, just flagged via is_listing/depth for human review — see
-        this mixin's docstring. No link inside the matched container is
-        followed — items and pager/filter controls alike; other links on
-        the page are followed normally.
+        Pages matched by LISTING_VIEW_LINK_EXTRACTOR are yielded, flagged via
+        is_listing/depth, and their item-URL set fingerprinted - see
+        "Automatic listing discovery, walk, and dedup" above for the full
+        walk/dedup mechanism. No link inside the matched container is
+        followed via the ordinary loop below — items and pager/filter
+        controls alike; other links on the page are followed normally.
 
         Links are followed manually (rather than via follow=True in the Rule)
         so that we can gate following on these per-page checks. Subclass
@@ -487,6 +544,14 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
             'depth': response.request.meta.get('depth', 0) if response.request else 0,
         }
         self._census_links(response)
+        if view_urls and response.url not in self.FORCE_SKIP_LISTING_URLS:
+            # Register before walking, not after - avoids a race where two
+            # near-simultaneous discoveries of the same shared catalog both
+            # start walking before either finishes.
+            fingerprint = self._listing_fingerprint(view_urls)
+            if fingerprint not in self._seen_listing_fingerprints:
+                self._seen_listing_fingerprints.add(fingerprint)
+                yield from self._walk_listing_pagination(response, _skip_census=True)
         for rule in self._rules:
             links = self._apply_nav_deny(self._filter_web_urls(rule.link_extractor.extract_links(response)))
             for link in links:
@@ -501,6 +566,72 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     # into its full item/pager range unfiltered. Delegating unifies the two
     # entry points onto identical logic.
     parse_start_url = parse_nav
+
+    def _listing_pagination_items(self, response):
+        """Return this listing pagination page's item hrefs (template-
+        specific CSS/xpath, e.g. '.views-row h2 a::attr(href)'). Required
+        override for any subclass that sets LISTING_VIEW_LINK_EXTRACTOR/
+        LISTING_PAGER_SELECTOR - see _walk_listing_pagination."""
+        raise NotImplementedError(
+            f'{type(self).__name__} sets LISTING_VIEW_LINK_EXTRACTOR/'
+            'LISTING_PAGER_SELECTOR but does not implement '
+            '_listing_pagination_items'
+        )
+
+    def _listing_pagination_next_url(self, response):
+        """Return this listing pagination page's next-page href, or None if
+        this is the last page. Required override alongside
+        _listing_pagination_items - see _walk_listing_pagination."""
+        raise NotImplementedError(
+            f'{type(self).__name__} sets LISTING_VIEW_LINK_EXTRACTOR/'
+            'LISTING_PAGER_SELECTOR but does not implement '
+            '_listing_pagination_next_url'
+        )
+
+    def _walk_listing_pagination(self, response, _page_count=1, _skip_census=False):
+        """Walk a listing's full pagination automatically, fetching each
+        extracted item through parse_nav (rather than merely recording its
+        URL) so the item's own outbound links get explored too - see
+        "Automatic listing discovery, walk, and dedup" above. Recurses
+        through subsequent pages via this same callback; only the entry
+        page's fingerprint gets checked (in parse_nav) - a fresh fingerprint
+        check per pagination page isn't needed since the whole chain is only
+        ever reached once, from that one fingerprint-gated call.
+
+        _skip_census avoids double-logging the entry page's census (parse_nav
+        already ran it on that same response before dispatching here) without
+        skipping it for every later page in the chain, which never go through
+        parse_nav at all.
+        """
+        rules = self._get_exclusion_rules()
+        for href in self._listing_pagination_items(response):
+            url = response.urljoin(href)
+            reason = _exclusion_rules_module.match_exclude(url, rules)
+            if reason is not None:
+                self._log_exclusion(url, reason)
+                continue
+            yield response.follow(url, callback=self.parse_nav)
+
+        if not _skip_census:
+            self._census_links(response)
+
+        if _page_count >= self.LISTING_MAX_PAGES:
+            self.logger.warning(
+                'Listing pagination at %s hit LISTING_MAX_PAGES=%d without '
+                'reaching its last page - aborting walk. Possible '
+                'fingerprinting failure to collapse a shared/duplicate '
+                'catalog; investigate before trusting this listing\'s '
+                'harvested items.',
+                response.url, self.LISTING_MAX_PAGES,
+            )
+            return
+
+        next_href = self._listing_pagination_next_url(response)
+        if next_href:
+            yield response.follow(
+                next_href, callback=self._walk_listing_pagination,
+                cb_kwargs={'_page_count': _page_count + 1},
+            )
 
 
 class ArchiveSpiderMixin(ExclusionLoggingMixin):

@@ -91,24 +91,28 @@ presence alone false-positives on ordinary topic pages that merely embed a
 "related videos" widget with real links but no actual pagination; requiring
 a populated pager is what tells a real listing apart from one of those.
 
-A separate, still-curated `LISTING_SEEDS` list (ported unchanged from the old
-listing spider's `start_urls`) identifies which specific listings actually
-get their pagination walked inline, rather than merely flagged and skipped —
-this is NOT automatic for every listing the crawler flags along the way (see
-the spider's own `LISTING_SEEDS` docstring for why: every
-`/photos-and-video/{video,photogallery}/*` permalink embeds the exact same
-sitewide catalog widget, so auto-walking every flagged listing would
-re-walk that identical multi-hundred-page catalog from thousands of
-different entry points).
+Which listings actually get their pagination walked is now fully automatic,
+not curated: `NavHarvesterMixin` fingerprints each flagged listing's
+extracted item-URL set (sha1 of the sorted set) the first time it's seen,
+walks its pagination only on that first encounter, and fetches every
+extracted item through `parse_nav` itself — so second-order links (links
+that only exist on an item's own page) get explored too, not just recorded.
+A page whose container hashes to an already-seen fingerprint is flagged and
+skipped, not re-walked — this is what stops every
+`/photos-and-video/{video,photogallery}/*` permalink's byte-identical
+sitewide catalog widget from being re-walked from thousands of different
+entry points (see `NavHarvesterMixin`'s own docstring for the full
+mechanism, including the `FORCE_SKIP_LISTING_URLS` escape hatch and
+`LISTING_MAX_PAGES` safety cap).
 
 All harvester and content CSV files are stored under `data/{source_site}/` subdirectories (the root `data/` is git-tracked via `data/.gitkeep`; `.csv` files are gitignored).
 
 ### Step 1: Unified harvest
 
-Crawls the whole site starting from the homepage (plus the curated
-`LISTING_SEEDS`), recording every page along with an `is_listing` flag and
-its `depth`, and walking each curated listing's own pagination inline to
-extract its item URLs directly into the same output file — no merge step
+Crawls the whole site starting from the homepage, recording every page along
+with an `is_listing` flag and its `depth`, and automatically walking each
+newly-discovered listing's own pagination inline to extract its item URLs
+directly into the same output file — no merge step, no curated seed list
 needed. `listing_file` is still a required argument (inherited from
 `NavHarvesterMixin`), but there's no prior harvest to seed it with — point it
 at an empty CSV (header row only):
@@ -130,19 +134,17 @@ distance during the original `DEPTH_LIMIT` tuning; the spider's own
 `DEPTH_LIMIT` is now set high enough that ordering doesn't matter for
 completeness either way.
 
-### Step 2: Review new listing candidates (as needed)
+### Step 2: Spot-check listing detections (as needed)
 
-Filter the output CSV for `is_listing=True` rows not already in
-`LISTING_SEEDS` and spot-check them — a content page that merely embeds a
-single-item view can still carry the same `.view` wrapper as a real listing,
-though a populated pager block inside it is a much stronger signal than raw
-`.views-row` presence alone. Confirmed new listings get added directly to
-`obama_whitehouse_harvest.py`'s `LISTING_SEEDS` — this is a static, frozen
-site, so the true set of listings never changes; add entries and push rather
-than building a dynamic seeds-file mechanism. **Never add more than one
-`/photos-and-video/video/*` or `/photos-and-video/photogallery/*` entry**
-without first confirming via a fresh item-list diff that it's a genuinely
-distinct, non-shared catalog (see `LISTING_SEEDS`'s own docstring).
+Filter the output CSV for `is_listing=True` rows and spot-check them for
+false positives — a content page that merely embeds a single-item view can
+still carry the same `.view` wrapper as a real listing, though a populated
+pager block inside it is a much stronger signal than raw `.views-row`
+presence alone. No promotion step needed: every flagged listing's pagination
+is walked automatically the first time its item-set fingerprint is seen (see
+above). If fingerprinting is ever confirmed to have missed a real duplicate
+catalog on this site, add the offending URL to `FORCE_SKIP_LISTING_URLS`
+rather than re-introducing a curated seed list.
 
 ### Step 3: Crawl content
 
@@ -298,20 +300,19 @@ To check whether a site has a sitemap, try `{base_url}/sitemap.xml` and `{base_u
 
 ### Creating a no-sitemap harvester
 
-Two patterns exist, depending on whether the new site needs curated
-pagination-walk seeds at all:
+Two patterns exist:
 
 - **Unified (recommended default)** — one spider does nav-style
-  link-following AND walks a curated `LISTING_SEEDS` list's pagination
-  inline, no merge step. Copy `archive_crawler/spiders/obama_whitehouse_harvest.py`,
-  update `name`, `allowed_domains`, `SOURCE_SITE`, `LISTING_VIEW_LINK_EXTRACTOR`/
-  `LISTING_PAGER_SELECTOR`, `LISTING_SEEDS` (start empty and grow from
-  reviewed `is_listing=True` output), and the listing selectors in
-  `_walk_listing_pagination`. Remember to raise `DEPTH_LIMIT` well past
-  whatever the longest expected pagination chain is (see that spider's own
-  `custom_settings` comment for why) and to set `FEED_EXPORT_FIELDS`
-  explicitly, since the spider yields both nav-flavored and bare item dicts
-  in the same run.
+  link-following AND automatically walks every newly-discovered listing's
+  pagination inline (via `NavHarvesterMixin`'s fingerprint dedup - no
+  curated seed list), no merge step. Copy
+  `archive_crawler/spiders/obama_whitehouse_harvest.py`, update `name`,
+  `allowed_domains`, `SOURCE_SITE`, `LISTING_VIEW_LINK_EXTRACTOR`/
+  `LISTING_PAGER_SELECTOR`, and implement `_listing_pagination_items`/
+  `_listing_pagination_next_url` for the new site's listing template(s).
+  Remember to raise `DEPTH_LIMIT` well past whatever the longest expected
+  pagination chain is (see that spider's own `custom_settings` comment for
+  why).
 - **Split (two spiders + `merge_harvest.py`)** — still a valid pattern for a
   site where a separate listing-only harvester is easier to reason about,
   though no site in this repo currently uses it (both `obamawhitehouse` and
