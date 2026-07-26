@@ -147,12 +147,16 @@ class NavHarvesterMixin:
     If a site is simple enough that a listing_file is unnecessary, it does not
     need a split harvester — use generic_crawl_harvest instead.
 
-    Flagging listing pages the list harvester missed
-    -------------------------------------------------
+    Flagging listing pages outside the list harvester's seed set
+    ------------------------------------------------------------
     listing_file only pre-filters *known* listing URLs. A nav harvester can
     still wander into a genuine listing page buried in site navigation that
-    the list harvester's seed set never covered — the failure mode this is
-    for is discovering that gap, not avoiding a false positive on it.
+    isn't yet in the list harvester's start_urls — closing that gap was
+    never something the list harvester itself could do (it only paginates
+    through URLs it's already been given, whether those were seeded by
+    manual curation or grown from this mechanism's own reviewed output).
+    This is what discovers such a gap in the first place, not a safety net
+    for some discovery attempt happening inside the list harvester.
 
     Subclasses opt in by setting LISTING_VIEW_LINK_EXTRACTOR to a
     LinkExtractor scoped to the container a listing's pagination is attached
@@ -240,8 +244,8 @@ class NavHarvesterMixin:
     # Optional per-subclass hooks, both required together: a LinkExtractor
     # scoped to the container a listing's pagination/filter controls live
     # in, AND a CSS selector matching only when a real pager is present. See
-    # "Flagging listing pages the list harvester missed" above. None (the
-    # default) disables the feature.
+    # "Flagging listing pages outside the list harvester's seed set" above.
+    # None (the default) disables the feature.
     LISTING_VIEW_LINK_EXTRACTOR = None
     LISTING_PAGER_SELECTOR = None
 
