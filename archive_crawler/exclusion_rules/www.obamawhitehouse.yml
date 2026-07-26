@@ -1017,6 +1017,31 @@ rules:
     - https://obamawhitehouse.archives.gov/the_press_office/Declaraciones-del-Presidente-Barack-Obama-Discurso-ante-Sesion-Conjunta
     reason: spanish_content
 
+  # /realitycheck is a legacy alias prefix that mirrors large portions of the
+  # entire site under an alternate top-level path - confirmed 2026-07-26:
+  # /realitycheck/about/inside-white-house and /about/inside-white-house
+  # render identical content (same title, same h1, near-identical byte
+  # length). Reproduces the video/photogallery shared-catalog dedup problem
+  # too: /realitycheck/photos-and-video/video/2016/09/01/president-obama-
+  # delivers-statement-press embeds the exact same 8-item catalog as
+  # digital-briefing-ebola (identical slugs, just prefixed differently), so
+  # it independently re-walks the whole ~740-page shared catalog under this
+  # prefix too - the fingerprint mechanism can't catch this since item hrefs
+  # resolve relative to each page's own base path (see NavHarvesterMixin's
+  # "KNOWN LIMITATION" docstring section - this is the same URL-aliased-view
+  # gap found on letsmove's /blog/all vs /blog/all/all, just far more costly
+  # here). Never discovered by any prior harvest (split-harvester era or the
+  # first unified LISTING_SEEDS-based run) because every one of those either
+  # never explored second-order links (an item page's own outbound links) or
+  # capped depth well short of wherever /realitycheck is actually linked from
+  # - this run's second-order-link-following is what finally reached it.
+  # Excluded from both nav and content-scrape via rules: alone, same as
+  # /espanol above - this is a pure duplicate-URL space, not content worth
+  # scraping under either prefix separately.
+  - match: contains
+    pattern: "/realitycheck"
+    reason: "url_pattern:/realitycheck"
+
 # nav_deny is for exclusions that should hold the nav crawler back without
 # also excluding the URL from a content scrape reached some other way - see
 # NavHarvesterMixin._apply_nav_deny. Empty today: /espanol above is excluded
