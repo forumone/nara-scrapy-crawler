@@ -1014,6 +1014,7 @@ rules:
     - https://obamawhitehouse.archives.gov/the-press-office/2016/12/24/mensaje-semanal-feliz-navidad-del-presidente-y-la-primera-dama
     - https://obamawhitehouse.archives.gov/the-press-office/2016/12/30/mensaje-semanal-trabajando-juntos-para-que-los-estados-unidos-siga
     - https://obamawhitehouse.archives.gov/the-press-office/2017/01/07/mensaje-semanal-el-discurso-de-despedida-del-presidente-obama
+    - https://obamawhitehouse.archives.gov/the_press_office/Declaraciones-del-Presidente-Barack-Obama-Discurso-ante-Sesion-Conjunta
     reason: spanish_content
 
 # nav_deny is for exclusions that should hold the nav crawler back without
