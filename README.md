@@ -312,12 +312,12 @@ pagination-walk seeds at all:
   `custom_settings` comment for why) and to set `FEED_EXPORT_FIELDS`
   explicitly, since the spider yields both nav-flavored and bare item dicts
   in the same run.
-- **Split (two spiders + `merge_harvest.py`)** — still appropriate for a
-  simpler site where a separate listing-only harvester is easier to reason
-  about (see `letsmove_harvest_nav.py`/`letsmove_harvest_list.py`). See
-  `HARVESTING.md`'s "Step-by-step: split harvester" for the full walkthrough,
-  including which ordering (nav-first vs. list-first) fits a given site and
-  why.
+- **Split (two spiders + `merge_harvest.py`)** — still a valid pattern for a
+  site where a separate listing-only harvester is easier to reason about,
+  though no site in this repo currently uses it (both `obamawhitehouse` and
+  `letsmove` were unified 2026-07-26). See `HARVESTING.md`'s "Step-by-step:
+  split harvester" for the full walkthrough, including which ordering
+  (nav-first vs. list-first) fits a given site and why.
 
 ### Creating a sitemap-based content spider
 
