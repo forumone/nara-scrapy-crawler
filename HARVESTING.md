@@ -81,7 +81,8 @@ Inspect the live site to answer these questions before writing any code:
   more than one listing page if the site has more than one visual template
   for listings (e.g. a teaser-card blog archive vs. a table-based photo/video
   gallery can use completely different item-link markup even on the same
-  site — `obama_whitehouse_harvest_list.py` handles two such templates).
+  site — `obama_whitehouse_harvest.py`'s `_walk_listing_pagination` handles
+  two such templates).
 - What container reliably wraps *both* a listing's item rows and its
   pager/filter controls? (e.g. Drupal Views' own `.view` wrapper) This is
   what `LISTING_VIEW_LINK_EXTRACTOR` (nav-first only, see step 2) uses to

@@ -68,105 +68,85 @@ scrapy crawl generic_crawl \
 
 ---
 
-## 🏛️ Obama White House Spider (Nav-First Discovery + Listing Harvest)
+## 🏛️ Obama White House Spider (Unified Harvest + Content Spider)
 
-`obamawhitehouse.archives.gov` has no sitemap. Two harvesters plus a content
-spider are involved, but the nav crawl runs **first** as a single full-site
-discovery pass, and the listing harvester runs second, seeded from what the
-nav crawl found — the reverse of the general split-harvester order described
-in `HARVESTING.md` (see that doc's "list-first alternative" callout for why
-a site might instead want the older ordering). This works because
-`obama_whitehouse_harvest_nav.py` sets `LISTING_VIEW_LINK_EXTRACTOR` (scoped
-to `.view`) and `LISTING_PAGER_SELECTOR` (`'.pager-current'`), required
-together, which let the nav crawler safely wander into a listing page it's
-never seen before: it flags the page (`is_listing=True`) instead of
-excluding it, and never follows any link inside the listing's `.view`
-container, so it can't fan out into that listing's own item/pagination
-range. Both hooks are required together — `.view` presence alone
-false-positives on ordinary topic pages that merely embed a "related videos"
-widget with real links but no actual pagination; requiring a populated pager
-is what tells a real listing apart from one of those.
+`obamawhitehouse.archives.gov` has no sitemap. A single unified harvester,
+`obama_whitehouse_harvest.py`, replaces what used to be two separate spiders
+(`obama_whitehouse_harvest_nav.py` + `obama_whitehouse_harvest_list.py`) plus
+a `merge_harvest.py` reconciliation step — nav-style link-following and
+listing-pagination-walking now run as one spider, one pass, one output CSV.
+
+This works because nav's own ordinary link-following (`DEPTH_LIMIT` raised
+well past the mixin's usual default — see the spider's own `custom_settings`
+comment for why) was already proven to reach full graph closure from the
+homepage alone; the only thing it deliberately never does is follow into a
+listing's own `.view` container (item rows + pager), which is what actually
+protects against fanning out into that listing's full item/pagination range —
+not depth limitation. `LISTING_VIEW_LINK_EXTRACTOR` (scoped to `.view`) and
+`LISTING_PAGER_SELECTOR` (`'.pager-current'`), required together, are what
+let the crawler safely wander into a listing page it's never seen before: it
+flags the page (`is_listing=True`) instead of excluding it, and never follows
+any link inside the container. Both hooks are required together — `.view`
+presence alone false-positives on ordinary topic pages that merely embed a
+"related videos" widget with real links but no actual pagination; requiring
+a populated pager is what tells a real listing apart from one of those.
+
+A separate, still-curated `LISTING_SEEDS` list (ported unchanged from the old
+listing spider's `start_urls`) identifies which specific listings actually
+get their pagination walked inline, rather than merely flagged and skipped —
+this is NOT automatic for every listing the crawler flags along the way (see
+the spider's own `LISTING_SEEDS` docstring for why: every
+`/photos-and-video/{video,photogallery}/*` permalink embeds the exact same
+sitewide catalog widget, so auto-walking every flagged listing would
+re-walk that identical multi-hundred-page catalog from thousands of
+different entry points).
 
 All harvester and content CSV files are stored under `data/{source_site}/` subdirectories (the root `data/` is git-tracked via `data/.gitkeep`; `.csv` files are gitignored).
 
-### Step 1: Nav discovery crawl
+### Step 1: Unified harvest
 
-Crawls the whole site starting from the homepage, recording every page along
-with an `is_listing` flag and its `depth` (hop count from the seed).
-`listing_file` is still a required argument, but on a first run there's no
-prior harvest to seed it with — point it at an empty CSV (header row only):
+Crawls the whole site starting from the homepage (plus the curated
+`LISTING_SEEDS`), recording every page along with an `is_listing` flag and
+its `depth`, and walking each curated listing's own pagination inline to
+extract its item URLs directly into the same output file — no merge step
+needed. `listing_file` is still a required argument (inherited from
+`NavHarvesterMixin`), but there's no prior harvest to seed it with — point it
+at an empty CSV (header row only):
 
 ```bash
 echo "url" > data/www.obamawhitehouse/www.obamawhitehouse_empty-listing.csv
 
-scrapy crawl obama_whitehouse_harvest_nav \
+scrapy crawl obama_whitehouse_harvest \
   -a listing_file=data/www.obamawhitehouse/www.obamawhitehouse_empty-listing.csv \
-  -s DEPTH_LIMIT=10 \
-  -s DEPTH_PRIORITY=1 \
-  -s SCHEDULER_DISK_QUEUE=scrapy.squeues.PickleFifoDiskQueue \
-  -s SCHEDULER_MEMORY_QUEUE=scrapy.squeues.FifoMemoryQueue \
-  -O data/www.obamawhitehouse/www.obamawhitehouse_harvest-nav.csv
+  -s DOWNLOAD_DELAY=0.25 \
+  -s CONCURRENT_REQUESTS_PER_DOMAIN=4 \
+  -O data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv
 ```
 
-The `DEPTH_PRIORITY`/`SCHEDULER_*` flags switch Scrapy's default LIFO
-(depth-first) traversal to breadth-first — without them, the `depth` column
-reflects whichever path happened to be explored first under DFS, not true
-shortest-path distance from the seed (Scrapy's dupefilter is a one-time gate:
-whichever request for a URL wins the race is what gets recorded, with no
-correction if a shorter path turns up later). Run this **untimed** (no
-`CLOSESPIDER_TIMEOUT`) so it actually exhausts the site rather than stopping
-mid-traversal.
+Run this **untimed** (no `CLOSESPIDER_TIMEOUT`) so it actually exhausts the
+site rather than stopping mid-traversal. Default scheduler (LIFO/DFS) is
+fine here — BFS was only useful for validating `depth` as true shortest-path
+distance during the original `DEPTH_LIMIT` tuning; the spider's own
+`DEPTH_LIMIT` is now set high enough that ordering doesn't matter for
+completeness either way.
 
-### Step 2: Review and promote listing candidates
+### Step 2: Review new listing candidates (as needed)
 
-Filter the nav CSV for `is_listing=True` and spot-check them — a content page
-that merely embeds a single-item view can still carry the same `.view`
-wrapper as a real listing, though a populated pager block inside it is a
-much stronger signal than raw `.views-row` presence alone. Confirmed
-listings get hardcoded directly into `obama_whitehouse_harvest_list.py`'s
-`start_urls` — this is a static, frozen site, so the true set of listings
-never changes; add entries and push rather than building a dynamic
-seeds-file mechanism. Also check the nav log for `Ignoring link (depth > 10)`
-entries not already in any known CSV — genuine gaps cut off purely by
-`DEPTH_LIMIT`, not dead ends, and worth adding their section root as an
-additional nav seed if confirmed.
+Filter the output CSV for `is_listing=True` rows not already in
+`LISTING_SEEDS` and spot-check them — a content page that merely embeds a
+single-item view can still carry the same `.view` wrapper as a real listing,
+though a populated pager block inside it is a much stronger signal than raw
+`.views-row` presence alone. Confirmed new listings get added directly to
+`obama_whitehouse_harvest.py`'s `LISTING_SEEDS` — this is a static, frozen
+site, so the true set of listings never changes; add entries and push rather
+than building a dynamic seeds-file mechanism. **Never add more than one
+`/photos-and-video/video/*` or `/photos-and-video/photogallery/*` entry**
+without first confirming via a fresh item-list diff that it's a genuinely
+distinct, non-shared catalog (see `LISTING_SEEDS`'s own docstring).
 
-### Step 3: Listing pagination walk
+### Step 3: Crawl content
 
-Walks every confirmed listing's own pagination and extracts every item URL
-across every page. Two listing templates are handled: teaser-card listings
-(`.views-row`, e.g. blog/author archives) and table-based gallery listings
-(`.views-field-title`, e.g. photo/video galleries) — `parse()` tries the
-first selector, falls back to the second, and uses `.pager-current + li a`
-as a single next-page selector that works across both.
-
-```bash
-scrapy crawl obama_whitehouse_harvest_list -O data/www.obamawhitehouse/www.obamawhitehouse_harvest-listing.csv
-```
-
-This file's rows are individual **content-item** URLs extracted from listing
-pages — not the listing pages' own URLs. That's also what
-`NavHarvesterMixin`'s `listing_file`/`_listing_urls` dedup set holds (see
-`_is_listing_page`'s docstring in `base.py`) — a common point of confusion,
-worth reading carefully before touching either file.
-
-### Step 4: Merge
-
-`merge_harvest.py` merges on the union of each input's columns, not an exact
-match, so the nav CSV's `url,is_listing,depth` and the listing CSV's
-`url`-only shape combine cleanly, with `is_listing`/`depth` left blank for
-rows from the listing harvest:
-
-```bash
-python merge_harvest.py \
-  -o data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv \
-  data/www.obamawhitehouse/www.obamawhitehouse_harvest-nav.csv \
-  data/www.obamawhitehouse/www.obamawhitehouse_harvest-listing.csv
-```
-
-### Step 5: Crawl content
-
-Reads the merged URL file and crawls each content page.
+Reads the unified harvest CSV and crawls each content page.
 
 ```bash
 scrapy crawl obama_whitehouse \
@@ -287,9 +267,9 @@ All harvester and content output files follow a consistent naming scheme:
 
 | File | Contents |
 |---|---|
-| `data/{source_site}/{source_site}_harvest-listing.csv` | Listing harvest output: content items extracted from known listing pages (no-sitemap spiders) |
-| `data/{source_site}/{source_site}_harvest-nav.csv` | Nav harvest output: pages found by crawling site navigation, plus any `is_listing`/`depth` columns if the nav spider sets `LISTING_VIEW_LINK_EXTRACTOR` (no-sitemap spiders) |
-| `data/{source_site}/{source_site}_harvest-full.csv` | Merged harvest input to content spider |
+| `data/{source_site}/{source_site}_harvest-listing.csv` | Listing harvest output: content items extracted from known listing pages (split-harvester no-sitemap spiders only) |
+| `data/{source_site}/{source_site}_harvest-nav.csv` | Nav harvest output: pages found by crawling site navigation, plus any `is_listing`/`depth` columns if the nav spider sets `LISTING_VIEW_LINK_EXTRACTOR` (split-harvester no-sitemap spiders only) |
+| `data/{source_site}/{source_site}_harvest-full.csv` | Content-spider input: merged output for split-harvester sites (via `merge_harvest.py`), written directly by a unified harvester (e.g. `obama_whitehouse_harvest.py`) |
 | `data/{source_site}/{source_site}.csv` | Final content output |
 | `data/{source_site}/{source_site}_exclusions.csv` | Skipped URLs with typed reasons (written on spider close) |
 | `data/{source_site}/{source_site}-errors-{timestamp}.log` | Scrapy ERROR-level log (written by `ErrorFileLogger` extension) |
@@ -316,18 +296,28 @@ To check whether a site has a sitemap, try `{base_url}/sitemap.xml` and `{base_u
 3. Identify nav entry points (top-level pages reachable from navigation that aren't on any listing) — often just the homepage is enough at a generous `DEPTH_LIMIT`.
 4. Identify content selectors (the CSS selectors for body text and title on content pages).
 
-### Creating a no-sitemap harvester pair
+### Creating a no-sitemap harvester
 
-See `HARVESTING.md`'s "Step-by-step: split harvester" for the full walkthrough,
-including which ordering (nav-first vs. list-first) fits a given site and why.
-Briefly: copy `archive_crawler/spiders/obama_whitehouse_harvest_nav.py` and
-`archive_crawler/spiders/obama_whitehouse_harvest_list.py`, update `name`,
-`allowed_domains`, `SOURCE_SITE`, `start_urls`, and the listing selectors in
-`harvest_list.py`'s `parse()`; run nav-first with an empty `listing_file` if
-`LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_PAGER_SELECTOR` are set, review the
-`is_listing=True` output, promote confirmed listings into the listing
-harvester's `start_urls`, then
-merge and run the content spider.
+Two patterns exist, depending on whether the new site needs curated
+pagination-walk seeds at all:
+
+- **Unified (recommended default)** — one spider does nav-style
+  link-following AND walks a curated `LISTING_SEEDS` list's pagination
+  inline, no merge step. Copy `archive_crawler/spiders/obama_whitehouse_harvest.py`,
+  update `name`, `allowed_domains`, `SOURCE_SITE`, `LISTING_VIEW_LINK_EXTRACTOR`/
+  `LISTING_PAGER_SELECTOR`, `LISTING_SEEDS` (start empty and grow from
+  reviewed `is_listing=True` output), and the listing selectors in
+  `_walk_listing_pagination`. Remember to raise `DEPTH_LIMIT` well past
+  whatever the longest expected pagination chain is (see that spider's own
+  `custom_settings` comment for why) and to set `FEED_EXPORT_FIELDS`
+  explicitly, since the spider yields both nav-flavored and bare item dicts
+  in the same run.
+- **Split (two spiders + `merge_harvest.py`)** — still appropriate for a
+  simpler site where a separate listing-only harvester is easier to reason
+  about (see `letsmove_harvest_nav.py`/`letsmove_harvest_list.py`). See
+  `HARVESTING.md`'s "Step-by-step: split harvester" for the full walkthrough,
+  including which ordering (nav-first vs. list-first) fits a given site and
+  why.
 
 ### Creating a sitemap-based content spider
 

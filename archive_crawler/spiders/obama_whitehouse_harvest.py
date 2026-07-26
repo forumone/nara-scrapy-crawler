@@ -1,25 +1,128 @@
-import scrapy
+from scrapy.linkextractors import LinkExtractor
+from scrapy.spiders import CrawlSpider, Rule
 
 from archive_crawler import exclusion_rules
-from archive_crawler.spiders.base import ExclusionLoggingMixin
+from archive_crawler.spiders.base import NavHarvesterMixin
 
 
-class ObamaWhiteHouseHarvestListSpider(ExclusionLoggingMixin, scrapy.Spider):
-    name = "obama_whitehouse_harvest_list"
+class ObamaWhiteHouseHarvestSpider(NavHarvesterMixin, CrawlSpider):
+    """Unified nav+listing discovery pass, replacing the separate
+    obama_whitehouse_harvest_nav/_list spiders and merge_harvest.py's
+    reconciliation step for this site. Still URL-discovery only (no content
+    extraction) - the content spider (obama_whitehouse.py) remains a
+    separate, later, explicitly-gated stage.
+
+    Why unify: nav's own ordinary link-following (DEPTH_LIMIT=20, BFS) was
+    already proven to reach full graph closure from the homepage alone
+    (zero depth-exceeded ignores in prior runs) - the only thing it
+    deliberately never does is follow into a flagged listing's own .view
+    container (item rows + pager), to avoid fanning out into a listing's
+    full item/pagination range during ordinary graph traversal. That
+    container-skip is the actual load-bearing protection this whole split
+    ever needed, not depth limitation, which nav alone already handles
+    (raising DEPTH_LIMIT from 2 to 20 already made a large curated
+    start_urls list unnecessary for nav's own coverage). Running two
+    separate spider processes - nav discovering + flagging listings,
+    listing separately walking a manually-promoted seed list, then
+    merge_harvest.py reconciling the two output files - added a slow
+    human-curation step between discovery and walking, and forced the
+    content spider to grow its own belated not_in_seed_list check to catch
+    whatever the two-pass model missed. Folding listing's pagination-walk in
+    as a branch of this same spider - dispatched only for a still-curated,
+    still human-reviewed seed list (LISTING_SEEDS below), never
+    automatically for every flagged listing nav happens to discover - keeps
+    the exact same fan-out protection while removing the extra
+    process/merge step.
+    """
+
+    name = "obama_whitehouse_harvest"
     allowed_domains = ["obamawhitehouse.archives.gov"]
 
-    # Matches the content spider's SOURCE_SITE - shares its
-    # archive_crawler/exclusion_rules/<SOURCE_SITE>.yml file, and needed for
-    # ExclusionLoggingMixin.closed() to name its output file.
     SOURCE_SITE = 'www.obamawhitehouse'
-    EXCLUSIONS_FILE_SUFFIX = 'listing-exclusions'
+    # Distinct from the old 'nav-exclusions'/'listing-exclusions' pair (both
+    # remain on disk as historical reference, not overwritten) - this is one
+    # unified exclusion log for the merged spider.
+    EXCLUSIONS_FILE_SUFFIX = 'harvest-exclusions'
 
-    # Hardcoded rather than taken via -a: this is a static archived site, so
-    # the true set of listing pages never changes. Add newly-discovered
-    # listing candidates (from the nav harvester's is_listing=True output,
-    # reviewed) directly here and push, rather than building a dynamic
-    # seeds-file mechanism.
-    start_urls = [
+    # .view is Drupal Views' own wrapper and reliably encloses both a
+    # listing's item rows and its pager/filter controls, confirmed across
+    # two distinct templates (teaser-card blog/author listings and the
+    # table-based photo/video gallery view both render inside a .view div).
+    # .view presence ALONE is not enough, though - ordinary topic/content
+    # pages that merely embed a "related videos"/"related blog posts" widget
+    # also render inside a .view container with real links, but carry no
+    # pager (confirmed: /issues/education/k-12 and the Cairo speech page
+    # both do this). LISTING_PAGER_SELECTOR requires an actual populated
+    # pager - .pager-current, confirmed present on both real listing
+    # templates - before a page counts as a listing at all.
+    # deny_extensions=() disables Scrapy's own built-in IGNORED_EXTENSIONS
+    # denylist (pdf/doc/zip/jpg/etc.) so our own is_web_url allow-list
+    # (archive_crawler/exclusion_rules/<site>.yml) is the sole authority on
+    # what counts as a web page.
+    LISTING_VIEW_LINK_EXTRACTOR = LinkExtractor(
+        restrict_css='.view',
+        allow_domains=['obamawhitehouse.archives.gov'],
+        deny_extensions=(),
+    )
+    LISTING_PAGER_SELECTOR = '.pager-current'
+
+    # DEPTH_LIMIT raised well past the mixin's usual 20 to comfortably clear
+    # the longest known curated-listing pagination chain
+    # (briefing-room/statements-and-releases, 1,176 pages). Scrapy's
+    # DepthMiddleware counts every response.follow() call toward one shared
+    # depth counter regardless of which callback issued it - confirmed by
+    # reading DepthMiddleware._filter directly, it computes
+    # request.meta['depth'] from the CURRENT response's own depth with no
+    # way to reset/exempt a specific chain - so _walk_listing_pagination's
+    # own pager-following would otherwise get silently killed around page 20
+    # instead of reaching each section's true end.
+    #
+    # Safe to raise this high: nav's own ordinary link-following is
+    # independently proven to reach full graph closure by depth 19
+    # regardless of the ceiling (zero depth-exceeded ignores at
+    # DEPTH_LIMIT=20 in prior runs, i.e. nothing reachable via ordinary
+    # links sits anywhere near this new ceiling anyway). The
+    # video/photogallery fan-out protection (LISTING_VIEW_LINK_EXTRACTOR's
+    # container-skip) is a separate, content-based mechanism independent of
+    # DEPTH_LIMIT, so raising this ceiling does not reopen that risk for any
+    # NON-curated listing nav happens to wander into during ordinary
+    # traversal - those still only ever get flagged is_listing=True and
+    # skipped, never pagination-walked.
+    #
+    # FEED_EXPORT_FIELDS declared explicitly so the CSV header doesn't
+    # depend on whichever item happens to export first - this spider yields
+    # both nav-flavored dicts (url+is_listing+depth) and bare listing-item
+    # dicts (url only) in the same run, and Scrapy's CsvItemExporter
+    # otherwise infers fields_to_export from the first item's own keys
+    # alone (a real race under concurrent requests, confirmed by reading
+    # CsvItemExporter._write_headers_and_set_fields_to_export directly).
+    custom_settings = {
+        'DEPTH_LIMIT': 1300,
+        'CRAWLSPIDER_FOLLOW_LINKS': False,
+        'FEED_EXPORT_FIELDS': ['url', 'is_listing', 'depth'],
+    }
+
+    # Curated listing seeds whose pagination gets walked directly, in this
+    # same spider run, rather than merely flagged is_listing=True and
+    # skipped like an ordinarily-discovered listing would be. Ported
+    # unchanged from the old obama_whitehouse_harvest_list.py's start_urls -
+    # still a human-reviewed, deliberately curated list, NOT auto-walked for
+    # every flagged listing nav happens to discover.
+    #
+    # Only one seed each for the video and photogallery templates,
+    # deliberately - every /photos-and-video/video/* permalink and every
+    # /photos-and-video/photogallery/* permalink embeds the *same* sitewide
+    # "browse other videos/galleries" catalog (confirmed via diffing item
+    # lists across multiple unrelated permalinks - byte identical, ~5,920
+    # videos across 740 pages for the video template alone). Seeding more
+    # than one of each just re-walks that identical catalog from a
+    # different entry point for no new content. Do not add more of either
+    # template back without first confirming (via a fresh diff) that it's a
+    # genuinely distinct, non-shared catalog - this is precisely the
+    # mechanism that would otherwise produce millions of redundant
+    # pagination page visits (see NAD2-472 project memory's
+    # "pagination-widget hypothesis" for the full arithmetic).
+    LISTING_SEEDS = [
         "https://obamawhitehouse.archives.gov/briefing-room/speeches-and-remarks",
         "https://obamawhitehouse.archives.gov/briefing-room/press-briefings",
         "https://obamawhitehouse.archives.gov/briefing-room/statements-and-releases",
@@ -137,17 +240,6 @@ class ObamaWhiteHouseHarvestListSpider(ExclusionLoggingMixin, scrapy.Spider):
         "https://obamawhitehouse.archives.gov/omb/blog",
         "https://obamawhitehouse.archives.gov/ondcp/blog",
         "https://obamawhitehouse.archives.gov/open/blog",
-        # Only one seed each for the video and photogallery templates,
-        # deliberately - every /photos-and-video/video/* permalink and every
-        # /photos-and-video/photogallery/* permalink embeds the *same*
-        # sitewide "browse other videos/galleries" catalog (confirmed via
-        # diffing item lists across multiple unrelated permalinks - byte
-        # identical), not a per-page-scoped one. Seeding more than one of
-        # each just re-walks that identical catalog from a different entry
-        # point for no new content - this list previously had 230 video and
-        # 50 photogallery entries (grown mostly from run 5's listing-candidate
-        # promotion, since every permalink trivially passes the is_listing
-        # check due to this shared widget) before being trimmed to one each.
         "https://obamawhitehouse.archives.gov/photos-and-video/photogallery/archives-first-families-celebrate-holidays-white-house",
         "https://obamawhitehouse.archives.gov/photos-and-video/video/2009/12/22/gingerbread-white-house",
         "https://obamawhitehouse.archives.gov/recovery/blog",
@@ -156,12 +248,13 @@ class ObamaWhiteHouseHarvestListSpider(ExclusionLoggingMixin, scrapy.Spider):
         "https://obamawhitehouse.archives.gov/video/President-Obama-on-Urban-Policy",
         # Discovered via the nav harvester run 5 (DEPTH_LIMIT=12, tightened
         # is_listing check), reviewed and confirmed as real listings.
-        # Excluded from promotion: 3 congress.gov-linked legislation listings
-        # (external content, not indexable via this spider), 3 redundant old
-        # /video/ URL aliases (identical items to an already-covered gallery),
-        # /blog/authors (0 items under current selectors - different markup,
-        # not yet walkable), and one redundant pagination artifact of an
-        # already-listed root.
+        # Excluded from promotion: 4 congress.gov-linked legislation
+        # listings (external content, not indexable via this spider - see
+        # NAD2-472 project memory for the full 4-listing/pending-legislation
+        # writeup), 3 redundant old /video/ URL aliases (identical items to
+        # an already-covered gallery), /blog/authors (0 items under current
+        # selectors - different markup, not yet walkable), and one redundant
+        # pagination artifact of an already-listed root.
         "https://obamawhitehouse.archives.gov/1is2many/blog",
         "https://obamawhitehouse.archives.gov/administration/eop/aapi/blog",
         "https://obamawhitehouse.archives.gov/administration/eop/dpc/blog",
@@ -258,10 +351,10 @@ class ObamaWhiteHouseHarvestListSpider(ExclusionLoggingMixin, scrapy.Spider):
         "https://obamawhitehouse.archives.gov/youngafrica/blog",
         "https://obamawhitehouse.archives.gov/youngamericans/blog",
         # Found via /blog/authors (a person-directory listing of every blog
-        # author - NOT itself added here, see the note above parse() for
-        # why) - these 42 author blogs were never surfaced by nav wandering
-        # at all, only by walking that directory's own pagination as a
-        # one-off discovery pass.
+        # author, NOT itself seeded here - its "items" are themselves
+        # listing pages, not content) - these 42 author blogs were never
+        # surfaced by nav wandering at all, only by walking that
+        # directory's own pagination as a one-off discovery pass.
         "https://obamawhitehouse.archives.gov/blog/author/Tania-Simoncelli",
         "https://obamawhitehouse.archives.gov/blog/author/alefiyah-mesiwala",
         "https://obamawhitehouse.archives.gov/blog/author/alissa-ko",
@@ -303,24 +396,58 @@ class ObamaWhiteHouseHarvestListSpider(ExclusionLoggingMixin, scrapy.Spider):
         "https://obamawhitehouse.archives.gov/blog/author/yohannes-abraham",
     ]
 
-    # /blog/authors is a person-directory listing (view-person-listings) of
-    # every blog author - deliberately NOT in start_urls above, even though
-    # parse() below can now extract it via .views-field-nid. Its "items" are
-    # themselves listing pages (/blog/author/X), not content - walking it
-    # normally would yield listing-page URLs into harvest-listing.csv as if
-    # they were leaf content, the same mistake made and corrected earlier
-    # this session (see NavHarvesterMixin's listing_file docstring). Confirmed
-    # via a one-off discovery pass (not a start_urls entry) that its 110
-    # entries include 42 author blogs not otherwise in start_urls - those 42
-    # are listed above individually instead.
+    start_urls = ['https://obamawhitehouse.archives.gov/'] + LISTING_SEEDS
 
-    def parse(self, response):
-        # Three known listing templates: teaser-card (.views-row h2/h3 a,
-        # e.g. blog/author pages), table-based gallery (.views-field-title,
-        # e.g. photo/video galleries), and person-directory
-        # (.views-field-nid, e.g. /blog/authors - see the note above this
-        # method for why that specific page isn't walked as a normal seed
-        # despite this selector supporting it). Try each in turn.
+    rules = (
+        Rule(
+            # allow= anchors to the exact hostname; allow_domains alone would
+            # also match subdomains like letsmove.obamawhitehouse.archives.gov.
+            LinkExtractor(
+                allow=r'//obamawhitehouse\.archives\.gov/',
+                allow_domains=['obamawhitehouse.archives.gov'],
+                deny_extensions=(),
+            ),
+            callback='parse_nav',
+            follow=False,  # links followed manually in parse_nav, only from non-listing pages
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._listing_seed_urls = set(self.LISTING_SEEDS)
+
+    def parse_start_url(self, response):
+        """CrawlSpider routes every start_urls response here instead of the
+        Rule's own callback. A curated listing seed gets flagged is_listing
+        (matching how nav would flag any OTHER discovered listing) and then
+        dispatched to the dedicated pagination-walk; every other start_url
+        (currently just the homepage) falls through to ordinary parse_nav.
+        """
+        if response.url in self._listing_seed_urls:
+            yield {
+                'url': response.url,
+                'is_listing': True,
+                'depth': response.request.meta.get('depth', 0) if response.request else 0,
+            }
+            yield from self._walk_listing_pagination(response)
+        else:
+            yield from self.parse_nav(response)
+
+    def _walk_listing_pagination(self, response):
+        """Extract this listing page's items and follow its own pager,
+        recursing through subsequent pages via this same callback - ported
+        from the old obama_whitehouse_harvest_list.py's parse(). Does NOT
+        flag subsequent pagination pages as their own is_listing record -
+        only the seed's entry point gets one, via parse_start_url - since a
+        1,176-page pagination chain doesn't need 1,176 near-duplicate
+        "this is a listing" rows once the section's already flagged once.
+
+        Three known listing templates: teaser-card (.views-row h2/h3 a, e.g.
+        blog/author pages), table-based gallery (.views-field-title, e.g.
+        photo/video galleries), and person-directory (.views-row
+        .views-field-nid a, e.g. /blog/authors - not itself seeded, see the
+        LISTING_SEEDS comment above for why).
+        """
         links = response.css(
             '.views-row h2 a::attr(href), .views-row h3 a::attr(href)'
         ).getall()
@@ -344,12 +471,12 @@ class ObamaWhiteHouseHarvestListSpider(ExclusionLoggingMixin, scrapy.Spider):
 
         # .pager-current's immediately-following sibling <li> holds the
         # forward link in both templates (a "Next" link in the teaser-card
-        # pager, a numbered page link in the gallery pager) - confirmed
-        # empirically on both, so one selector covers both rather than
-        # branching on .pager-next (which the gallery template doesn't use
-        # at all). Followed unconditionally, regardless of whether this
-        # page's items were excluded - a listing can mix excluded and real
-        # items on the same page, and later pages may hold only real ones.
+        # pager, a numbered page link in the gallery pager) - one selector
+        # covers both rather than branching on .pager-next (which the
+        # gallery template doesn't use at all). Followed unconditionally,
+        # regardless of whether this page's items were excluded - a listing
+        # can mix excluded and real items on the same page, and later pages
+        # may hold only real ones.
         next_page = response.css('.pager-current + li a::attr(href)').get()
         if next_page:
-            yield response.follow(next_page, callback=self.parse)
+            yield response.follow(next_page, callback=self._walk_listing_pagination)
