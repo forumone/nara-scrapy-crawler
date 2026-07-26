@@ -12,12 +12,17 @@ per domain, structured as:
       values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
 
     rules:                   # evaluated in order, first match wins
-      - match: contains       # contains | regex
+      - match: contains       # contains | regex | url_list
         pattern: "/images/"
         reason: "url_pattern:/images/"
       - match: regex
         pattern: '\\.v\\.html$'
         reason: "url_pattern:.v.html"
+      - match: url_list        # exact-URL membership - for a known, finite,
+        values:                 # non-pattern-shaped set of URLs (e.g. every
+          - "https://example.com/page-one"   # item a listing walk found,
+          - "https://example.com/page-two"   # rather than a path shape)
+        reason: "some_reason"
 
     nav_deny:                 # regex patterns for NavHarvesterMixin's Rule(deny=...)
       - '/sites/'
@@ -64,9 +69,17 @@ def _read_yaml(path):
 
 
 def _rules_from_dict(data):
+    rules = list(data.get('rules') or [])
+    for entry in rules:
+        # Converted once at load time (cached per-spider, see
+        # _spider_exclusion_rules), not per-URL - a url_list rule can hold
+        # hundreds of entries, and repeated `in` on a list would be O(n) per
+        # check across every URL a crawl considers.
+        if entry.get('match') == 'url_list':
+            entry['values'] = set(entry.get('values') or [])
     return ExclusionRules(
         extensions=data.get('extensions') or dict(_DEFAULT_EXTENSIONS),
-        rules=list(data.get('rules') or []),
+        rules=rules,
         nav_deny=list(data.get('nav_deny') or []),
         pagination=list(data.get('pagination') or []),
         query_params_allow=list(data.get('query_params_allow') or []),
@@ -140,6 +153,8 @@ def _matches(entry, url):
         return entry['pattern'] in url
     if entry['match'] == 'regex':
         return re.search(entry['pattern'], url) is not None
+    if entry['match'] == 'url_list':
+        return url in entry['values']
     raise ValueError(f"unknown match kind {entry['match']!r} in rule {entry!r}")
 
 
