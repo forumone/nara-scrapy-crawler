@@ -181,16 +181,19 @@ class ExclusionLoggingMixin:
 
     def _census_links(self, response):
         """Extract every <a>/<area> href on the page via a wide-open
-        LinkExtractor (no allow_domains, deny_extensions=() - see
-        _CENSUS_LINK_EXTRACTOR) and log one of each URL's first occurrence
-        under a widened reason set: external domains, this domain's
-        rules:/nav_deny matches (the existing mechanism, now applied to every
-        link on the page rather than just the ones a Rule's own
-        LinkExtractor happened to extract), and non-web extensions. Does NOT
-        see mailto:/tel:/javascript: links - Scrapy's own _is_valid_url
+        LinkExtractor (deny_extensions=() - see _CENSUS_LINK_EXTRACTOR) and
+        log one of each URL's first occurrence under a widened reason set:
+        this domain's rules:/nav_deny matches (the existing mechanism, now
+        applied to every link on the page rather than just the ones a Rule's
+        own LinkExtractor happened to extract) and non-web extensions.
+        External-domain links are silently dropped, not logged - a naive
+        mirror tool wouldn't plausibly "forget" to exclude other domains
+        either, so this bucket isn't useful signal for explaining a
+        same-domain page-count gap and would only inflate the log. Also does
+        NOT see mailto:/tel:/javascript: links - Scrapy's own _is_valid_url
         drops any non-http(s)/file/ftp scheme unconditionally, with no way
         to override that short of bypassing LinkExtractor entirely, which
-        isn't worth it for a share of link volume this small.
+        isn't worth it for a share of link volume this small either.
 
         Built to make total site-wide hyperlink volume auditable against a
         client's page-count claim by reason - not to expand what gets
@@ -213,7 +216,6 @@ class ExclusionLoggingMixin:
                 continue
             host = urlparse(url).netloc.split(':')[0].lower()
             if allowed and host not in allowed:
-                self._log_exclusion(url, f'external_domain:{host}')
                 continue
             reason = _exclusion_rules_module.match_exclude(url, rules)
             if reason is not None:
