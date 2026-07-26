@@ -332,6 +332,21 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     this is the automatic backstop against a fingerprinting bug re-walking an
     unbounded shared catalog.
 
+    KNOWN LIMITATION (found 2026-07-26, not fixed): the fingerprint is keyed
+    on exact item-URL-set identity, not "is this the same underlying view
+    reached a different way." Two URL paths that alias the identical view
+    hash differently and each get fully walked - confirmed on letsmove,
+    where /blog/all and /blog/all/all render the same content (same item
+    set, same pager hash tokens) but produce different fingerprints, so both
+    got independently walked in full. Confirmed low-impact where seen so
+    far: Scrapy's own URL-level dupefilter still collapses the actual
+    content items regardless of which pagination path found them, so this
+    only wastes some redundant pagination requests, not final content-count
+    accuracy - but worth fixing (e.g. checking response.url against a set of
+    already-walked *entry* URLs too, not just the item-set fingerprint)
+    before relying on this against a site where that pattern could be more
+    costly.
+
     In all cases, no link inside the matched container is ever followed via
     parse_nav's own ordinary link-following loop - item links and
     pager/filter controls alike - only ever via the dedicated walk above.
