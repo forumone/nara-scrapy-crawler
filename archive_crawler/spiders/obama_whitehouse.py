@@ -1,4 +1,5 @@
 import csv
+import json
 
 import scrapy
 
@@ -13,6 +14,33 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
 
     SOURCE_SITE = 'www.obamawhitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
+
+    @staticmethod
+    def _extract_gallery_captions(response):
+        """Extract every slideshow caption from a /photos-and-video/
+        photogallery/* page.
+
+        The slideshow itself is JS-driven and only ever renders the current
+        slide's caption into the visible DOM (#photo-description) - a
+        markup-based selector would silently return just one caption instead
+        of the gallery's full set. Every caption is also embedded as static
+        data in the page's own jQuery.extend(Drupal.settings, {...}) blob
+        (Drupal.settings.wh_photog.descriptions), confirmed present and
+        parseable on multiple unrelated galleries - no JS execution needed.
+        """
+        marker = 'jQuery.extend(Drupal.settings,'
+        start = response.text.find(marker)
+        if start == -1:
+            return ''
+        brace_start = response.text.find('{', start)
+        if brace_start == -1:
+            return ''
+        try:
+            settings, _ = json.JSONDecoder().raw_decode(response.text, brace_start)
+        except json.JSONDecodeError:
+            return ''
+        descriptions = settings.get('wh_photog', {}).get('descriptions') or []
+        return ' '.join(d.strip() for d in descriptions if d and d.strip())
 
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
@@ -34,7 +62,8 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
         body = (self._extract_text(response, '.field-items .field-item') or
                 self._extract_text(response, '.longpage-sections') or
                 self._extract_text(response, '#content') or
-                self._extract_text(response, '#video-info .caption'))
+                self._extract_text(response, '#video-info .caption') or
+                self._extract_gallery_captions(response))
         if not body:
             self._log_exclusion(response.url, 'no_body')
             return
