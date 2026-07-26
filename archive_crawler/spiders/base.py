@@ -114,7 +114,60 @@ def _spider_exclusion_rules(spider):
     return spider._exclusion_rules_cache
 
 
-class NavHarvesterMixin:
+class ExclusionLoggingMixin:
+    """Shared exclusion-rule access + logging for any spider with a
+    SOURCE_SITE, regardless of whether it's a content spider, a nav
+    harvester, or a listing harvester.
+
+    Previously duplicated: ArchiveSpiderMixin and NavHarvesterMixin each
+    defined their own identical _get_exclusion_rules, and only
+    ArchiveSpiderMixin had _log_exclusion/closed() at all - meaning nav and
+    listing harvesters had no way to log what they chose not to
+    follow/yield. Factored out here so all three compose it instead of
+    tripling that duplication.
+
+    EXCLUSIONS_FILE_SUFFIX defaults to 'exclusions' (ArchiveSpiderMixin's
+    existing filename, unchanged) - override per mixin/spider so a nav
+    harvester, a listing harvester, and a content spider sharing the same
+    SOURCE_SITE don't overwrite each other's exclusion log when run back to
+    back (e.g. NavHarvesterMixin sets 'nav-exclusions').
+    """
+
+    EXCLUSIONS_FILE_SUFFIX = 'exclusions'
+
+    def _get_exclusion_rules(self):
+        return _spider_exclusion_rules(self)
+
+    def _log_exclusion(self, url, reason):
+        if not hasattr(self, '_exclusions'):
+            self._exclusions = []
+            self._logged_exclusion_urls = set()
+        # Dedup by URL: a nav crawl can encounter the same excluded target
+        # from many different referring pages (a sitewide-linked pattern, or
+        # a url_list entry with many independent incoming links) - logging
+        # every occurrence would bury the genuinely useful signal in
+        # near-duplicate rows. Harmless for spiders that only ever consider
+        # each URL once (e.g. the content spider reading a url_file), since
+        # dedup never triggers there.
+        if url in self._logged_exclusion_urls:
+            return
+        self._logged_exclusion_urls.add(url)
+        self._exclusions.append({'url': url, 'reason': reason})
+
+    def closed(self, reason):
+        exclusions = getattr(self, '_exclusions', [])
+        if not exclusions:
+            return
+        out_dir = os.path.join('data', self.SOURCE_SITE)
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f'{self.SOURCE_SITE}_{self.EXCLUSIONS_FILE_SUFFIX}.csv')
+        with open(out_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=['url', 'reason'])
+            writer.writeheader()
+            writer.writerows(exclusions)
+
+
+class NavHarvesterMixin(ExclusionLoggingMixin):
     r"""Mixin for CrawlSpider-based nav harvesters.
 
     Provides listing-file exclusion, web-page URL filtering, and a parse_nav
@@ -249,6 +302,12 @@ class NavHarvesterMixin:
     LISTING_VIEW_LINK_EXTRACTOR = None
     LISTING_PAGER_SELECTOR = None
 
+    # Distinct from ArchiveSpiderMixin's default 'exclusions' - a nav
+    # harvester and its companion content spider share the same SOURCE_SITE,
+    # so writing to the same filename would have one overwrite the other's
+    # log whenever both run against the same site.
+    EXCLUSIONS_FILE_SUFFIX = 'nav-exclusions'
+
     def __init__(self, listing_file=None, *args, **kwargs):
         if not listing_file:
             raise ValueError(
@@ -260,9 +319,6 @@ class NavHarvesterMixin:
         with open(listing_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 self._listing_urls.add(row['url'])
-
-    def _get_exclusion_rules(self):
-        return _spider_exclusion_rules(self)
 
     def _filter_web_urls(self, links):
         rules = self._get_exclusion_rules()
@@ -289,14 +345,31 @@ class NavHarvesterMixin:
         subclass - it would be dead configuration since that codepath never
         executes, and reads as if a second, redundant filtering mechanism is
         in play when there isn't one.
+
+        Every dropped link is logged via _log_exclusion (deduped by URL, see
+        ExclusionLoggingMixin) so a shortfall in final harvest counts can be
+        checked against what was deliberately excluded here, rather than
+        left indistinguishable from a link the crawl simply never found.
+        Scoped to rules:/nav_deny matches only - not is_listing_page's
+        listing_file skip (a different mechanism entirely, not an
+        exclusion-rule match) and not _filter_web_urls' non-web-URL
+        filtering (mailto:/external links etc. - high volume, not useful
+        signal for this diagnostic).
         """
         rules = self._get_exclusion_rules()
         patterns = _exclusion_rules_module.nav_deny_patterns(rules)
-        return [
-            lnk for lnk in links
-            if _exclusion_rules_module.match_exclude(lnk.url, rules) is None
-            and not any(re.search(p, lnk.url) for p in patterns)
-        ]
+        kept = []
+        for lnk in links:
+            reason = _exclusion_rules_module.match_exclude(lnk.url, rules)
+            if reason is not None:
+                self._log_exclusion(lnk.url, reason)
+                continue
+            nav_deny_match = next((p for p in patterns if re.search(p, lnk.url)), None)
+            if nav_deny_match is not None:
+                self._log_exclusion(lnk.url, f'nav_deny:{nav_deny_match}')
+                continue
+            kept.append(lnk)
+        return kept
 
     def _is_listing_page(self, response):
         """Return True if this URL should be skipped entirely.
@@ -367,7 +440,7 @@ class NavHarvesterMixin:
     parse_start_url = parse_nav
 
 
-class ArchiveSpiderMixin:
+class ArchiveSpiderMixin(ExclusionLoggingMixin):
     # CSS selectors for site-specific boilerplate to strip before text extraction,
     # in addition to the shared selectors (#menufloat, .mobile-select, etc.).
     # Override in subclasses, e.g.: EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)
@@ -505,14 +578,6 @@ class ArchiveSpiderMixin:
         else:
             self._log_exclusion(failure.request.url, f'network_error:{failure.type.__name__}')
 
-    def _log_exclusion(self, url, reason):
-        if not hasattr(self, '_exclusions'):
-            self._exclusions = []
-        self._exclusions.append({'url': url, 'reason': reason})
-
-    def _get_exclusion_rules(self):
-        return _spider_exclusion_rules(self)
-
     def _is_excluded_response(self, response):
         """Common parse_item entry check. A response can be non-text (e.g. a
         binary file served from an extension-less URL a link-following crawl
@@ -527,18 +592,6 @@ class ArchiveSpiderMixin:
             self._log_exclusion(response.url, 'frameset')
             return True
         return False
-
-    def closed(self, reason):
-        exclusions = getattr(self, '_exclusions', [])
-        if not exclusions:
-            return
-        out_dir = os.path.join('data', self.SOURCE_SITE)
-        os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, f'{self.SOURCE_SITE}_exclusions.csv')
-        with open(out_path, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=['url', 'reason'])
-            writer.writeheader()
-            writer.writerows(exclusions)
 
     def _extract_press_release_body(self, response):
         """Return the best available body text for Clinton-era pages.

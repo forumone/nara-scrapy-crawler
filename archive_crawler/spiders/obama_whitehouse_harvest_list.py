@@ -1,9 +1,18 @@
 import scrapy
 
+from archive_crawler import exclusion_rules
+from archive_crawler.spiders.base import ExclusionLoggingMixin
 
-class ObamaWhiteHouseHarvestListSpider(scrapy.Spider):
+
+class ObamaWhiteHouseHarvestListSpider(ExclusionLoggingMixin, scrapy.Spider):
     name = "obama_whitehouse_harvest_list"
     allowed_domains = ["obamawhitehouse.archives.gov"]
+
+    # Matches the content spider's SOURCE_SITE - shares its
+    # archive_crawler/exclusion_rules/<SOURCE_SITE>.yml file, and needed for
+    # ExclusionLoggingMixin.closed() to name its output file.
+    SOURCE_SITE = 'www.obamawhitehouse'
+    EXCLUSIONS_FILE_SUFFIX = 'listing-exclusions'
 
     # Hardcoded rather than taken via -a: this is a static archived site, so
     # the true set of listing pages never changes. Add newly-discovered
@@ -322,15 +331,23 @@ class ObamaWhiteHouseHarvestListSpider(scrapy.Spider):
         if not links:
             return
 
+        rules = self._get_exclusion_rules()
         for href in links:
-            yield {'url': response.urljoin(href)}
+            url = response.urljoin(href)
+            reason = exclusion_rules.match_exclude(url, rules)
+            if reason is not None:
+                self._log_exclusion(url, reason)
+                continue
+            yield {'url': url}
 
         # .pager-current's immediately-following sibling <li> holds the
         # forward link in both templates (a "Next" link in the teaser-card
         # pager, a numbered page link in the gallery pager) - confirmed
         # empirically on both, so one selector covers both rather than
         # branching on .pager-next (which the gallery template doesn't use
-        # at all).
+        # at all). Followed unconditionally, regardless of whether this
+        # page's items were excluded - a listing can mix excluded and real
+        # items on the same page, and later pages may hold only real ones.
         next_page = response.css('.pager-current + li a::attr(href)').get()
         if next_page:
             yield response.follow(next_page, callback=self.parse)
