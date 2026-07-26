@@ -47,9 +47,11 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
         if not url_file:
             raise ValueError("url_file argument is required: -a url_file=data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv")
         rules = self._get_exclusion_rules()
+        self._seed_urls = set()
         with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 url = row['url']
+                self._seed_urls.add(url)
                 reason = exclusion_rules.match_exclude(url, rules)
                 if reason:
                     self._log_exclusion(url, reason)
@@ -59,6 +61,15 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
     def parse_item(self, response):
         if self._is_excluded_response(response):
             return
+        # Every outbound link on a real content page, checked against this
+        # run's own seed list - a link _census_links doesn't otherwise
+        # exclude (external domain, non-http scheme, rules:/nav_deny match,
+        # non-web extension) but that ALSO never made it into harvest-full.csv
+        # is real content our nav/listing harvesting never found at all,
+        # discoverable only by scraping content pages themselves.
+        for url in self._census_links(response):
+            if url not in self._seed_urls:
+                self._log_exclusion(url, 'not_in_seed_list')
         body = (self._extract_text(response, '.field-items .field-item') or
                 self._extract_text(response, '.longpage-sections') or
                 self._extract_text(response, '#content') or

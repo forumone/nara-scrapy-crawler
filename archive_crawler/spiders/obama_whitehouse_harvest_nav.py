@@ -23,9 +23,17 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
     # both do this). LISTING_PAGER_SELECTOR requires an actual populated
     # pager - .pager-current, confirmed present on both real listing
     # templates - before a page counts as a listing at all.
+    # deny_extensions=() disables Scrapy's own built-in IGNORED_EXTENSIONS
+    # denylist (pdf/doc/zip/jpg/etc.) so our own is_web_url allow-list
+    # (archive_crawler/exclusion_rules/<site>.yml) is the sole authority on
+    # what counts as a web page - it's already strictly narrower than
+    # Scrapy's list (only html/htm/php/asp/aspx/shtml/cfm/cgi pass), so this
+    # doesn't change what ends up followed, only which library's opinion
+    # governs it.
     LISTING_VIEW_LINK_EXTRACTOR = LinkExtractor(
         restrict_css='.view',
         allow_domains=['obamawhitehouse.archives.gov'],
+        deny_extensions=(),
     )
     LISTING_PAGER_SELECTOR = '.pager-current'
 
@@ -64,6 +72,7 @@ class ObamaWhiteHouseHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
             LinkExtractor(
                 allow=r'//obamawhitehouse\.archives\.gov/',
                 allow_domains=['obamawhitehouse.archives.gov'],
+                deny_extensions=(),
             ),
             callback='parse_nav',
             follow=False,  # links followed manually in parse_nav, only from non-listing pages

@@ -2,12 +2,25 @@ import csv
 import html
 import os
 import re
+from urllib.parse import urlparse
 
 import scrapy
+from scrapy.linkextractors import LinkExtractor
 from scrapy.selector import Selector
 from w3lib.html import remove_tags, remove_tags_with_content
 
 from archive_crawler import exclusion_rules as _exclusion_rules_module
+
+# Shared by _census_links across every spider that mixes in
+# ExclusionLoggingMixin - stateless/config-only, safe to reuse. No
+# allow_domains (we want external domains surfaced, not dropped) and
+# deny_extensions=() (no IGNORED_EXTENSIONS - our own is_web_url is the sole
+# authority on what's web-shaped). Scrapy's own _is_valid_url still silently
+# drops non-http(s)/file/ftp schemes (mailto:/tel:/javascript:) with no way
+# to override that - accepted as out of scope for the census, since these
+# are a small enough share of overall link volume not to matter for
+# explaining a page-count gap at the client's claimed scale.
+_CENSUS_LINK_EXTRACTOR = LinkExtractor(deny_extensions=())
 
 # Invisible Unicode format characters that appear in archived source HTML.
 # Soft hyphen (U+00AD), zero-width space/non-joiner/joiner (U+200B-D),
@@ -165,6 +178,53 @@ class ExclusionLoggingMixin:
             writer = csv.DictWriter(f, fieldnames=['url', 'reason'])
             writer.writeheader()
             writer.writerows(exclusions)
+
+    def _census_links(self, response):
+        """Extract every <a>/<area> href on the page via a wide-open
+        LinkExtractor (no allow_domains, deny_extensions=() - see
+        _CENSUS_LINK_EXTRACTOR) and log one of each URL's first occurrence
+        under a widened reason set: external domains, this domain's
+        rules:/nav_deny matches (the existing mechanism, now applied to every
+        link on the page rather than just the ones a Rule's own
+        LinkExtractor happened to extract), and non-web extensions. Does NOT
+        see mailto:/tel:/javascript: links - Scrapy's own _is_valid_url
+        drops any non-http(s)/file/ftp scheme unconditionally, with no way
+        to override that short of bypassing LinkExtractor entirely, which
+        isn't worth it for a share of link volume this small.
+
+        Built to make total site-wide hyperlink volume auditable against a
+        client's page-count claim by reason - not to expand what gets
+        crawled. Never schedules a Request for anything found here; this is
+        extraction + classification only.
+
+        Returns the URLs that don't fall into any of those buckets (real,
+        same-domain, non-rule-excluded, HTML-shaped links) for callers that
+        need a further check of their own - e.g. ArchiveSpiderMixin comparing
+        against its own seed list to find content-page links never reached
+        by nav/listing harvesting at all.
+        """
+        rules = self._get_exclusion_rules()
+        allowed = set(d.lower() for d in (getattr(self, 'allowed_domains', None) or []))
+        response_base = response.url.split('#', 1)[0]
+        kept = []
+        for link in _CENSUS_LINK_EXTRACTOR.extract_links(response):
+            url = link.url
+            if url.split('#', 1)[0] == response_base:
+                continue
+            host = urlparse(url).netloc.split(':')[0].lower()
+            if allowed and host not in allowed:
+                self._log_exclusion(url, f'external_domain:{host}')
+                continue
+            reason = _exclusion_rules_module.match_exclude(url, rules)
+            if reason is not None:
+                self._log_exclusion(url, reason)
+                continue
+            if not _exclusion_rules_module.is_web_url(url, rules):
+                ext = _exclusion_rules_module.url_extension(url)
+                self._log_exclusion(url, f'extension:{ext}')
+                continue
+            kept.append(url)
+        return kept
 
 
 class NavHarvesterMixin(ExclusionLoggingMixin):
@@ -424,6 +484,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
             'is_listing': bool(view_urls),
             'depth': response.request.meta.get('depth', 0) if response.request else 0,
         }
+        self._census_links(response)
         for rule in self._rules:
             links = self._apply_nav_deny(self._filter_web_urls(rule.link_extractor.extract_links(response)))
             for link in links:
@@ -578,18 +639,38 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         else:
             self._log_exclusion(failure.request.url, f'network_error:{failure.type.__name__}')
 
+    @staticmethod
+    def _is_redirect_wrapper(response):
+        """A page whose entire content is a client-side meta-refresh to a
+        canonical URL elsewhere (e.g. archived-site "Redirecting..." pages
+        left behind by a URL-normalization pass) - not present as an actual
+        HTTP redirect, so Scrapy's own redirect middleware never sees it and
+        parse_item would otherwise extract this wrapper's own near-empty
+        "Redirecting..." title/body as if it were real content. Confirmed to
+        occur site-wide on obamawhitehouse, not confined to one URL shape or
+        section - detected generically by content rather than by a maintained
+        URL list."""
+        for val in response.css('meta::attr(http-equiv)').getall():
+            if val.strip().lower() == 'refresh':
+                return True
+        return False
+
     def _is_excluded_response(self, response):
         """Common parse_item entry check. A response can be non-text (e.g. a
         binary file served from an extension-less URL a link-following crawl
-        swept up, indistinguishable from a real page by URL shape alone) or a
-        frameset with no extractable content; css()/xpath() raise
-        NotSupported on the former. Logs the appropriate exclusion and
-        returns True if the response should be skipped."""
+        swept up, indistinguishable from a real page by URL shape alone), a
+        frameset with no extractable content, or a client-side redirect
+        wrapper page; css()/xpath() raise NotSupported on the first. Logs the
+        appropriate exclusion and returns True if the response should be
+        skipped."""
         if not isinstance(response, scrapy.http.TextResponse):
             self._log_exclusion(response.url, 'non_text_response')
             return True
         if response.css('frameset'):
             self._log_exclusion(response.url, 'frameset')
+            return True
+        if self._is_redirect_wrapper(response):
+            self._log_exclusion(response.url, 'redirect_wrapper')
             return True
         return False
 

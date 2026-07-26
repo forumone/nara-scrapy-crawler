@@ -340,6 +340,8 @@ class ObamaWhiteHouseHarvestListSpider(ExclusionLoggingMixin, scrapy.Spider):
                 continue
             yield {'url': url}
 
+        self._census_links(response)
+
         # .pager-current's immediately-following sibling <li> holds the
         # forward link in both templates (a "Next" link in the teaser-card
         # pager, a numbered page link in the gallery pager) - confirmed

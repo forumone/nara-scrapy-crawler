@@ -125,6 +125,18 @@ def load_rules(source_site, override_path=None, mode='append'):
     raise ValueError(f"mode must be 'append' or 'replace', got {mode!r}")
 
 
+def url_extension(url):
+    """Return url's last path segment's extension (lowercase, no dot), or
+    None if it has none. Shared by is_web_url and any caller that needs the
+    actual extension value for logging, not just a yes/no verdict."""
+    from urllib.parse import urlparse
+    path = urlparse(url).path.rstrip('/')
+    last_segment = path.rsplit('/', 1)[-1] if path else ''
+    if '.' not in last_segment:
+        return None
+    return last_segment.rsplit('.', 1)[-1].lower()
+
+
 def is_web_url(url, rules):
     """Return True if url looks like a web page rather than a downloadable asset.
 
@@ -134,13 +146,8 @@ def is_web_url(url, rules):
     3. Extension matches rules.extensions per its mode (allow: must be listed;
        deny: must NOT be listed).
     """
-    from urllib.parse import urlparse
-    path = urlparse(url).path.rstrip('/')
-    last_segment = path.rsplit('/', 1)[-1] if path else ''
-    if '.' not in last_segment:
-        return True
-    ext = last_segment.rsplit('.', 1)[-1].lower()
-    if len(ext) > 4:
+    ext = url_extension(url)
+    if ext is None or len(ext) > 4:
         return True
     values = set(v.lower() for v in rules.extensions.get('values', []))
     if rules.extensions.get('mode', 'allow') == 'deny':
