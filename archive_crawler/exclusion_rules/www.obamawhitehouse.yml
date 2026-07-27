@@ -1017,24 +1017,38 @@ rules:
     - https://obamawhitehouse.archives.gov/the_press_office/Declaraciones-del-Presidente-Barack-Obama-Discurso-ante-Sesion-Conjunta
     reason: spanish_content
 
-  # /realitycheck is a legacy alias prefix that mirrors large portions of the
-  # entire site under an alternate top-level path - confirmed 2026-07-26:
-  # /realitycheck/about/inside-white-house and /about/inside-white-house
-  # render identical content (same title, same h1, near-identical byte
-  # length). Reproduces the video/photogallery shared-catalog dedup problem
-  # too: /realitycheck/photos-and-video/video/2016/09/01/president-obama-
-  # delivers-statement-press embeds the exact same 8-item catalog as
-  # digital-briefing-ebola (identical slugs, just prefixed differently), so
-  # it independently re-walks the whole ~740-page shared catalog under this
-  # prefix too - the fingerprint mechanism can't catch this since item hrefs
-  # resolve relative to each page's own base path (see NavHarvesterMixin's
-  # "KNOWN LIMITATION" docstring section - this is the same URL-aliased-view
-  # gap found on letsmove's /blog/all vs /blog/all/all, just far more costly
-  # here). Never discovered by any prior harvest (split-harvester era or the
-  # first unified LISTING_SEEDS-based run) because every one of those either
-  # never explored second-order links (an item page's own outbound links) or
-  # capped depth well short of wherever /realitycheck is actually linked from
-  # - this run's second-order-link-following is what finally reached it.
+  # /realitycheck is a legacy "Reality Check" (2009 health-care-reform
+  # myth-busting initiative) alias prefix reachable only via a normally
+  # hidden Drupal mega-menu, not visible/clickable navigation - confirmed
+  # 2026-07-26/27: /realitycheck/about/inside-white-house and
+  # /about/inside-white-house render identical content (same title, same
+  # h1, near-identical byte length), and the mega-menu's own hrefs have the
+  # /realitycheck/ prefix hardcoded in (not a relative-path artifact).
+  # Coverage is uneven, properly measured at scale (not a small sample):
+  # comprehensive (~97-100%, no temporal pattern, year-stratified 135-URL
+  # check 2009-2017) for the video and photogallery shared catalogs
+  # specifically, but only partial for ordinary content (60.6% in a
+  # proper 500-URL sample from the full eligible population - ranging
+  # 0-80% by section, with a real temporal cliff toward 2016 for blog
+  # specifically, consistent with the alias being actively maintained only
+  # through roughly 2015). Reproduces the video/photogallery shared-catalog
+  # dedup problem: /realitycheck/photos-and-video/video/2016/09/01/
+  # president-obama-delivers-statement-press embeds the exact same 8-item
+  # catalog as digital-briefing-ebola (identical slugs, just prefixed
+  # differently), so it independently re-walks the whole ~740-page shared
+  # catalog under this prefix too - the fingerprint mechanism can't catch
+  # this since item hrefs resolve relative to each page's own base path
+  # (see NavHarvesterMixin's "KNOWN LIMITATION" docstring section - this is
+  # the same URL-aliased-view gap found on letsmove's /blog/all vs
+  # /blog/all/all, just far more costly here). Never discovered by any
+  # prior harvest (split-harvester era or the first unified
+  # LISTING_SEEDS-based run) because the entry-point blog post
+  # (/blog/2009/08/18/clearing-a-few-myths-health-insurance-reform-and-
+  # indian-health-service) WAS already known - discovered via the old
+  # listing-pagination walk - but that walk only ever recorded its URL,
+  # never fetched the page itself, so its own outbound link to
+  # /realitycheck (and the hidden mega-menu beyond it) was never examined
+  # until this session's fix started fetching every item through parse_nav.
   # Excluded from both nav and content-scrape via rules: alone, same as
   # /espanol above - this is a pure duplicate-URL space, not content worth
   # scraping under either prefix separately.
