@@ -347,6 +347,50 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     before relying on this against a site where that pattern could be more
     costly.
 
+    SECOND KNOWN LIMITATION (found 2026-07-27, theoretical - not confirmed
+    to have occurred on any site harvested so far, not fixed): the
+    fingerprint is keyed on a single page's item-URL SET (order-independent,
+    since the set is sorted before hashing), with no awareness of anything
+    beyond that one page. This silently drops content, not just wastes
+    requests, if two DIFFERENT listings (genuinely different total item
+    counts) happen to render an IDENTICAL item set on their own entry page -
+    e.g. a "/blog" view showing only promoted/sticky posts and a "/blog/all"
+    view showing the full archive, both sorted the same way, so both entry
+    pages display the same top-N items. Whichever listing's entry page is
+    discovered first registers that fingerprint and gets walked in full
+    (correctly, for that one); the other listing's entry page then hashes to
+    the SAME fingerprint (since the set is identical) and gets flagged
+    is_listing=True and skipped outright - permanently, since nothing later
+    re-checks it. Unlike the letsmove URL-aliasing limitation above, there
+    is no dupefilter safety net here: the second listing's exclusive tail
+    content (e.g. all the non-promoted posts only reachable via "/blog/all"
+    pagination beyond the shared first page) is never fetched from ANY path
+    and is genuinely lost, not merely re-fetched redundantly. Would need
+    fixing (e.g. tracking each known fingerprint's own recorded page count,
+    and if a newly-encountered page matching an already-seen fingerprint
+    belongs to a listing whose OWN pagination extends further than the
+    already-walked one did, resume/extend the walk rather than skip
+    outright) before this mechanism can be fully trusted against a site with
+    a promoted-content-first listing pattern.
+
+    Checked against obamawhitehouse (2026-07-27), theoretical only there -
+    no confirmed instance. Method: bucket every is_listing=True URL by its
+    first path fragment, then within each bucket inspect the
+    fewest-fragments (shallowest) items first, since shallow depth + a
+    shared prefix is exactly the shape a promoted/full-archive pair would
+    produce; live-refetch each shallow listing and compare its actual
+    item-set fingerprint against its bucket-mates. Covered all 6,411 rows
+    across 36 buckets; the one bucket with the right shape (three shallow
+    listings sharing the "blog" prefix) came back with three distinct
+    fingerprints, i.e. no collision. Does not rule out a collision between
+    two listings that don't share a URL prefix at all - not a full pairwise
+    comparison. Given this is still an unfixed theoretical gap: do not
+    depend on this mechanism against a new site until either (a) this
+    failure mode is confirmed not to occur there via the same kind of
+    bucket-and-refetch check, or (b) automatic listing dedup is confirmed
+    actually necessary for that site (e.g. a real shared-catalog fan-out
+    risk exists) rather than just convenient.
+
     In all cases, no link inside the matched container is ever followed via
     parse_nav's own ordinary link-following loop - item links and
     pager/filter controls alike - only ever via the dedicated walk above.
