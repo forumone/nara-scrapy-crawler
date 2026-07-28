@@ -40,6 +40,7 @@ class LetsMoveHarvestSpider(NavHarvesterMixin, CrawlSpider):
         allow_domains=['letsmove.obamawhitehouse.archives.gov'],
         deny_extensions=(),
     )
+    LISTING_CONTAINER_SELECTOR = '.view'
     LISTING_PAGER_SELECTOR = '.pager'
 
     # DEPTH_LIMIT raised to comfortably clear the /blog/ listing's full
@@ -75,8 +76,8 @@ class LetsMoveHarvestSpider(NavHarvesterMixin, CrawlSpider):
         ),
     )
 
-    def _listing_pagination_items(self, response):
-        return response.css('.views-row .views-field-title a::attr(href)').getall()
+    def _listing_pagination_items(self, container):
+        return container.css('.views-row .views-field-title a::attr(href)').getall()
 
-    def _listing_pagination_next_url(self, response):
-        return response.css('.pager-next a::attr(href)').get()
+    def _listing_pagination_next_url(self, container):
+        return container.css('.pager-next a::attr(href)').get()

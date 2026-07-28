@@ -74,14 +74,15 @@ scrapy crawl generic_crawl \
 `obama_whitehouse_harvest.py`, does nav-style link-following and
 listing-pagination-walking as one spider, one pass, one output CSV.
 
-`LISTING_VIEW_LINK_EXTRACTOR` (scoped to `.view`) and
-`LISTING_PAGER_SELECTOR` (`'.pager-current'`), required together, let the
-crawler safely wander into a listing page it's never seen before: it flags
-the page (`is_listing=True`) instead of excluding it, and never follows any
-link inside the container. Both hooks are required together — `.view`
-presence alone false-positives on ordinary topic pages that merely embed a
-"related videos" widget with real links but no actual pagination; requiring
-a populated pager is what tells a real listing apart from one of those.
+`LISTING_VIEW_LINK_EXTRACTOR` (scoped to `.view`), `LISTING_CONTAINER_SELECTOR`
+(`'.view'`), and `LISTING_PAGER_SELECTOR` (`'.pager-current'`), required
+together, let the crawler safely wander into a listing page it's never seen
+before: it flags the page (`is_listing=True`) instead of excluding it, and
+never follows any link inside a matched container. All three hooks are
+required together — `.view` presence alone false-positives on ordinary topic
+pages that merely embed a "related videos" widget with real links but no
+actual pagination; requiring a populated pager is what tells a real listing
+apart from one of those.
 
 Which listings actually get their pagination walked is fully automatic, not
 curated: `NavHarvesterMixin` fingerprints each flagged listing's extracted
@@ -284,7 +285,7 @@ To check whether a site has a sitemap, try `{base_url}/sitemap.xml` and `{base_u
 ### Discovery before writing code
 
 1. Identify listing pages (paginated archives of content — look for `.views-row` or similar list containers). Check more than one listing template if the site has more than one visual shape for listings.
-2. Identify the container that wraps *both* a listing's item rows and its pager/filter controls (e.g. Drupal Views' `.view` wrapper), and a selector that only matches when a real pager is present (e.g. `.pager-current`) — a nav spider's optional `LISTING_VIEW_LINK_EXTRACTOR` + `LISTING_PAGER_SELECTOR` (required together) use these to safely flag an unknown listing page instead of needing to know about it in advance. Verify on a confirmed listing and a content page that merely embeds a single-item view or a "related content" widget — `.views-row`/`.view` presence alone isn't a reliable signal (both false-positive on embedded widgets that carry the same markup but no pagination), a populated pager is.
+2. Identify the container that wraps *both* a listing's item rows and its pager/filter controls (e.g. Drupal Views' `.view` wrapper), and a selector that only matches when a real pager is present (e.g. `.pager-current`) — a nav spider's optional `LISTING_VIEW_LINK_EXTRACTOR` + `LISTING_CONTAINER_SELECTOR` + `LISTING_PAGER_SELECTOR` (required together) use these to safely flag an unknown listing page instead of needing to know about it in advance, one container at a time if a page carries more than one. Verify on a confirmed listing and a content page that merely embeds a single-item view or a "related content" widget — `.views-row`/`.view` presence alone isn't a reliable signal (both false-positive on embedded widgets that carry the same markup but no pagination), a populated pager is.
 3. Identify nav entry points (top-level pages reachable from navigation that aren't on any listing) — often just the homepage is enough at a generous `DEPTH_LIMIT`.
 4. Identify content selectors (the CSS selectors for body text and title on content pages).
 
@@ -298,8 +299,10 @@ Two patterns exist:
   curated seed list), no merge step. Copy
   `archive_crawler/spiders/obama_whitehouse_harvest.py`, update `name`,
   `allowed_domains`, `SOURCE_SITE`, `LISTING_VIEW_LINK_EXTRACTOR`/
-  `LISTING_PAGER_SELECTOR`, and implement `_listing_pagination_items`/
-  `_listing_pagination_next_url` for the new site's listing template(s).
+  `LISTING_CONTAINER_SELECTOR`/`LISTING_PAGER_SELECTOR`, and implement
+  `_listing_pagination_items`/`_listing_pagination_next_url` (each takes a
+  single container Selector, not the full response) for the new site's
+  listing template(s).
   Remember to raise `DEPTH_LIMIT` well past whatever the longest expected
   pagination chain is (see that spider's own `custom_settings` comment for
   why).

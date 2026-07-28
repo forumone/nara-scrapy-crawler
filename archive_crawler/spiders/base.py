@@ -23,6 +23,14 @@ from archive_crawler import exclusion_rules as _exclusion_rules_module
 # explaining a page-count gap at the client's claimed scale.
 _CENSUS_LINK_EXTRACTOR = LinkExtractor(deny_extensions=())
 
+# Drupal Views always emits these two classes on a view's own wrapper
+# element, in this fixed order, before any theme-added extra class that
+# happens to share the same prefix (e.g. a suffixed view-display-id-page_1
+# -most-recent following the canonical view-display-id-page_1) - see
+# NavHarvesterMixin._view_identity.
+_VIEW_ID_RE = re.compile(r'^view-id-(.+)$')
+_VIEW_DISPLAY_ID_RE = re.compile(r'^view-display-id-(.+)$')
+
 # Invisible Unicode format characters that appear in archived source HTML.
 # Soft hyphen (U+00AD), zero-width space/non-joiner/joiner (U+200B-D),
 # directional marks (U+200E-F), BOM/ZWNBSP (U+FEFF). Also strips the Unicode
@@ -265,60 +273,101 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     Listing discovery and pagination-walking are fully automatic, driven by a
     runtime fingerprint of each listing's item set - no curated seed list, no
     human review step between discovery and walking. Subclasses opt in by
-    setting LISTING_VIEW_LINK_EXTRACTOR (a LinkExtractor scoped to the
-    container a listing's item rows and pager share, e.g.
-    LinkExtractor(restrict_css='.view') for Drupal Views) AND
+    setting three attributes together: LISTING_VIEW_LINK_EXTRACTOR (a
+    LinkExtractor scoped to the container a listing's item rows and pager
+    share, e.g. LinkExtractor(restrict_css='.view') for Drupal Views),
+    LISTING_CONTAINER_SELECTOR (a plain CSS selector string for that same
+    container, e.g. '.view' - kept separate from LISTING_VIEW_LINK_EXTRACTOR
+    rather than read back from its internal restrict_css, which Scrapy
+    translates to XPath and merges into restrict_xpaths at construction time,
+    indistinguishable from a directly-supplied XPath), and
     LISTING_PAGER_SELECTOR (a CSS selector matching only when a real,
-    populated pager is present, e.g. '.pager-current') together - a "view"
-    container alone is not sufficient, since an ordinary content page that
-    merely embeds a single-item "related content" widget can render inside
-    the same container with real links but no pager.
+    populated pager is present, e.g. '.pager-current') - a "view" container
+    alone is not sufficient, since an ordinary content page that merely
+    embeds a single-item "related content" widget can render inside the same
+    container with real links but no pager.
 
-    When both match, parse_nav flags the page (is_listing=True + depth),
-    fingerprints its item set (sha1 of the sorted URLs from
-    _listing_pagination_items - the clean, template-specific item set, not
-    the wider container scan LISTING_VIEW_LINK_EXTRACTOR itself returns,
-    which also picks up the container's own numbered pager links and so
-    differs per permalink even for a byte-identical catalog), and, if this
-    fingerprint is new this run, walks the listing's full pagination via
-    _walk_listing_pagination - fetching each extracted item through this
-    same parse_nav callback (so the item's own outbound links get explored
-    too, and a listing-shaped item gets the same fingerprint treatment with
-    no special-casing). If the fingerprint has already been seen, the page
-    is flagged and nothing inside the container is walked or followed - this
-    is what stops a shared catalog embedded on thousands of permalinks from
-    being re-walked once per permalink. self._seen_listing_fingerprints is
-    in-memory only, scoped to one crawl run.
+    parse_nav evaluates every LISTING_CONTAINER_SELECTOR match on the page
+    independently, not the page as a whole - a page carrying more than one
+    genuinely paginated listing (confirmed to occur, e.g.
+    obamawhitehouse's /energy/news, which renders two independently-paginated
+    Views blocks side by side) gets one fingerprint check and, potentially,
+    one walk per container, rather than merging them into a single check
+    that only ever follows the first container's pager. is_listing (in the
+    yielded item) is True if any container on the page has a populated
+    pager.
 
-    No link inside the matched container - item links and pager/filter
+    For each container with a populated pager, parse_nav fingerprints its
+    item set (sha1 of the sorted URLs from _listing_pagination_items - the
+    clean, template-specific item set scoped to that one container, not the
+    wider container scan LISTING_VIEW_LINK_EXTRACTOR itself returns, which
+    also picks up the container's own numbered pager links and so differs
+    per permalink even for a byte-identical catalog) and combines it with
+    the container's own Drupal view-id/view-display-id (parsed from its
+    class attribute by _view_identity, e.g. view-id-most_recent
+    view-display-id-page_1 - (None, None) if absent, e.g. a non-Drupal
+    site). The combined (view_id, display_id, item_hash) key, not the item
+    hash alone, is what gets checked against self._seen_listing_fingerprints
+    - two containers whose entry pages happen to render an identical item
+    set (e.g. a "recent posts" view and a "browse all" view, both sorted the
+    same way) but come from different Views configurations no longer
+    collide just because their top-N items coincide; the view identity has
+    to agree too.
+
+    If the key is new this run, parse_nav walks that container's full
+    pagination via _walk_listing_pagination - fetching each extracted item
+    through this same parse_nav callback (so the item's own outbound links
+    get explored too, and a listing-shaped item gets the same fingerprint
+    treatment with no special-casing). If the key has already been seen,
+    that container's items and pager are flagged-via-is_listing and nothing
+    inside it is walked or followed - this is what stops a shared catalog
+    embedded on thousands of permalinks from being re-walked once per
+    permalink. self._seen_listing_fingerprints is in-memory only, scoped to
+    one crawl run.
+
+    No link inside a matched container - item links and pager/filter
     controls alike - is ever followed via parse_nav's ordinary
-    link-following loop, only via the dedicated walk above. Links elsewhere
-    on the page are followed normally (as is a .view container's own links
-    when no pager is present - it's just an ordinary embedded widget). The
-    default (None for both LISTING_VIEW_LINK_EXTRACTOR/LISTING_PAGER_SELECTOR)
-    disables the feature entirely, leaving parse_nav's link-following
-    unconditional for subclasses that don't set them.
+    link-following loop, only via the dedicated walk above (this pooling
+    still runs page-wide via LISTING_VIEW_LINK_EXTRACTOR/view_urls, since
+    pooling is harmless for "don't double-follow" purposes even though
+    fingerprinting/walking themselves are per-container). Links elsewhere on
+    the page are followed normally (as is a .view container's own links
+    when no pager is present anywhere on the page - it's just an ordinary
+    embedded widget). The default (None for LISTING_VIEW_LINK_EXTRACTOR/
+    LISTING_CONTAINER_SELECTOR/LISTING_PAGER_SELECTOR) disables the feature
+    entirely, leaving parse_nav's link-following unconditional for
+    subclasses that don't set them.
 
     FORCE_SKIP_LISTING_URLS is an escape hatch (empty by default, not
     required for normal operation): a URL in this set is always flagged
     is_listing and never auto-walked, regardless of its fingerprint - for a
     case where fingerprinting is confirmed to miss a real duplicate.
 
-    LISTING_MAX_PAGES bounds a single listing's pagination walk (default
+    LISTING_MAX_PAGES bounds a single container's pagination walk (default
     2000) as a defense-in-depth cap against an unbounded shared catalog: if
     walking exceeds it, _walk_listing_pagination stops and logs a warning
     rather than continuing silently.
 
-    This mechanism has known limitations (URL aliasing, a promoted/
-    full-archive collision case, and co-located multi-listing pages) and
-    should not be enabled or disabled for a new site without discovery first
-    - see ARCHITECTURE.md's "Listing fingerprint dedup" section for the full
-    decision rule and current details on each.
+    This mechanism has a known limitation (URL aliasing - two URL paths
+    that alias the identical view hash differently and so both get walked
+    in full) that is deliberately not fixed: it's bounded (linear in the
+    number of distinct aliases a site actually defines, not the exponential
+    per-embedding-permalink blowup this mechanism exists to prevent), and
+    the extra items it surfaces in a harvest are themselves the signal that
+    exposes the alias for a targeted rules: exclusion (see
+    ARCHITECTURE.md's "Listing fingerprint dedup" section and www.
+    obamawhitehouse.yml's /realitycheck rule for a worked example). Should
+    not be enabled or disabled for a new site without discovery first - see
+    ARCHITECTURE.md for the full decision rule.
 
-    Subclasses that set LISTING_VIEW_LINK_EXTRACTOR/LISTING_PAGER_SELECTOR
-    must also implement _listing_pagination_items (return this page's item
-    hrefs, template-specific) and _listing_pagination_next_url (return the
-    next pagination page's href, or None) - see _walk_listing_pagination.
+    Subclasses that set LISTING_VIEW_LINK_EXTRACTOR/LISTING_CONTAINER_SELECTOR/
+    LISTING_PAGER_SELECTOR must also implement _listing_pagination_items
+    (return this container's item hrefs, template-specific) and
+    _listing_pagination_next_url (return this container's next pagination
+    page's href, or None) - see _walk_listing_pagination. Both take a single
+    Selector scoped to one container (not the full response) - use
+    response.urljoin(...) where absolute resolution is needed, since a
+    container Selector has no urljoin of its own.
 
     Usage:
         # listing_file is required even on a first run - point it at an
@@ -366,12 +415,14 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         'CRAWLSPIDER_FOLLOW_LINKS': False,
     }
 
-    # Optional per-subclass hooks, both required together: a LinkExtractor
-    # scoped to the container a listing's pagination/filter controls live
-    # in, AND a CSS selector matching only when a real pager is present. See
+    # Optional per-subclass hooks, all three required together: a
+    # LinkExtractor scoped to the container a listing's pagination/filter
+    # controls live in, a plain CSS selector string for that same container,
+    # and a CSS selector matching only when a real pager is present. See
     # "Automatic listing discovery, walk, and dedup" above. None (the
     # default) disables the feature.
     LISTING_VIEW_LINK_EXTRACTOR = None
+    LISTING_CONTAINER_SELECTOR = None
     LISTING_PAGER_SELECTOR = None
 
     # Escape hatch: a URL in this set is always flagged is_listing and never
@@ -470,17 +521,41 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
 
     @staticmethod
     def _listing_fingerprint(view_urls):
-        """sha1 of the sorted item-URL set extracted from a listing's
+        """sha1 of the sorted item-URL set extracted from one listing
         container, as first encountered. Two listing pages that render the
         exact same item set (e.g. every video permalink's embedded "browse
         other videos" catalog) hash identically regardless of which
         textually-distinct URL each copy lives at - see "Automatic listing
-        discovery, walk, and dedup" above."""
+        discovery, walk, and dedup" above. Combined with _view_identity into
+        a composite key by parse_nav - this hash alone is not the dedup key."""
         digest = hashlib.sha1()
         for url in sorted(view_urls):
             digest.update(url.encode('utf-8'))
             digest.update(b'\n')
         return digest.hexdigest()
+
+    @staticmethod
+    def _view_identity(container):
+        """Return (view_id, display_id) parsed from a Drupal Views
+        container's own class attribute (view-id-<machine name>,
+        view-display-id-<display id>), or (None, None) if the container
+        carries no such classes (e.g. a non-Drupal site). Takes the first
+        matching class token in DOM order - Drupal always emits the
+        canonical view-id-*/view-display-id-* classes before any
+        theme-added extra class sharing the same prefix (confirmed live:
+        view-display-id-page_1 followed by a theme-added
+        view-display-id-page_1-most-recent). Used by parse_nav to
+        distinguish two different Views configurations whose item sets
+        happen to coincide, and by _select_container to re-locate the same
+        container across a listing's own pagination pages."""
+        classes = (container.attrib.get('class') or '').split()
+        view_id = next(
+            (m.group(1) for c in classes if (m := _VIEW_ID_RE.match(c))), None,
+        )
+        display_id = next(
+            (m.group(1) for c in classes if (m := _VIEW_DISPLAY_ID_RE.match(c))), None,
+        )
+        return view_id, display_id
 
     def parse_nav(self, response):
         """Yield the URL and follow links if this is a nav content page.
@@ -490,12 +565,14 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         spider from fanning out into known listing sections and their
         thousands of content URLs.
 
-        Pages matched by LISTING_VIEW_LINK_EXTRACTOR are yielded, flagged via
-        is_listing/depth, and their item-URL set fingerprinted - see
-        "Automatic listing discovery, walk, and dedup" above for the full
-        walk/dedup mechanism. No link inside the matched container is
-        followed via the ordinary loop below — items and pager/filter
-        controls alike; other links on the page are followed normally.
+        Every LISTING_CONTAINER_SELECTOR match on the page is evaluated
+        independently - see "Automatic listing discovery, walk, and dedup"
+        above for the full walk/dedup mechanism, including the composite
+        (view_id, display_id, item_hash) fingerprint key. is_listing/depth
+        are yielded once per page (True if any container has a populated
+        pager). No link inside a matched container is followed via the
+        ordinary loop below — items and pager/filter controls alike; other
+        links on the page are followed normally.
 
         Links are followed manually (rather than via follow=True in the Rule)
         so that we can gate following on these per-page checks. Subclass
@@ -515,29 +592,43 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         if self._is_listing_page(response):
             return
         view_urls = set()
-        if self.LISTING_VIEW_LINK_EXTRACTOR is not None and self.LISTING_PAGER_SELECTOR is not None:
-            if response.css(self.LISTING_PAGER_SELECTOR):
+        listing_containers = []
+        if (self.LISTING_VIEW_LINK_EXTRACTOR is not None
+                and self.LISTING_CONTAINER_SELECTOR is not None
+                and self.LISTING_PAGER_SELECTOR is not None):
+            containers = response.css(self.LISTING_CONTAINER_SELECTOR)
+            listing_containers = [
+                (index, container) for index, container in enumerate(containers)
+                if container.css(self.LISTING_PAGER_SELECTOR)
+            ]
+            if listing_containers:
                 view_urls = {lnk.url for lnk in self.LISTING_VIEW_LINK_EXTRACTOR.extract_links(response)}
         yield {
             'url': response.url,
-            'is_listing': bool(view_urls),
+            'is_listing': bool(listing_containers),
             'depth': response.request.meta.get('depth', 0) if response.request else 0,
         }
         self._census_links(response)
-        if view_urls and response.url not in self.FORCE_SKIP_LISTING_URLS:
-            # Fingerprint _listing_pagination_items, NOT view_urls - the
-            # latter also includes the container's own numbered pager links,
-            # which point back to THIS permalink's own URL and so differ per
-            # permalink even for a byte-identical catalog (see the mixin's
-            # own docstring).
-            item_urls = {response.urljoin(href) for href in self._listing_pagination_items(response)}
-            # Register before walking, not after - avoids a race where two
-            # near-simultaneous discoveries of the same shared catalog both
-            # start walking before either finishes.
-            fingerprint = self._listing_fingerprint(item_urls)
-            if fingerprint not in self._seen_listing_fingerprints:
-                self._seen_listing_fingerprints.add(fingerprint)
-                yield from self._walk_listing_pagination(response, _skip_census=True)
+        if response.url not in self.FORCE_SKIP_LISTING_URLS:
+            for index, container in listing_containers:
+                # Fingerprint _listing_pagination_items, NOT view_urls - the
+                # latter also includes the container's own numbered pager
+                # links, which point back to THIS permalink's own URL and so
+                # differ per permalink even for a byte-identical catalog
+                # (see the mixin's own docstring).
+                item_urls = {response.urljoin(href) for href in self._listing_pagination_items(container)}
+                view_id, display_id = self._view_identity(container)
+                # Register before walking, not after - avoids a race where
+                # two near-simultaneous discoveries of the same shared
+                # catalog both start walking before either finishes.
+                key = (view_id, display_id, self._listing_fingerprint(item_urls))
+                if key in self._seen_listing_fingerprints:
+                    continue
+                self._seen_listing_fingerprints.add(key)
+                yield from self._walk_listing_pagination(
+                    response, container_index=index, view_id=view_id,
+                    display_id=display_id, _skip_census=True,
+                )
         for rule in self._rules:
             links = self._apply_nav_deny(self._filter_web_urls(rule.link_extractor.extract_links(response)))
             for link in links:
@@ -553,44 +644,89 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     # entry points onto identical logic.
     parse_start_url = parse_nav
 
-    def _listing_pagination_items(self, response):
-        """Return this listing pagination page's item hrefs (template-
-        specific CSS/xpath, e.g. '.views-row h2 a::attr(href)'). Required
-        override for any subclass that sets LISTING_VIEW_LINK_EXTRACTOR/
+    def _listing_pagination_items(self, container):
+        """Return this listing container's item hrefs (template-specific
+        CSS/xpath, e.g. '.views-row h2 a::attr(href)'), scoped to the single
+        container Selector parse_nav passes in - not the whole response.
+        Required override for any subclass that sets
+        LISTING_VIEW_LINK_EXTRACTOR/LISTING_CONTAINER_SELECTOR/
         LISTING_PAGER_SELECTOR - see _walk_listing_pagination."""
         raise NotImplementedError(
             f'{type(self).__name__} sets LISTING_VIEW_LINK_EXTRACTOR/'
-            'LISTING_PAGER_SELECTOR but does not implement '
-            '_listing_pagination_items'
+            'LISTING_CONTAINER_SELECTOR/LISTING_PAGER_SELECTOR but does not '
+            'implement _listing_pagination_items'
         )
 
-    def _listing_pagination_next_url(self, response):
-        """Return this listing pagination page's next-page href, or None if
-        this is the last page. Required override alongside
-        _listing_pagination_items - see _walk_listing_pagination."""
+    def _listing_pagination_next_url(self, container):
+        """Return this listing container's next-page href, or None if this
+        is the last page. Scoped to the single container Selector parse_nav
+        passes in, same as _listing_pagination_items. Required override
+        alongside _listing_pagination_items - see _walk_listing_pagination."""
         raise NotImplementedError(
             f'{type(self).__name__} sets LISTING_VIEW_LINK_EXTRACTOR/'
-            'LISTING_PAGER_SELECTOR but does not implement '
-            '_listing_pagination_next_url'
+            'LISTING_CONTAINER_SELECTOR/LISTING_PAGER_SELECTOR but does not '
+            'implement _listing_pagination_next_url'
         )
 
-    def _walk_listing_pagination(self, response, _page_count=1, _skip_census=False):
-        """Walk a listing's full pagination automatically, fetching each
-        extracted item through parse_nav (rather than merely recording its
-        URL) so the item's own outbound links get explored too - see
-        "Automatic listing discovery, walk, and dedup" above. Recurses
+    def _select_container(self, response, container_index, view_id, display_id):
+        """Re-locate 'the same' listing container on a later page of this
+        container's own pagination walk. Prefers matching by the
+        container's own persistent Drupal view-id/view-display-id (stable
+        across a listing's own pagination pages - only view-dom-id is
+        randomized per-request, and this isn't it), falling back to
+        positional index only if no container's identity matches (e.g.
+        view_id/display_id are (None, None) because the site isn't Drupal,
+        or the site's own markup changed shape between pages). Positional
+        fallback assumes container order is stable across a listing's own
+        paginated pages - a reasonable assumption for how Views-rendered
+        pages work in practice (the same template renders its blocks in the
+        same order on every page), but not logically guaranteed - hence
+        preferring the identity match first."""
+        containers = response.css(self.LISTING_CONTAINER_SELECTOR)
+        if view_id is not None or display_id is not None:
+            for container in containers:
+                if self._view_identity(container) == (view_id, display_id):
+                    return container
+            self.logger.warning(
+                'Listing pagination at %s: no container matched view '
+                'identity (%r, %r) seen on the entry page - falling back '
+                'to positional index %d, which may pick the wrong '
+                'container if page layout shifted.',
+                response.url, view_id, display_id, container_index,
+            )
+        return containers[container_index]
+
+    def _walk_listing_pagination(
+        self, response, container_index, view_id=None, display_id=None,
+        _page_count=1, _skip_census=False,
+    ):
+        """Walk one listing container's full pagination automatically,
+        fetching each extracted item through parse_nav (rather than merely
+        recording its URL) so the item's own outbound links get explored too
+        - see "Automatic listing discovery, walk, and dedup" above. Recurses
         through subsequent pages via this same callback; only the entry
         page's fingerprint gets checked (in parse_nav) - a fresh fingerprint
         check per pagination page isn't needed since the whole chain is only
         ever reached once, from that one fingerprint-gated call.
+
+        container_index/view_id/display_id identify which of this page's
+        LISTING_CONTAINER_SELECTOR matches to operate on - re-selected fresh
+        via _select_container on every pagination page fetched through this
+        method's own recursive response.follow(...,
+        cb_kwargs={'container_index': ..., 'view_id': ..., 'display_id':
+        ...}) call, not carried over as a Selector object across requests
+        (a Selector is scoped to the response it came from, so a later
+        page's container has to be re-selected from that page's own
+        response regardless).
 
         _skip_census avoids double-logging the entry page's census (parse_nav
         already ran it on that same response before dispatching here) without
         skipping it for every later page in the chain, which never go through
         parse_nav at all.
         """
+        container = self._select_container(response, container_index, view_id, display_id)
         rules = self._get_exclusion_rules()
-        for href in self._listing_pagination_items(response):
+        for href in self._listing_pagination_items(container):
             url = response.urljoin(href)
             reason = _exclusion_rules_module.match_exclude(url, rules)
             if reason is not None:
@@ -603,20 +739,25 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
 
         if _page_count >= self.LISTING_MAX_PAGES:
             self.logger.warning(
-                'Listing pagination at %s hit LISTING_MAX_PAGES=%d without '
-                'reaching its last page - aborting walk. Possible '
-                'fingerprinting failure to collapse a shared/duplicate '
-                'catalog; investigate before trusting this listing\'s '
-                'harvested items.',
-                response.url, self.LISTING_MAX_PAGES,
+                'Listing pagination at %s (container %d) hit '
+                'LISTING_MAX_PAGES=%d without reaching its last page - '
+                'aborting walk. Possible fingerprinting failure to collapse '
+                'a shared/duplicate catalog; investigate before trusting '
+                'this listing\'s harvested items.',
+                response.url, container_index, self.LISTING_MAX_PAGES,
             )
             return
 
-        next_href = self._listing_pagination_next_url(response)
+        next_href = self._listing_pagination_next_url(container)
         if next_href:
             yield response.follow(
                 next_href, callback=self._walk_listing_pagination,
-                cb_kwargs={'_page_count': _page_count + 1},
+                cb_kwargs={
+                    'container_index': container_index,
+                    'view_id': view_id,
+                    'display_id': display_id,
+                    '_page_count': _page_count + 1,
+                },
             )
 
 

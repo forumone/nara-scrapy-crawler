@@ -18,123 +18,128 @@ item range once per embed — a fan-out blowup, not a bug in the target site.
 
 ### How it works
 
-A subclass opts in by setting two class attributes together —
+A subclass opts in by setting three class attributes together —
 `LISTING_VIEW_LINK_EXTRACTOR` (a `LinkExtractor` scoped to the container a
-listing's item rows and pager share, e.g. Drupal Views' `.view` wrapper)
-and `LISTING_PAGER_SELECTOR` (a CSS selector that only matches when a real,
-populated pager is present, e.g. `.pager-current`). Both must be set; either
-one alone isn't enough — an ordinary content page that merely embeds a
+listing's item rows and pager share, e.g. Drupal Views' `.view` wrapper),
+`LISTING_CONTAINER_SELECTOR` (a plain CSS selector string for that same
+container, e.g. `'.view'`), and `LISTING_PAGER_SELECTOR` (a CSS selector
+that only matches when a real, populated pager is present, e.g.
+`.pager-current`). `LISTING_CONTAINER_SELECTOR` is kept separate from
+`LISTING_VIEW_LINK_EXTRACTOR` rather than read back from its internal
+`restrict_css`, which Scrapy translates to XPath and merges into
+`restrict_xpaths` at construction time — indistinguishable there from a
+directly-supplied XPath, so not a reliable place to recover a CSS selector
+from. All three must be set; a container without a populated pager isn't
+enough on its own — an ordinary content page that merely embeds a
 single-item "related content" widget can render inside the same container
 with real links but no pager, and would false-positive as a listing without
 the pager check.
 
-When both match on a page, `parse_nav`:
+`parse_nav` evaluates every `LISTING_CONTAINER_SELECTOR` match on the page
+independently, not the page as a whole — a page carrying more than one
+genuinely paginated listing gets one fingerprint check and, potentially, one
+walk, per container. For each container with a populated pager:
 
-1. Flags the page in the output (`is_listing=True` + `depth`).
-2. Extracts the page's own item-URL set via `_listing_pagination_items`
-   (subclass-implemented, template-specific — **not** the wider set
-   `LISTING_VIEW_LINK_EXTRACTOR` finds, which also picks up the container's
-   own numbered pager links; those point back to the current permalink and
-   would make otherwise-identical listings hash differently).
-3. Hashes that set (sha1 of the sorted URLs) into a fingerprint.
-4. If the fingerprint hasn't been seen this run, walks the listing's full
+1. Flags the page in the output (`is_listing=True` + `depth` — `True` if
+   *any* container on the page has a populated pager).
+2. Extracts that container's own item-URL set via `_listing_pagination_items`
+   (subclass-implemented, template-specific, scoped to the one container
+   Selector — **not** the wider set `LISTING_VIEW_LINK_EXTRACTOR` finds,
+   which also picks up the container's own numbered pager links; those
+   point back to the current permalink and would make otherwise-identical
+   listings hash differently).
+3. Hashes that set (sha1 of the sorted URLs), and combines it with the
+   container's own persistent Drupal `view-id`/`view-display-id` (parsed
+   from its class attribute) into a composite `(view_id, display_id,
+   item_hash)` key.
+4. If the key hasn't been seen this run, walks that container's full
    pagination via `_walk_listing_pagination`, fetching every extracted item
    through `parse_nav` itself (so an item's own outbound links get explored
-   too). If the fingerprint has already been seen, the page is flagged and
-   nothing inside the container is walked or followed.
+   too). If the key has already been seen, that container is flagged and
+   nothing inside it is walked or followed.
 
-No link inside the matched container — item rows or pager/filter controls —
+Requiring `view_id`/`display_id` to also match — not item-hash alone — means
+two *different* Views configurations whose entry pages happen to render an
+identical item set (e.g. a "recent posts" view and a "browse all" view, both
+sorted the same way) no longer collide just because their top-N items
+coincide; the underlying view identity has to agree too. A container without
+this markup (e.g. a non-Drupal site) degrades to `(None, None, item_hash)` —
+the same item-hash-only behavior as before this key existed.
+
+`_walk_listing_pagination` re-locates "the same" container on each
+subsequent pagination page by matching `view_id`/`display_id` first, falling
+back to positional index only if no container's identity matches. The
+positional fallback assumes container order is stable across a listing's own
+paginated pages (the same template renders its blocks in the same order on
+every page) — reasonable for how Views-rendered pages work in practice, but
+not logically guaranteed, which is why the identity match is tried first.
+
+No link inside a matched container — item rows or pager/filter controls —
 is ever followed by `parse_nav`'s ordinary link-following loop; only via the
-dedicated walk above. `_seen_listing_fingerprints` is in-memory, scoped to
-one crawl run.
+dedicated walk above (this pooling still runs page-wide via
+`LISTING_VIEW_LINK_EXTRACTOR`, since pooling for "don't double-follow"
+purposes is harmless even though fingerprinting/walking are per-container).
+`_seen_listing_fingerprints` is in-memory, scoped to one crawl run.
 
 `FORCE_SKIP_LISTING_URLS` is a manual escape hatch (empty by default): a URL
 in this set is always flagged `is_listing` and never auto-walked, regardless
 of fingerprint, for a case where fingerprinting is confirmed to miss a real
-duplicate. `LISTING_MAX_PAGES` (default 2000) bounds a single listing's
+duplicate. `LISTING_MAX_PAGES` (default 2000) bounds a single container's
 pagination walk as a defense-in-depth cap against an unbounded shared
 catalog.
 
-The default for both `LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_PAGER_SELECTOR`
-is `None`, which disables the feature entirely: `parse_nav` never flags a
-listing, never fingerprints, and follows every extracted link
-unconditionally — a plain full-link-follow crawl with no listing-awareness.
+The default for `LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_CONTAINER_SELECTOR`/
+`LISTING_PAGER_SELECTOR` is `None`, which disables the feature entirely:
+`parse_nav` never flags a listing, never fingerprints, and follows every
+extracted link unconditionally — a plain full-link-follow crawl with no
+listing-awareness.
 
 ### Decision rule: discovery before enabling or disabling
 
-Enabling this feature on a subclass is mechanically trivial — set two class
-attributes and implement two small methods. Whether to enable it is a
+Enabling this feature on a subclass is mechanically trivial — set three
+class attributes and implement two small methods. Whether to enable it is a
 separate question that depends entirely on the target site's own listing
 structure, and is never a safe default in either direction:
 
 - Leaving it disabled reverts to unconditional full-link-follow, which is
   exactly the shared-catalog fan-out failure mode this mechanism exists to
   prevent, if the site has one.
-- Enabling it is not risk-free either — see the known limitations below,
-  each of which can under-count content on the wrong listing shape.
+- Enabling it is not risk-free either — see the known limitation below.
 
 Before deciding either way for a given site, run the same kind of discovery
 already done for obamawhitehouse and letsmove: confirm whether a real
 shared-catalog fan-out risk actually exists there, and, if enabling, check
-each limitation below against that site's specific listing templates (e.g.
+the limitation below against that site's specific listing templates (e.g.
 bucket flagged listings by URL-prefix and live-refetch each shallow one to
-compare fingerprints, the same check used to ground the confirmations
-below). Don't enable or disable this mechanism for a new site on
-convenience or default alone.
+compare fingerprints, the same check used to ground the confirmation below).
+Don't enable or disable this mechanism for a new site on convenience or
+default alone.
 
-### Known limitations
+### Known limitation
 
-**URL aliasing.** The fingerprint is keyed on exact item-URL-set identity,
-not "is this the same underlying view reached a different way." Two URL
-paths that alias the identical view hash differently and each get walked in
-full — confirmed on letsmove, where `/blog/all` and `/blog/all/all` render
-the same content but produce different fingerprints. Usually low-impact,
-since Scrapy's own URL-level dupefilter still collapses the actual content
-items regardless of which pagination path found them first — so this
-mostly wastes redundant pagination requests, not final content accuracy.
-Not always compensated: obamawhitehouse's legacy `/realitycheck` alias
-prefix (see below) hits this same gap far more expensively, and is handled
-by excluding the alias prefix outright via `rules:` rather than relying on
-the dupefilter.
+**URL aliasing.** The fingerprint is keyed on exact item-URL-set identity
+(plus view identity, see above), not "is this the same underlying view
+reached a different way." Two URL paths that alias the identical view hash
+differently and each get walked in full — confirmed on letsmove, where
+`/blog/all` and `/blog/all/all` render overlapping-but-not-identical content
+at different page sizes, and on obamawhitehouse, where a legacy
+`/realitycheck` alias prefix mirrors already-crawled content (including the
+site's shared video/photogallery catalogs) under a different address.
 
-**Promoted/full-archive collision.** The fingerprint is keyed on a single
-page's item-URL *set*, order-independent, with no awareness of anything
-beyond that one page. If two genuinely different listings (different total
-item counts) happen to render an identical item set on their own entry page
-— e.g. a "recent posts" view showing only promoted content and a
-"browse all" view showing the full archive, both sorted the same way, so
-both entry pages display the same top-N items — this silently drops
-content, not just wastes requests. Whichever listing's entry page is
-discovered first registers the fingerprint and gets walked correctly; the
-other's entry page hashes to the same fingerprint and is flagged-and-skipped
-permanently. There is no dupefilter safety net here, unlike URL aliasing
-above: the second listing's exclusive tail content is never fetched from
-any path. Checked directly against obamawhitehouse (bucketed every flagged
-listing by URL prefix, live-refetched the shallowest candidate in each
-bucket, compared fingerprints) with no confirmed instance found there, but
-this was not an exhaustive pairwise check across every flagged listing, and
-does not rule out a collision between two listings that don't share a URL
-prefix at all.
-
-**Co-located listings.** Every step of this mechanism operates page-wide,
-not per-`.view`-container: the pager check looks for a pager anywhere on
-the page, not inside one specific container; the view-link extractor scans
-every matching container on the page; item extraction and next-page lookup
-run unscoped queries across the whole document and take the first match in
-document order. A page carrying two genuinely distinct, independently
-paginated listings is therefore not modeled as two listings at all — both
-merge into one fingerprint, and the walk only ever follows one pager chain.
-Confirmed to occur on obamawhitehouse's `/energy/news`, which renders two
-Views blocks side by side; harmless there only because both listings'
-pagers happen to target the same URL (an accidental property of that page's
-specific wiring, not something this mechanism understands or guarantees).
-A co-located pair with independent pagers would not get the same accidental
-protection — the listing whose pager isn't the one being followed could
-have tail content silently missed, with nothing to flag it.
-
-Given these limitations remain unfixed, treat automatic listing dedup as
-something to verify per site, not to trust by default — see the decision
-rule above.
+Deliberately not fixed. The cost is bounded — linear in however many
+distinct aliases a site actually defines for one view (in practice, a
+handful), not the exponential per-embedding-permalink blowup this mechanism
+exists to prevent, which is unaffected (see "How it works" above). Scrapy's
+own URL-level dupefilter also still collapses the actual content items
+regardless of which alias's pagination found them first, so ordinary
+aliases mostly just waste some redundant pagination requests. Where an alias
+is expensive enough to matter (`/realitycheck`, mirroring the video/
+photogallery catalogs at ~740/~35 pages each), the fix is a targeted
+`rules:` exclusion once found (see `www.obamawhitehouse.yml`), not a change
+to this mechanism — the extra items an unexcluded alias surfaces in a
+harvest are themselves the signal that exposes it for that exclusion, and
+building automatic alias detection here would remove exactly the visibility
+that caught `/realitycheck` in the first place.
 
 ---
 

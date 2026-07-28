@@ -91,14 +91,15 @@ Inspect the live site to answer these questions before writing any code:
   two such templates).
 - What container reliably wraps *both* a listing's item rows and its
   pager/filter controls? (e.g. Drupal Views' own `.view` wrapper) This is
-  what `LISTING_VIEW_LINK_EXTRACTOR` (see step 2) uses to
-  flag an unknown listing page safely. Verify it on at least one confirmed
-  listing *and* one page you know isn't a listing but embeds some other
-  single-item view widget — `.views-row` presence alone is not reliable for
-  this (a content page can embed a single-item view and carry the same
-  markup as a real listing; see `NavHarvesterMixin`'s docstring). A populated
-  pager/filter block inside the container is the actual signal, not the
-  container's mere presence.
+  what `LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_CONTAINER_SELECTOR` (see step 2)
+  use to flag an unknown listing page safely, one container at a time if a
+  page carries more than one. Verify it on at least one confirmed listing
+  *and* one page you know isn't a listing but embeds some other single-item
+  view widget — `.views-row` presence alone is not reliable for this (a
+  content page can embed a single-item view and carry the same markup as a
+  real listing; see `NavHarvesterMixin`'s docstring). A populated pager/filter
+  block inside the container is the actual signal, not the container's mere
+  presence.
 - What are the top-level nav sections? These become `start_urls` for the nav
   spider — often just the homepage is enough (see step 2).
 - Are there path prefixes that should be universally out of scope regardless
@@ -116,23 +117,26 @@ Inspect the live site to answer these questions before writing any code:
 Create `archive_crawler/spiders/<site>_harvest.py` using `NavHarvesterMixin`.
 Set `SOURCE_SITE` to match the content spider's own `SOURCE_SITE` (they share
 one `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml` file), and — if step 1
-found a reliable listing-container selector and pager selector — set both
-`LISTING_VIEW_LINK_EXTRACTOR` and `LISTING_PAGER_SELECTOR` (required
-together) so the crawler can safely wander into a listing it's never seen
-before: it flags the page (`is_listing=True` in the output) instead of
-excluding it, and does not follow any link inside the matched container (item
-links and pager/filter controls alike), so discovering a huge listing can't
-make the crawler fan out across its full item or pagination range. Instead,
-the mixin fingerprints the listing's item set and walks its pagination
-automatically the first time that fingerprint is seen, fetching every
-extracted item through this same crawl — so this one spider's output is
-already the complete harvest; no separate listing spider or merge step is
-needed. See [ARCHITECTURE.md](ARCHITECTURE.md#listing-fingerprint-dedup-navharvestermixin)
-for the full mechanism and its known limitations.
-`LISTING_VIEW_LINK_EXTRACTOR` alone is not enough — an ordinary content page
-that merely embeds a "related content" widget can render inside the exact
-same container with real links but no pager at all; `LISTING_PAGER_SELECTOR`
-requiring an actual populated pager is what tells the two apart.
+found a reliable listing-container selector and pager selector — set all
+three of `LISTING_VIEW_LINK_EXTRACTOR`, `LISTING_CONTAINER_SELECTOR`, and
+`LISTING_PAGER_SELECTOR` (required together) so the crawler can safely
+wander into a listing it's never seen before: it flags the page
+(`is_listing=True` in the output) instead of excluding it, and does not
+follow any link inside a matched container (item links and pager/filter
+controls alike), so discovering a huge listing can't make the crawler fan
+out across its full item or pagination range. Instead, the mixin
+fingerprints each container's item set (combined with its Drupal
+view-id/display-id, if present) and walks its pagination automatically the
+first time that combination is seen, fetching every extracted item through
+this same crawl — so this one spider's output is already the complete
+harvest; no separate listing spider or merge step is needed. See
+[ARCHITECTURE.md](ARCHITECTURE.md#listing-fingerprint-dedup-navharvestermixin)
+for the full mechanism and its known limitation.
+`LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_CONTAINER_SELECTOR` alone are not
+enough — an ordinary content page that merely embeds a "related content"
+widget can render inside the exact same container with real links but no
+pager at all; `LISTING_PAGER_SELECTOR` requiring an actual populated pager
+is what tells the two apart.
 
 ```python
 from scrapy.linkextractors import LinkExtractor
@@ -151,6 +155,7 @@ class MySiteHarvestSpider(NavHarvesterMixin, CrawlSpider):
         restrict_css='.view',
         allow_domains=['example.archives.gov'],
     )
+    LISTING_CONTAINER_SELECTOR = '.view'
     LISTING_PAGER_SELECTOR = '.pager-current'
 
     start_urls = [

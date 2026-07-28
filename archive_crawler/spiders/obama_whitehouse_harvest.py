@@ -51,6 +51,7 @@ class ObamaWhiteHouseHarvestSpider(NavHarvesterMixin, CrawlSpider):
         allow_domains=['obamawhitehouse.archives.gov'],
         deny_extensions=(),
     )
+    LISTING_CONTAINER_SELECTOR = '.view'
     LISTING_PAGER_SELECTOR = '.pager-current'
 
     # DEPTH_LIMIT raised well past the mixin's usual 20 to comfortably clear
@@ -97,14 +98,14 @@ class ObamaWhiteHouseHarvestSpider(NavHarvesterMixin, CrawlSpider):
     # blog/author pages), table-based gallery (.views-field-title, e.g.
     # photo/video galleries), and person-directory (.views-row
     # .views-field-nid a, e.g. /blog/authors).
-    def _listing_pagination_items(self, response):
-        links = response.css(
+    def _listing_pagination_items(self, container):
+        links = container.css(
             '.views-row h2 a::attr(href), .views-row h3 a::attr(href)'
         ).getall()
         if not links:
-            links = response.css('.views-field-title a::attr(href)').getall()
+            links = container.css('.views-field-title a::attr(href)').getall()
         if not links:
-            links = response.css('.views-row .views-field-nid a::attr(href)').getall()
+            links = container.css('.views-row .views-field-nid a::attr(href)').getall()
         return links
 
     # .pager-current's immediately-following sibling <li> holds the forward
@@ -112,5 +113,5 @@ class ObamaWhiteHouseHarvestSpider(NavHarvesterMixin, CrawlSpider):
     # numbered page link in the gallery pager) - one selector covers both
     # rather than branching on .pager-next (which the gallery template
     # doesn't use at all).
-    def _listing_pagination_next_url(self, response):
-        return response.css('.pager-current + li a::attr(href)').get()
+    def _listing_pagination_next_url(self, container):
+        return container.css('.pager-current + li a::attr(href)').get()
