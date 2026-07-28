@@ -8,7 +8,7 @@ and unexpected pages visible before they become data problems.
 Check for a sitemap first (`/sitemap.xml`, `/sitemap_index.xml`, or a `Sitemap:`
 directive in `robots.txt`) — if one exists, skip everything else in this document
 and use the sitemap harvester below. The remaining sections (choosing a harvester
-pattern, the split harvester, the generic harvester) are all for sites with **no**
+pattern, the nav harvester, the generic harvester) are all for sites with **no**
 sitemap.
 
 ---
@@ -30,7 +30,7 @@ outputs a harvest CSV — one `url` column, one row per content page — without
 fetching any content pages itself. Used by all of Clinton (CW1–6), Biden, and GWBush.
 
 Then write a dedicated content spider using `ArchiveSpiderMixin` (same pattern as
-Step 5 in the split-harvester walkthrough below) to scrape from that harvest CSV.
+Step 4 in the nav-harvester walkthrough below) to scrape from that harvest CSV.
 See README's "Sitemap-Based Archive Spiders" section for a worked example against
 an existing spider.
 
@@ -43,33 +43,39 @@ The following patterns are for sites with no sitemap.
 **Use `generic_crawl_harvest`** for small, simple sites. It follows `?page=`/`/page/`-style
 pagination automatically (without recording the listing pages themselves as content —
 only the content links found on them), so ordinary paginated listing sections don't
-by themselves require the split pattern anymore.
+by themselves require `NavHarvesterMixin` below.
 
-**Use the split harvester pattern** (`*_harvest_list` + `*_harvest_nav`) when a site's
-pagination doesn't follow the `?page=`/`/page/` convention (custom offset/cursor
-params, JS-driven infinite scroll, etc.), or when listing rows need a specific CSS
-selector to identify the real content link rather than generic link-following. The
-nav spider alone will miss content behind pagination; the list spider alone will
-miss nav-only pages.
+**Use `NavHarvesterMixin`** when a site's pagination doesn't follow the
+`?page=`/`/page/` convention (custom offset/cursor params, JS-driven infinite
+scroll, etc.), or when listing rows need a specific CSS selector to identify
+the real content link rather than generic link-following. One spider does
+both ordinary nav link-following and, if step 1 finds a reliable listing
+container + pager selector, automatic listing pagination-walking in the same
+pass — no second spider, no merge step. See "Step-by-step: nav harvester"
+below. A legacy two-spider variant (list-first) also exists for a site where
+no such selector pair can be made reliable — see the callout at the end of
+that section.
 
 If you are not sure, start with site discovery (step 1) and try `generic_crawl_harvest`
 first — if the pagination doesn't match the standard convention or content links can't
-be reliably distinguished from navigation/facet noise, fall back to the split pattern.
+be reliably distinguished from navigation/facet noise, fall back to `NavHarvesterMixin`.
 
 ---
 
-## Step-by-step: split harvester
+## Step-by-step: nav harvester
 
-Two orderings are possible. **Nav-first** (recommended default) runs a single
-full-site discovery crawl that finds both ordinary content and listing pages
-in one pass, then walks only the confirmed listings' pagination afterward.
-**List-first** (the older pattern, still valid — see the callout at the end)
-curates a small set of known listings up front, harvests their pagination,
-and only then nav-crawls the rest of the site while skipping what's already
-known. Nav-first needs less upfront knowledge of the site and doesn't require
-guessing every listing section in advance; list-first is simpler to reason
-about for a site with a small, easily-enumerable set of listings and no
-reliable way to detect an unknown one from its markup alone.
+One spider (using `NavHarvesterMixin`) runs a single full-site discovery
+crawl that finds ordinary content and listing pages in the same pass and,
+where a listing is flagged, walks its pagination automatically the first
+time each listing's item set is seen — see
+[ARCHITECTURE.md](ARCHITECTURE.md#listing-fingerprint-dedup-navharvestermixin)
+for the fingerprint mechanism this relies on, including its known
+limitations and the discovery you should do before trusting it against a
+new site. This is the current recommended pattern for any new
+listing-bearing, no-sitemap site. A legacy list-first variant, not used by
+any current site in this repo, is described in the callout at the end of
+this section for a site where step 1 can't produce a reliable listing
+container + pager selector pair.
 
 ### Step 1 — Discovery
 
@@ -85,7 +91,7 @@ Inspect the live site to answer these questions before writing any code:
   two such templates).
 - What container reliably wraps *both* a listing's item rows and its
   pager/filter controls? (e.g. Drupal Views' own `.view` wrapper) This is
-  what `LISTING_VIEW_LINK_EXTRACTOR` (nav-first only, see step 2) uses to
+  what `LISTING_VIEW_LINK_EXTRACTOR` (see step 2) uses to
   flag an unknown listing page safely. Verify it on at least one confirmed
   listing *and* one page you know isn't a listing but embeds some other
   single-item view widget — `.views-row` presence alone is not reliable for
@@ -94,7 +100,7 @@ Inspect the live site to answer these questions before writing any code:
   pager/filter block inside the container is the actual signal, not the
   container's mere presence.
 - What are the top-level nav sections? These become `start_urls` for the nav
-  spider — for nav-first, often just the homepage is enough (see step 2).
+  spider — often just the homepage is enough (see step 2).
 - Are there path prefixes that should be universally out of scope regardless
   of phase? (e.g. a non-English mirror, `/sites/` Drupal assets) Put these in
   `rules:` in the new site's `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`
@@ -105,9 +111,9 @@ Inspect the live site to answer these questions before writing any code:
   `NavHarvesterMixin._apply_nav_deny`).
 - What is the domain? Are there subdomains that should be handled by separate spiders?
 
-### Step 2 — Nav discovery crawl
+### Step 2 — Nav + listing discovery crawl
 
-Create `archive_crawler/spiders/<site>_harvest_nav.py` using `NavHarvesterMixin`.
+Create `archive_crawler/spiders/<site>_harvest.py` using `NavHarvesterMixin`.
 Set `SOURCE_SITE` to match the content spider's own `SOURCE_SITE` (they share
 one `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml` file), and — if step 1
 found a reliable listing-container selector and pager selector — set both
@@ -116,21 +122,25 @@ together) so the crawler can safely wander into a listing it's never seen
 before: it flags the page (`is_listing=True` in the output) instead of
 excluding it, and does not follow any link inside the matched container (item
 links and pager/filter controls alike), so discovering a huge listing can't
-make the crawler fan out across its full item or pagination range.
+make the crawler fan out across its full item or pagination range. Instead,
+the mixin fingerprints the listing's item set and walks its pagination
+automatically the first time that fingerprint is seen, fetching every
+extracted item through this same crawl — so this one spider's output is
+already the complete harvest; no separate listing spider or merge step is
+needed. See [ARCHITECTURE.md](ARCHITECTURE.md#listing-fingerprint-dedup-navharvestermixin)
+for the full mechanism and its known limitations.
 `LISTING_VIEW_LINK_EXTRACTOR` alone is not enough — an ordinary content page
 that merely embeds a "related content" widget can render inside the exact
 same container with real links but no pager at all; `LISTING_PAGER_SELECTOR`
-requiring an actual populated pager is what tells the two apart (confirmed:
-`restrict_css='.view'` alone false-positived on topic pages embedding a
-"related videos" block with zero pagination).
+requiring an actual populated pager is what tells the two apart.
 
 ```python
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
 from archive_crawler.spiders.base import NavHarvesterMixin
 
-class MySiteHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
-    name = "mysite_harvest_nav"
+class MySiteHarvestSpider(NavHarvesterMixin, CrawlSpider):
+    name = "mysite_harvest"
     allowed_domains = ["example.archives.gov"]
     SOURCE_SITE = 'example'  # matches the content spider's SOURCE_SITE
 
@@ -170,25 +180,23 @@ class MySiteHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
 If you override `custom_settings` in a subclass, it **replaces** the
 mixin's dict entirely rather than merging with it — keep
 `'CRAWLSPIDER_FOLLOW_LINKS': False` in whatever you set, or CrawlSpider's own
-built-in link-following silently re-enables for that spider (confirmed to
-leak both a listing's pager link and its `.view` container's item links
-straight past `LISTING_VIEW_LINK_EXTRACTOR` when it does — see the comment
-on `NavHarvesterMixin.custom_settings` in `base.py` for the full mechanism).
+built-in link-following silently re-enables for that spider (see the comment
+on `NavHarvesterMixin.custom_settings` in `base.py` for why).
 
 `listing_file` is still a required argument (`NavHarvesterMixin.__init__`
-raises without it) — on a first, nav-first run there's no prior harvest to
-seed it with, so point it at an empty CSV (header row only):
+raises without it) — on a first run there's no prior harvest to seed it
+with, so point it at an empty CSV (header row only):
 
 ```
 echo "url" > data/mysite/mysite_empty-listing.csv
 
-scrapy crawl mysite_harvest_nav \
+scrapy crawl mysite_harvest \
     -a listing_file=data/mysite/mysite_empty-listing.csv \
     -s DEPTH_LIMIT=10 \
     -s DEPTH_PRIORITY=1 \
     -s SCHEDULER_DISK_QUEUE=scrapy.squeues.PickleFifoDiskQueue \
     -s SCHEDULER_MEMORY_QUEUE=scrapy.squeues.FifoMemoryQueue \
-    -O data/mysite/mysite_harvest-nav.csv
+    -O data/mysite/mysite_harvest-full.csv
 ```
 
 The `DEPTH_PRIORITY`/`SCHEDULER_*` flags switch Scrapy's default LIFO
@@ -210,114 +218,28 @@ Run this **untimed** (no `CLOSESPIDER_TIMEOUT`) so it actually exhausts the
 site rather than stopping mid-traversal — a partial run can't distinguish
 "genuinely unreachable within `DEPTH_LIMIT`" from "just didn't get there yet."
 
-### Step 3 — Review and promote listing candidates
+### Step 3 — Spot-check listing detections
 
-Filter the nav CSV for `is_listing=True` and spot-check them for false
-positives before trusting any of them. Also check the crawl log for
-`Ignoring link (depth > 10)` entries not already in any known CSV — these are
-genuine gaps cut off purely by `DEPTH_LIMIT`, not dead ends, and may warrant
-adding their section root as an additional `start_urls` seed for a follow-up
-run (only after confirming the gap, not preemptively).
+Filter the harvest CSV for `is_listing=True` and spot-check them for false
+positives — a content page that merely embeds a single-item view can still
+carry the same container markup as a real listing, though a populated pager
+inside it is a much stronger signal than raw item-row markup alone. No
+promotion step needed: every flagged listing's pagination is walked
+automatically the first time its item-set fingerprint is seen (step 2). If
+fingerprinting is ever confirmed to have missed a real duplicate catalog,
+add the offending URL to `FORCE_SKIP_LISTING_URLS` rather than introducing a
+curated seed list.
 
-Confirmed listings get added to `<site>_harvest_list.py`'s `start_urls`
-(step 4) — hardcoded directly in the source and pushed, if the site is a
-static/frozen archive where the true listing set never changes; a dynamic
-`-a seeds_file=<path>` argument only if new listings can genuinely appear
-later (e.g. a live site being recrawled periodically).
+Also check the crawl log for `Ignoring link (depth > N)` entries not already
+in the harvest CSV — these are genuine gaps cut off purely by `DEPTH_LIMIT`,
+not dead ends, and may warrant adding their section root as an additional
+`start_urls` seed for a follow-up run (only after confirming the gap, not
+preemptively).
 
-### Step 4 — Listing pagination walk
-
-Create (or extend) `archive_crawler/spiders/<site>_harvest_list.py`. This is a
-plain `scrapy.Spider` that paginates through each confirmed listing and
-yields one `{'url': href}` per content link found — handle every listing
-template step 1 identified, trying each item-link selector in turn:
-
-```python
-import scrapy
-
-class MySiteHarvestListSpider(scrapy.Spider):
-    name = "mysite_harvest_list"
-    allowed_domains = ["example.archives.gov"]
-    start_urls = [
-        "https://example.archives.gov/blog/",
-        "https://example.archives.gov/news/",
-        # ... confirmed listing pages from step 3
-    ]
-
-    def parse(self, response):
-        links = response.css('.views-row .views-field-title a::attr(href)').getall()
-        if not links:
-            links = response.css('.views-field-title a::attr(href)').getall()  # 2nd known template
-        if not links:
-            return
-
-        for href in links:
-            yield {'url': response.urljoin(href)}
-
-        # .pager-current's immediately-following sibling <li> holds the
-        # forward link across multiple Drupal pager styles (a "Next" link in
-        # some templates, a numbered page link in others) - more robust than
-        # anchoring on .pager-next, which not every template renders.
-        next_page = response.css('.pager-current + li a::attr(href)').get()
-        if next_page:
-            yield response.follow(next_page, callback=self.parse)
-```
-
-Run it:
-
-```
-scrapy crawl mysite_harvest_list -o data/mysite/mysite_harvest-listing.csv
-```
-
-Inspect the output before continuing. Verify row count is plausible and
-spot-check a sample of URLs to confirm they point to individual content
-pages, not listing pages. **This file's rows are content items, not listing
-pages** — the listing pages' own URLs live in the nav CSV from step 2,
-flagged `is_listing=True`. This is also what `NavHarvesterMixin`'s
-`listing_file`/`_listing_urls` dedup set holds on a later, non-first run
-(content already known, so the nav crawler shouldn't re-fetch or re-follow
-it) — not a registry of listing-page URLs, despite the name. Worth reading
-`NavHarvesterMixin`'s docstring and `_is_listing_page`'s before touching
-either file; conflating the two is an easy, real mistake to make.
-
-### Step 5 — Merge
-
-```
-python merge_harvest.py \
-    -o data/mysite/mysite_harvest-full.csv \
-    data/mysite/mysite_harvest-nav.csv \
-    data/mysite/mysite_harvest-listing.csv
-```
-
-Inputs don't need identical columns — the merge is on the union, so the nav
-CSV's `url,is_listing,depth` and the listing CSV's `url`-only shape combine
-cleanly, with `is_listing`/`depth` left blank for rows that don't have them.
-
-Compare the merged URL count against any existing scrape results. Investigate
-unexpectedly large gaps before proceeding. Categories of expected non-matches:
-
-- **In existing but not harvest**: check for listing pages, mangled URLs, or
-  genuinely unreachable content (403s, 404s). Only the last category is a real gap.
-- **In harvest but not existing**: these are new URLs the previous crawl missed.
-  Spot-check a sample to confirm they are real content pages, not noise.
-
-> **List-first alternative.** If step 1 couldn't identify a reliable listing
-> container and pager selector, or the site's listings are already fully
-> known and small: skip both `LISTING_VIEW_LINK_EXTRACTOR` and
-> `LISTING_PAGER_SELECTOR`, run step 4 first against a manually-curated
-> set of known listing URLs (no step 3 needed), then run step 2's nav crawl
-> second with that step's output as a real, non-empty `listing_file` — the
-> nav crawl will skip everything already captured and only needs to cover
-> whatever's left. This is the original ordering this document used before
-> `LISTING_VIEW_LINK_EXTRACTOR` existed, and still fully supported; it just
-> requires knowing every listing section up front, and a shallower
-> `DEPTH_LIMIT` (2, escalating to 3 or 4 if spot-checking finds gaps) since
-> there's no per-page safety net against fanning out into an unknown listing.
-
-### Step 6 — Scrape
+### Step 4 — Scrape
 
 Create `archive_crawler/spiders/<site>.py` using `ArchiveSpiderMixin`. It reads
-from `url_file` (the merged harvest CSV) and extracts title, body, and teaser.
+from `url_file` (the harvest CSV from step 2) and extracts title, body, and teaser.
 
 ```python
 import csv
@@ -365,6 +287,72 @@ scrapy crawl mysite \
 
 ---
 
+## Legacy: list-first split harvester
+
+Not used by any current site in this repo — both existing no-sitemap sites
+use the unified pattern above. Kept as a documented fallback for a
+hypothetical site where step 1 can't identify a reliable listing container +
+pager selector pair, so `LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_PAGER_SELECTOR`
+can't be set at all.
+
+Two separate spiders instead of one: a plain `scrapy.Spider` walks a
+manually-curated set of known listing pages' pagination first and records
+every content item it finds; a `NavHarvesterMixin` spider (with
+`LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_PAGER_SELECTOR` left unset) then
+crawls the rest of the site second, using the first spider's output as its
+`listing_file` so it skips everything already captured. This requires
+knowing every listing section up front, and a shallower `DEPTH_LIMIT` (2,
+escalating to 3 or 4 if spot-checking finds gaps) than the unified pattern,
+since there's no per-page safety net against fanning out into an unknown
+listing.
+
+```python
+import scrapy
+
+class MySiteHarvestListSpider(scrapy.Spider):
+    name = "mysite_harvest_list"
+    allowed_domains = ["example.archives.gov"]
+    start_urls = [
+        "https://example.archives.gov/blog/",
+        "https://example.archives.gov/news/",
+        # ... every known listing page, curated up front
+    ]
+
+    def parse(self, response):
+        links = response.css('.views-row .views-field-title a::attr(href)').getall()
+        if not links:
+            links = response.css('.views-field-title a::attr(href)').getall()  # 2nd known template
+        if not links:
+            return
+
+        for href in links:
+            yield {'url': response.urljoin(href)}
+
+        next_page = response.css('.pager-current + li a::attr(href)').get()
+        if next_page:
+            yield response.follow(next_page, callback=self.parse)
+```
+
+```
+scrapy crawl mysite_harvest_list -o data/mysite/mysite_harvest-listing.csv
+
+scrapy crawl mysite_harvest_nav \
+    -a listing_file=data/mysite/mysite_harvest-listing.csv \
+    -O data/mysite/mysite_harvest-nav.csv
+```
+
+The two output CSVs then need merging by `url` (dedup, union of columns —
+the listing CSV's `url`-only shape and the nav CSV's `url,is_listing,depth`
+shape combine with `is_listing`/`depth` blank for rows that don't have them)
+before the merged file can be passed to a content spider as `url_file`.
+Compare the merged URL count against any existing scrape results before
+proceeding — categories of expected non-matches: existing-but-not-harvested
+(listing pages, mangled URLs, or genuinely unreachable content - only the
+last is a real gap) and harvested-but-not-existing (new URLs a previous
+crawl missed, worth spot-checking rather than assuming they're noise).
+
+---
+
 ## Step-by-step: generic harvester
 
 For simple sites, skip to a single harvest phase:
@@ -409,12 +397,22 @@ with site-specific selectors, same as any other new site's scraper.
 
 ## Naming conventions
 
+**Unified pattern (current):**
+
+| File | Spider name |
+|---|---|
+| `<site>_harvest.py` | `<site>_harvest` |
+| `<site>.py` | `<site>` |
+| Output CSVs | `data/<site>/<site>_harvest-full.csv`, `data/<site>/<site>.csv` |
+
+**Legacy list-first pattern:**
+
 | File | Spider name |
 |---|---|
 | `<site>_harvest_list.py` | `<site>_harvest_list` |
 | `<site>_harvest_nav.py` | `<site>_harvest_nav` |
 | `<site>.py` | `<site>` |
-| Output CSVs | `data/<site>/<site>_harvest-listing.csv`, `data/<site>/<site>_harvest-nav.csv`, `data/<site>/<site>_harvest-full.csv`, `data/<site>/<site>.csv` |
+| Output CSVs | `data/<site>/<site>_harvest-listing.csv`, `data/<site>/<site>_harvest-nav.csv`, `data/<site>/<site>_harvest-full.csv` (merged), `data/<site>/<site>.csv` |
 
 Note the CSV naming uses a hyphen before the phase name (`_harvest-listing`,
 `_harvest-nav`, `_harvest-full`) while the Python module/spider names use an

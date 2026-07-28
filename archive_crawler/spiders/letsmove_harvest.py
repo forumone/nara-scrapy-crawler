@@ -5,24 +5,21 @@ from archive_crawler.spiders.base import NavHarvesterMixin
 
 
 class LetsMoveHarvestSpider(NavHarvesterMixin, CrawlSpider):
-    """Unified nav+listing discovery pass, replacing the separate
-    letsmove_harvest_nav/_list spiders and merge_harvest.py's reconciliation
-    step for this site - same pattern as obama_whitehouse_harvest.py (see
-    that spider's own docstring for the full rationale). One CrawlSpider:
-    ordinary nav link-following flags a listing (is_listing=True), fingerprints
-    its item-URL set, and auto-walks its pagination the first time that
-    fingerprint is seen (NavHarvesterMixin's fingerprint mechanism - no
-    curated seed list).
+    """Unified nav+listing discovery pass for
+    letsmove.obamawhitehouse.archives.gov - same pattern as
+    obama_whitehouse_harvest.py (see that spider's docstring, and
+    ARCHITECTURE.md for the shared fingerprint mechanism). One CrawlSpider:
+    ordinary nav link-following flags a listing (is_listing=True),
+    fingerprints its item-URL set, and auto-walks its pagination the first
+    time that fingerprint is seen - no curated seed list.
 
-    Much smaller/lower-risk than the Obama WH version: one main listing
-    section (~98 pages, ~1,458 items, confirmed by a live walk 2026-07-26),
-    not 255 seeds across multiple shared-catalog-risk templates - no
-    video/photogallery-style duplicate-catalog concern here. Individual blog
-    posts also embed a "recent posts" widget sharing the same view id
-    (most_recent) and pager-token scheme as /blog/'s own listing - if its
-    item set is identical across posts, the fingerprint mechanism collapses
-    it the same way as any other shared catalog; if it varies per post, each
-    gets walked once, which is harmless at this site's scale either way.
+    Much smaller/lower-risk than the Obama WH site: one main listing section
+    (/blog/), no video/photogallery-style shared-catalog concern. Individual
+    blog posts also embed a "recent posts" widget sharing the same view id
+    and pager-token scheme as /blog/'s own listing - if its item set is
+    identical across posts, the fingerprint mechanism collapses it the same
+    way as any other shared catalog; if it varies per post, each gets walked
+    once, which is harmless at this site's scale either way.
     """
 
     name = "letsmove_harvest"
@@ -45,18 +42,13 @@ class LetsMoveHarvestSpider(NavHarvesterMixin, CrawlSpider):
     )
     LISTING_PAGER_SELECTOR = '.pager'
 
-    # DEPTH_LIMIT raised from the old nav spider's 4 to comfortably clear
-    # the /blog/ listing's full pagination chain (98 pages, confirmed via a
-    # live walk 2026-07-26 - this site's pager URLs are opaque hashed
-    # tokens, not sequential page numbers, so this had to be walked rather
+    # DEPTH_LIMIT raised to comfortably clear the /blog/ listing's full
+    # pagination chain (this site's pager URLs are opaque hashed tokens, not
+    # sequential page numbers, so the chain length has to be walked rather
     # than inferred from the markup). Same DepthMiddleware-shares-one-counter
     # reasoning as obama_whitehouse_harvest.py: without raising this,
     # _walk_listing_pagination's own pager-following would get silently cut
-    # off well short of the listing's true end. Old nav's DEPTH_LIMIT=4 was
-    # narrow enough that 5 extra start_urls had to be added by hand for
-    # pages "confirmed beyond depth 4" - kept below for now (harmless, and
-    # not the focus of this reunification), but raising the ceiling this
-    # much may make some of them redundant; not re-verified this session.
+    # off well short of the listing's true end.
     custom_settings = {
         'DEPTH_LIMIT': 200,
         'CRAWLSPIDER_FOLLOW_LINKS': False,

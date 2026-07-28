@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Merge two or more harvest CSVs into a single file with one header row.
+"""Merge two or more CSVs into a single file with one header row.
+
+Not currently used by any spider or documented workflow in this repo - kept
+as a general-purpose utility script for a future one-off need (e.g. merging
+a legacy list-first harvester's two output CSVs, see HARVESTING.md's
+"Legacy: list-first split harvester" section).
 
 Inputs do not need identical columns - e.g. a nav harvester's url/is_listing/
 depth output can be merged with a listing harvester's url-only output. The
@@ -7,14 +12,10 @@ merged file's header is the union of all input columns, in first-seen order;
 rows from a file missing a given column get '' for it.
 
 Rows are deduplicated by 'url': for a URL appearing in more than one input,
-only the row from the first file listing it is kept (so listing a nav CSV
-before a listing-harvest CSV keeps the nav row's is_listing/depth metadata).
-This matters because the listing harvester has no awareness of what the nav
-harvester already found via cross-links - without this, a content item
-reachable both ways would be scraped twice by the content spider.
+only the row from the first file listing it is kept.
 
 Usage:
-    python merge_harvest.py \\
+    python merge_csvs.py \\
         -o data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv \\
         data/www.obamawhitehouse/www.obamawhitehouse_harvest-listing.csv \\
         data/www.obamawhitehouse/www.obamawhitehouse_harvest-nav.csv

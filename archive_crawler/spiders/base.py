@@ -236,169 +236,84 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     Provides listing-file exclusion, web-page URL filtering, and a parse_nav
     callback. Subclasses supply name, allowed_domains, start_urls, and rules.
 
-    See HARVESTING.md for the full end-to-end process this mixin fits into.
+    See HARVESTING.md for the full end-to-end process this mixin fits into,
+    and ARCHITECTURE.md for the full listing-fingerprint mechanism design,
+    its known limitations, and the decision rule for whether to enable it on
+    a given site.
 
     listing_file is required
     ------------------------
-    Every nav harvester must be given the output of its companion
-    *_harvest_list spider via -a listing_file=<path>. This is not optional.
-
-    The listing file is the *_harvest_list spider's own output: individual
-    content-item URLs it extracted from known listing pages' .views-row
-    entries while walking their pagination - NOT the listing pages'
-    own URLs. It is loaded into _listing_urls at startup as a dedup set: a
-    URL in that set is already known good content harvested the efficient
-    way (direct pagination walk), so the nav crawler must not re-fetch,
-    re-emit, or re-follow it - doing so would just waste budget rediscovering
-    thousands of already-known content URLs by wandering the nav graph.
+    Every nav harvester must be given a dedup set of already-known content
+    URLs via -a listing_file=<path> (a CSV with a url column; an empty file -
+    header row only - is fine on a first run). This is not optional. A URL
+    in that file is treated as already-known good content, so the nav
+    crawler must not re-fetch, re-emit, or re-follow it.
 
     CSS-based listing detection (overriding _is_listing_page to inspect the
-    response body) is intentionally not used to *exclude* pages in split
-    harvesters. In-page signals such as .views-row are unreliable: content
-    pages that embed a "More Like This" block carry the same markup as
-    listing pages and would be incorrectly excluded. URL-based pre-filtering
-    avoids this class of error entirely by relying on what the list harvester
-    actually found rather than on assumptions about page structure.
+    response body) is intentionally not used to *exclude* pages here. In-page
+    signals such as .views-row are unreliable: content pages that embed a
+    "More Like This" block carry the same markup as listing pages and would
+    be incorrectly excluded. URL-based pre-filtering via listing_file avoids
+    this by relying on what a prior run actually found rather than
+    assumptions about page structure.
 
     If a site is simple enough that a listing_file is unnecessary, it does not
-    need a split harvester — use generic_crawl_harvest instead.
+    need this mixin at all — use generic_crawl_harvest instead.
 
     Automatic listing discovery, walk, and dedup
     ---------------------------------------------
-    listing_file only pre-filters *known* content URLs from a prior run (see
-    above). Listing discovery and pagination-walking themselves are fully
-    automatic, driven by a runtime fingerprint - no curated seed list, no
-    human review step between discovery and walking.
+    Listing discovery and pagination-walking are fully automatic, driven by a
+    runtime fingerprint of each listing's item set - no curated seed list, no
+    human review step between discovery and walking. Subclasses opt in by
+    setting LISTING_VIEW_LINK_EXTRACTOR (a LinkExtractor scoped to the
+    container a listing's item rows and pager share, e.g.
+    LinkExtractor(restrict_css='.view') for Drupal Views) AND
+    LISTING_PAGER_SELECTOR (a CSS selector matching only when a real,
+    populated pager is present, e.g. '.pager-current') together - a "view"
+    container alone is not sufficient, since an ordinary content page that
+    merely embeds a single-item "related content" widget can render inside
+    the same container with real links but no pager.
 
-    Subclasses opt in by setting LISTING_VIEW_LINK_EXTRACTOR to a
-    LinkExtractor scoped to the container a listing's pagination is attached
-    to (e.g. Drupal Views' own wrapper, LinkExtractor(restrict_css='.view') —
-    confirmed on obamawhitehouse to enclose both the item rows and the pager
-    across multiple distinct view templates, teaser-card and table-gallery
-    alike) AND LISTING_PAGER_SELECTOR to a CSS selector matching only when a
-    real pager is present (e.g. '.pager-current', confirmed on both
-    templates). Both must be set together and both must match for a page to
-    be treated as a listing - a "view" container alone is NOT sufficient.
-    Confirmed empirically this matters: ordinary content/topic pages that
-    merely embed a "related videos"/"related blog posts" widget also render
-    inside a .view-classed container with real links, but carry no pager at
-    all (unlike the single-item-embed false positive this was originally
-    built to avoid, which doesn't even have a .view wrapper) - restrict_css
-    alone flags these as false-positive listings and, worse, excludes their
-    related-content links from being followed, which can genuinely miss a
-    page only ever linked from inside one of these widgets. Requiring a
-    populated pager closes both problems at once.
+    When both match, parse_nav flags the page (is_listing=True + depth),
+    fingerprints its item set (sha1 of the sorted URLs from
+    _listing_pagination_items - the clean, template-specific item set, not
+    the wider container scan LISTING_VIEW_LINK_EXTRACTOR itself returns,
+    which also picks up the container's own numbered pager links and so
+    differs per permalink even for a byte-identical catalog), and, if this
+    fingerprint is new this run, walks the listing's full pagination via
+    _walk_listing_pagination - fetching each extracted item through this
+    same parse_nav callback (so the item's own outbound links get explored
+    too, and a listing-shaped item gets the same fingerprint treatment with
+    no special-casing). If the fingerprint has already been seen, the page
+    is flagged and nothing inside the container is walked or followed - this
+    is what stops a shared catalog embedded on thousands of permalinks from
+    being re-walked once per permalink. self._seen_listing_fingerprints is
+    in-memory only, scoped to one crawl run.
 
-    When both match, parse_nav flags the page in the output (url + is_listing
-    + depth) AND fingerprints the page's clean, template-specific item set -
-    _listing_pagination_items(response), sha1 of the sorted tuple, see
-    _listing_fingerprint - NOT the wider view_urls set LISTING_VIEW_LINK_EXTRACTOR
-    extracts from the whole .view container. That wider set also includes the
-    container's own numbered pager links (a Drupal pager renders nearby page
-    numbers, not just a single "next" arrow), which point back to THAT
-    permalink's own URL and so differ per permalink even when the real catalog
-    items are byte-identical - fingerprinting view_urls directly would silently
-    defeat the whole dedup mechanism (confirmed during smoke-testing: two
-    photogallery permalinks sharing an identical 8-item catalog hashed
-    differently until the fingerprint was switched to the clean item set).
-    If the fingerprint is new (this exact item set has never been walked this
-    run), the listing's full
-    pagination gets walked automatically via _walk_listing_pagination, and
-    each extracted item is fetched through this same parse_nav callback
-    (response.follow(item_url, callback=self.parse_nav)) rather than merely
-    recorded - so an item's own outbound links get explored too, and if the
-    item itself turns out to be another listing-shaped page (e.g. a video
-    permalink embedding the sitewide "browse other videos" catalog), the same
-    fingerprint check flags-and-skips it with no special-casing. If the
-    fingerprint has already been seen, the page is flagged and nothing inside
-    the container is walked or followed - this is what stops a byte-identical
-    shared catalog embedded on thousands of distinct permalinks from being
-    re-walked once per permalink (see obama_whitehouse_harvest.py's own
-    module docstring for the concrete case this defends against).
-    self._seen_listing_fingerprints is in-memory only, built up over one
-    crawl run, matching how _logged_exclusion_urls already works.
+    No link inside the matched container - item links and pager/filter
+    controls alike - is ever followed via parse_nav's ordinary
+    link-following loop, only via the dedicated walk above. Links elsewhere
+    on the page are followed normally (as is a .view container's own links
+    when no pager is present - it's just an ordinary embedded widget). The
+    default (None for both LISTING_VIEW_LINK_EXTRACTOR/LISTING_PAGER_SELECTOR)
+    disables the feature entirely, leaving parse_nav's link-following
+    unconditional for subclasses that don't set them.
 
     FORCE_SKIP_LISTING_URLS is an escape hatch (empty by default, not
     required for normal operation): a URL in this set is always flagged
-    is_listing and never auto-walked, regardless of its fingerprint - a
-    manual override in case fingerprinting is ever confirmed to miss a real
-    duplicate on some future site, without reintroducing a curation
-    dependency for the common case.
+    is_listing and never auto-walked, regardless of its fingerprint - for a
+    case where fingerprinting is confirmed to miss a real duplicate.
 
     LISTING_MAX_PAGES bounds a single listing's pagination walk (default
-    2000): if walking exceeds it, _walk_listing_pagination stops and logs a
-    warning rather than continuing silently. Curation used to implicitly
-    bound scope by only ever seeding known-good listings; with curation gone
-    this is the automatic backstop against a fingerprinting bug re-walking an
-    unbounded shared catalog.
+    2000) as a defense-in-depth cap against an unbounded shared catalog: if
+    walking exceeds it, _walk_listing_pagination stops and logs a warning
+    rather than continuing silently.
 
-    KNOWN LIMITATION (found 2026-07-26, not fixed): the fingerprint is keyed
-    on exact item-URL-set identity, not "is this the same underlying view
-    reached a different way." Two URL paths that alias the identical view
-    hash differently and each get fully walked - confirmed on letsmove,
-    where /blog/all and /blog/all/all render the same content (same item
-    set, same pager hash tokens) but produce different fingerprints, so both
-    got independently walked in full. Confirmed low-impact where seen so
-    far: Scrapy's own URL-level dupefilter still collapses the actual
-    content items regardless of which pagination path found them, so this
-    only wastes some redundant pagination requests, not final content-count
-    accuracy - but worth fixing (e.g. checking response.url against a set of
-    already-walked *entry* URLs too, not just the item-set fingerprint)
-    before relying on this against a site where that pattern could be more
-    costly.
-
-    SECOND KNOWN LIMITATION (found 2026-07-27, theoretical - not confirmed
-    to have occurred on any site harvested so far, not fixed): the
-    fingerprint is keyed on a single page's item-URL SET (order-independent,
-    since the set is sorted before hashing), with no awareness of anything
-    beyond that one page. This silently drops content, not just wastes
-    requests, if two DIFFERENT listings (genuinely different total item
-    counts) happen to render an IDENTICAL item set on their own entry page -
-    e.g. a "/blog" view showing only promoted/sticky posts and a "/blog/all"
-    view showing the full archive, both sorted the same way, so both entry
-    pages display the same top-N items. Whichever listing's entry page is
-    discovered first registers that fingerprint and gets walked in full
-    (correctly, for that one); the other listing's entry page then hashes to
-    the SAME fingerprint (since the set is identical) and gets flagged
-    is_listing=True and skipped outright - permanently, since nothing later
-    re-checks it. Unlike the letsmove URL-aliasing limitation above, there
-    is no dupefilter safety net here: the second listing's exclusive tail
-    content (e.g. all the non-promoted posts only reachable via "/blog/all"
-    pagination beyond the shared first page) is never fetched from ANY path
-    and is genuinely lost, not merely re-fetched redundantly. Would need
-    fixing (e.g. tracking each known fingerprint's own recorded page count,
-    and if a newly-encountered page matching an already-seen fingerprint
-    belongs to a listing whose OWN pagination extends further than the
-    already-walked one did, resume/extend the walk rather than skip
-    outright) before this mechanism can be fully trusted against a site with
-    a promoted-content-first listing pattern.
-
-    Checked against obamawhitehouse (2026-07-27), theoretical only there -
-    no confirmed instance. Method: bucket every is_listing=True URL by its
-    first path fragment, then within each bucket inspect the
-    fewest-fragments (shallowest) items first, since shallow depth + a
-    shared prefix is exactly the shape a promoted/full-archive pair would
-    produce; live-refetch each shallow listing and compare its actual
-    item-set fingerprint against its bucket-mates. Covered all 6,411 rows
-    across 36 buckets; the one bucket with the right shape (three shallow
-    listings sharing the "blog" prefix) came back with three distinct
-    fingerprints, i.e. no collision. Does not rule out a collision between
-    two listings that don't share a URL prefix at all - not a full pairwise
-    comparison. Given this is still an unfixed theoretical gap: do not
-    depend on this mechanism against a new site until either (a) this
-    failure mode is confirmed not to occur there via the same kind of
-    bucket-and-refetch check, or (b) automatic listing dedup is confirmed
-    actually necessary for that site (e.g. a real shared-catalog fan-out
-    risk exists) rather than just convenient.
-
-    In all cases, no link inside the matched container is ever followed via
-    parse_nav's own ordinary link-following loop - item links and
-    pager/filter controls alike - only ever via the dedicated walk above.
-    Links elsewhere on the same page are still followed normally (and, so
-    are a .view container's own links when no pager is present - it's just
-    an ordinary embedded widget, not a listing). The default (None for both
-    LISTING_VIEW_LINK_EXTRACTOR/LISTING_PAGER_SELECTOR) leaves parse_nav's
-    behavior exactly as before for subclasses that don't set them.
+    This mechanism has known limitations (URL aliasing, a promoted/
+    full-archive collision case, and co-located multi-listing pages) and
+    should not be enabled or disabled for a new site without discovery first
+    - see ARCHITECTURE.md's "Listing fingerprint dedup" section for the full
+    decision rule and current details on each.
 
     Subclasses that set LISTING_VIEW_LINK_EXTRACTOR/LISTING_PAGER_SELECTOR
     must also implement _listing_pagination_items (return this page's item
@@ -406,16 +321,17 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     next pagination page's href, or None) - see _walk_listing_pagination.
 
     Usage:
-        # Step 1: run the list harvester first
-        #   scrapy crawl mysite_harvest_list -o data/mysite_harvest_list.csv
+        # listing_file is required even on a first run - point it at an
+        # empty CSV (header row only) when there's no prior harvest to seed
+        # it with:
+        #   echo "url" > data/mysite/mysite_empty-listing.csv
         #
-        # Step 2: feed its output to the nav harvester
-        #   scrapy crawl mysite_harvest_nav \
-        #       -a listing_file=data/mysite_harvest_list.csv \
-        #       -o data/mysite_harvest_nav.csv
+        #   scrapy crawl mysite_harvest \
+        #       -a listing_file=data/mysite/mysite_empty-listing.csv \
+        #       -o data/mysite/mysite_harvest-full.csv
 
-        class MySiteHarvestNavSpider(NavHarvesterMixin, CrawlSpider):
-            name = "mysite_harvest_nav"
+        class MySiteHarvestSpider(NavHarvesterMixin, CrawlSpider):
+            name = "mysite_harvest"
             allowed_domains = ["example.com"]
             start_urls = [...]
             rules = (
@@ -435,21 +351,16 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
 
     # Subclasses that need a different depth can override custom_settings
     # entirely, but keep CRAWLSPIDER_FOLLOW_LINKS: False if they do.
-    # CrawlSpider's own built-in _requests_to_follow runs unconditionally for
-    # every start_urls response (triggered by _parse()'s hardcoded
-    # follow=True), entirely independent of parse_nav/parse_start_url - it
-    # extracts links via each Rule's LinkExtractor and applies only
-    # rule.process_links, bypassing _filter_web_urls and
-    # LISTING_VIEW_LINK_EXTRACTOR entirely. Confirmed empirically: a listing
-    # page placed directly in start_urls leaks both its pager link and its
-    # .view container's item links into the crawl via this path, even though
-    # parse_nav's own manual loop correctly excludes both - undermining the
-    # fan-out protection specifically for start_urls entries. Every
-    # subsequent hop is unaffected (reached via this mixin's own
-    # response.follow(..., callback=self.parse_nav) calls, a plain Request
-    # with no CrawlSpider follow-machinery involvement), so this only ever
-    # matters for start_urls, but disabling it entirely costs nothing since
-    # parse_nav's manual loop is a complete replacement.
+    # CrawlSpider's own built-in link-following runs unconditionally for
+    # every start_urls response regardless of parse_nav, bypassing
+    # _filter_web_urls and LISTING_VIEW_LINK_EXTRACTOR entirely - a listing
+    # page placed directly in start_urls would leak its pager and item links
+    # into the crawl via this path even though parse_nav's own manual loop
+    # correctly excludes both. Only start_urls entries are exposed to this
+    # (every later hop goes through this mixin's own response.follow(...,
+    # callback=self.parse_nav) calls, not CrawlSpider's follow-machinery),
+    # but disabling it entirely costs nothing since parse_nav's manual loop
+    # is a complete replacement.
     custom_settings = {
         'DEPTH_LIMIT': 2,
         'CRAWLSPIDER_FOLLOW_LINKS': False,
@@ -482,8 +393,8 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     def __init__(self, listing_file=None, *args, **kwargs):
         if not listing_file:
             raise ValueError(
-                "listing_file is required. Run the companion *_harvest_list spider "
-                "first, then pass its output: -a listing_file=data/mysite_harvest_list.csv"
+                "listing_file is required. On a first run, point it at an empty "
+                "CSV (header row only): -a listing_file=data/mysite_empty-listing.csv"
             )
         super().__init__(*args, **kwargs)
         self._listing_urls = set()
@@ -614,23 +525,11 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         }
         self._census_links(response)
         if view_urls and response.url not in self.FORCE_SKIP_LISTING_URLS:
-            # Fingerprint the clean, template-specific item set
-            # (_listing_pagination_items), NOT view_urls - view_urls comes
-            # from LISTING_VIEW_LINK_EXTRACTOR's wide .view-container scan,
-            # which also picks up the container's own numbered pager links
-            # (e.g. a Drupal pager rendering nearby page numbers, not just a
-            # single "next" arrow). Those pager links point back to THIS
-            # permalink's own URL, so every permalink's view_urls differs
-            # even when the real catalog items are byte-identical -
-            # confirmed empirically: two photogallery permalinks sharing the
-            # exact same 8-item catalog hashed to different view_urls
-            # fingerprints (16 raw links each, 8 of them self-referential
-            # index__q_page=N.html pager links unique to that permalink) but
-            # the identical fingerprint once computed from
-            # _listing_pagination_items alone. Using the contaminated
-            # view_urls set here would silently defeat the entire dedup
-            # mechanism - the exact fan-out failure mode this was built to
-            # prevent.
+            # Fingerprint _listing_pagination_items, NOT view_urls - the
+            # latter also includes the container's own numbered pager links,
+            # which point back to THIS permalink's own URL and so differ per
+            # permalink even for a byte-identical catalog (see the mixin's
+            # own docstring).
             item_urls = {response.urljoin(href) for href in self._listing_pagination_items(response)}
             # Register before walking, not after - avoids a race where two
             # near-simultaneous discoveries of the same shared catalog both

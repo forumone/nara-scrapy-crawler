@@ -71,39 +71,29 @@ scrapy crawl generic_crawl \
 ## 🏛️ Obama White House Spider (Unified Harvest + Content Spider)
 
 `obamawhitehouse.archives.gov` has no sitemap. A single unified harvester,
-`obama_whitehouse_harvest.py`, replaces what used to be two separate spiders
-(`obama_whitehouse_harvest_nav.py` + `obama_whitehouse_harvest_list.py`) plus
-a `merge_harvest.py` reconciliation step — nav-style link-following and
-listing-pagination-walking now run as one spider, one pass, one output CSV.
+`obama_whitehouse_harvest.py`, does nav-style link-following and
+listing-pagination-walking as one spider, one pass, one output CSV.
 
-This works because nav's own ordinary link-following (`DEPTH_LIMIT` raised
-well past the mixin's usual default — see the spider's own `custom_settings`
-comment for why) was already proven to reach full graph closure from the
-homepage alone; the only thing it deliberately never does is follow into a
-listing's own `.view` container (item rows + pager), which is what actually
-protects against fanning out into that listing's full item/pagination range —
-not depth limitation. `LISTING_VIEW_LINK_EXTRACTOR` (scoped to `.view`) and
-`LISTING_PAGER_SELECTOR` (`'.pager-current'`), required together, are what
-let the crawler safely wander into a listing page it's never seen before: it
-flags the page (`is_listing=True`) instead of excluding it, and never follows
-any link inside the container. Both hooks are required together — `.view`
+`LISTING_VIEW_LINK_EXTRACTOR` (scoped to `.view`) and
+`LISTING_PAGER_SELECTOR` (`'.pager-current'`), required together, let the
+crawler safely wander into a listing page it's never seen before: it flags
+the page (`is_listing=True`) instead of excluding it, and never follows any
+link inside the container. Both hooks are required together — `.view`
 presence alone false-positives on ordinary topic pages that merely embed a
 "related videos" widget with real links but no actual pagination; requiring
 a populated pager is what tells a real listing apart from one of those.
 
-Which listings actually get their pagination walked is now fully automatic,
-not curated: `NavHarvesterMixin` fingerprints each flagged listing's
-extracted item-URL set (sha1 of the sorted set) the first time it's seen,
-walks its pagination only on that first encounter, and fetches every
-extracted item through `parse_nav` itself — so second-order links (links
-that only exist on an item's own page) get explored too, not just recorded.
-A page whose container hashes to an already-seen fingerprint is flagged and
-skipped, not re-walked — this is what stops every
+Which listings actually get their pagination walked is fully automatic, not
+curated: `NavHarvesterMixin` fingerprints each flagged listing's extracted
+item-URL set the first time it's seen and walks its pagination only on that
+first encounter — this is what stops every
 `/photos-and-video/{video,photogallery}/*` permalink's byte-identical
 sitewide catalog widget from being re-walked from thousands of different
-entry points (see `NavHarvesterMixin`'s own docstring for the full
-mechanism, including the `FORCE_SKIP_LISTING_URLS` escape hatch and
-`LISTING_MAX_PAGES` safety cap).
+entry points. See
+[ARCHITECTURE.md](ARCHITECTURE.md#listing-fingerprint-dedup-navharvestermixin)
+for the full mechanism, its known limitations, and the `FORCE_SKIP_LISTING_URLS`/
+`LISTING_MAX_PAGES` escape hatches, and `NavHarvesterMixin`'s own docstring
+(`archive_crawler/spiders/base.py`) for the mixin's API.
 
 All harvester and content CSV files are stored under `data/{source_site}/` subdirectories (the root `data/` is git-tracked via `data/.gitkeep`; `.csv` files are gitignored).
 
@@ -269,9 +259,9 @@ All harvester and content output files follow a consistent naming scheme:
 
 | File | Contents |
 |---|---|
-| `data/{source_site}/{source_site}_harvest-listing.csv` | Listing harvest output: content items extracted from known listing pages (split-harvester no-sitemap spiders only) |
-| `data/{source_site}/{source_site}_harvest-nav.csv` | Nav harvest output: pages found by crawling site navigation, plus any `is_listing`/`depth` columns if the nav spider sets `LISTING_VIEW_LINK_EXTRACTOR` (split-harvester no-sitemap spiders only) |
-| `data/{source_site}/{source_site}_harvest-full.csv` | Content-spider input: merged output for split-harvester sites (via `merge_harvest.py`), written directly by a unified harvester (e.g. `obama_whitehouse_harvest.py`) |
+| `data/{source_site}/{source_site}_harvest-listing.csv` | Listing harvest output: content items extracted from known listing pages (legacy list-first no-sitemap spiders only, see `HARVESTING.md`) |
+| `data/{source_site}/{source_site}_harvest-nav.csv` | Nav harvest output: pages found by crawling site navigation, plus any `is_listing`/`depth` columns if the nav spider sets `LISTING_VIEW_LINK_EXTRACTOR` (legacy list-first no-sitemap spiders only) |
+| `data/{source_site}/{source_site}_harvest-full.csv` | Content-spider input: merged output for legacy list-first sites, written directly by a unified harvester (e.g. `obama_whitehouse_harvest.py`) |
 | `data/{source_site}/{source_site}.csv` | Final content output |
 | `data/{source_site}/{source_site}_exclusions.csv` | Skipped URLs with typed reasons (written on spider close) |
 | `data/{source_site}/{source_site}-errors-{timestamp}.log` | Scrapy ERROR-level log (written by `ErrorFileLogger` extension) |
@@ -287,7 +277,7 @@ Test subsets append `-test`: `{source_site}_harvest-full-test.csv`, `{source_sit
 ### Choosing a harvester type
 
 - **Sitemap available?** Use `sitemap_harvest` — pass the sitemap URL and write directly to the harvest-full CSV. Output: `{source_site}_harvest-full.csv`.
-- **No sitemap?** Use the split harvester pattern (nav crawl + listing harvest) described in detail in `HARVESTING.md`, worked example against Obama WH above.
+- **No sitemap?** Use the unified `NavHarvesterMixin` pattern described in detail in `HARVESTING.md`, worked example against Obama WH above.
 
 To check whether a site has a sitemap, try `{base_url}/sitemap.xml` and `{base_url}/sitemap_index.xml`.
 
@@ -313,12 +303,10 @@ Two patterns exist:
   Remember to raise `DEPTH_LIMIT` well past whatever the longest expected
   pagination chain is (see that spider's own `custom_settings` comment for
   why).
-- **Split (two spiders + `merge_harvest.py`)** — still a valid pattern for a
+- **Legacy list-first (two spiders)** — still a supported fallback for a
   site where a separate listing-only harvester is easier to reason about,
-  though no site in this repo currently uses it (both `obamawhitehouse` and
-  `letsmove` were unified 2026-07-26). See `HARVESTING.md`'s "Step-by-step:
-  split harvester" for the full walkthrough, including which ordering
-  (nav-first vs. list-first) fits a given site and why.
+  though no site in this repo currently uses it. See `HARVESTING.md`'s
+  "Legacy: list-first split harvester" for the full walkthrough.
 
 ### Creating a sitemap-based content spider
 

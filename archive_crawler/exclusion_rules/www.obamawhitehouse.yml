@@ -10,36 +10,21 @@ rules:
     reason: "url_pattern:/espanol"
 
   # This archived site "solidifies" what were originally live query-string
-  # parameters into literal /index__q_KEY=VALUE.html path segments (there is
-  # no real '?' in these URLs - confirmed via urlparse, the whole thing is
-  # part of .path). Scoped to tracking-only parameter names (tw_p: Twitter
-  # referral; utm_source/utm_medium/utm_content/utm_campaign/utm_expid:
-  # marketing/email campaign tracking) that don't affect what's rendered -
-  # confirmed via a live diff that a tw_p-decorated URL and its bare
-  # counterpart are byte-identical except for a per-request random CSRF
-  # theme_token, both reporting the same Drupal node id. Deliberately does
-  # NOT match /index__q_page=, /index__q_order=, or /index__q_category= -
-  # those are genuine pagination/sort/filter variants with different
-  # content, not duplicates of the bare URL. Surveyed the full known corpus
-  # (2026-07-26): only 26 URLs match this pattern out of ~35,482 total
-  # (~0.07%) - a real but small-scale issue, not a meaningful driver of any
-  # content-count gap.
+  # parameters into literal /index__q_KEY=VALUE.html path segments. Scoped to
+  # tracking-only parameter names (Twitter/UTM referral codes) that don't
+  # affect rendered content, so a decorated URL is a duplicate of its bare
+  # counterpart. Deliberately excludes /index__q_page=, /index__q_order=, and
+  # /index__q_category= - those are genuine pagination/sort/filter variants
+  # with different content, not duplicates.
   - match: regex
     pattern: '/index__q_(tw_p|utm_source|utm_expid)=[^/]*\.html$'
     reason: "duplicate_tracking_param_suffix"
 
-  # Discovered by walking /espanol/blog and /espanol/prensa's own
-  # pagination (2026-07-26) - both are real listings (confirmed .view +
-  # .pager-current present) whose items are ordinary /blog/* and
-  # /the-press-office/* URLs, indistinguishable from English content by URL
-  # shape alone (the same problem the /espanol path rule above cannot catch -
-  # Spanish-language posts published under the normal English URL
-  # namespace). Verified via title/content inspection: 4 URLs in the raw
-  # walk (976 total) turned out to be genuinely English despite appearing
-  # in these Spanish-tagged listings (about Hispanic-community topics but
-  # written in English) and were excluded from this list; the remaining 972
-  # were spot-checked (25 heuristically-flagged candidates individually
-  # confirmed Spanish) but not exhaustively verified one by one.
+  # Spanish-language posts published under the normal English /blog/* and
+  # /the-press-office/* URL namespace (found via /espanol/blog and
+  # /espanol/prensa's own listing pagination) - indistinguishable from
+  # English content by URL shape alone, so listed explicitly rather than
+  # caught by the /espanol path rule above.
   - match: url_list
     values:
     - https://obamawhitehouse.archives.gov/blog/2010/05/10/lanzando-un-nuevo-enfoque-al-problema-de-las-drogas-en-los-estados-unidos
@@ -1017,41 +1002,14 @@ rules:
     - https://obamawhitehouse.archives.gov/the_press_office/Declaraciones-del-Presidente-Barack-Obama-Discurso-ante-Sesion-Conjunta
     reason: spanish_content
 
-  # /realitycheck is a legacy "Reality Check" (2009 health-care-reform
-  # myth-busting initiative) alias prefix reachable only via a normally
-  # hidden Drupal mega-menu, not visible/clickable navigation - confirmed
-  # 2026-07-26/27: /realitycheck/about/inside-white-house and
-  # /about/inside-white-house render identical content (same title, same
-  # h1, near-identical byte length), and the mega-menu's own hrefs have the
-  # /realitycheck/ prefix hardcoded in (not a relative-path artifact).
-  # Coverage is uneven, properly measured at scale (not a small sample):
-  # comprehensive (~97-100%, no temporal pattern, year-stratified 135-URL
-  # check 2009-2017) for the video and photogallery shared catalogs
-  # specifically, but only partial for ordinary content (60.6% in a
-  # proper 500-URL sample from the full eligible population - ranging
-  # 0-80% by section, with a real temporal cliff toward 2016 for blog
-  # specifically, consistent with the alias being actively maintained only
-  # through roughly 2015). Reproduces the video/photogallery shared-catalog
-  # dedup problem: /realitycheck/photos-and-video/video/2016/09/01/
-  # president-obama-delivers-statement-press embeds the exact same 8-item
-  # catalog as digital-briefing-ebola (identical slugs, just prefixed
-  # differently), so it independently re-walks the whole ~740-page shared
-  # catalog under this prefix too - the fingerprint mechanism can't catch
-  # this since item hrefs resolve relative to each page's own base path
-  # (see NavHarvesterMixin's "KNOWN LIMITATION" docstring section - this is
-  # the same URL-aliased-view gap found on letsmove's /blog/all vs
-  # /blog/all/all, just far more costly here). Never discovered by any
-  # prior harvest (split-harvester era or the first unified
-  # LISTING_SEEDS-based run) because the entry-point blog post
-  # (/blog/2009/08/18/clearing-a-few-myths-health-insurance-reform-and-
-  # indian-health-service) WAS already known - discovered via the old
-  # listing-pagination walk - but that walk only ever recorded its URL,
-  # never fetched the page itself, so its own outbound link to
-  # /realitycheck (and the hidden mega-menu beyond it) was never examined
-  # until this session's fix started fetching every item through parse_nav.
+  # /realitycheck is a legacy alias prefix (reachable only via a normally
+  # hidden Drupal mega-menu) for the same content under its canonical path -
+  # partial, not comprehensive, coverage; see ARCHITECTURE.md's "Listing
+  # fingerprint dedup" known-limitations section (URL aliasing) for why this
+  # is excluded outright rather than left to the fingerprint mechanism.
   # Excluded from both nav and content-scrape via rules: alone, same as
-  # /espanol above - this is a pure duplicate-URL space, not content worth
-  # scraping under either prefix separately.
+  # /espanol above - a pure duplicate-URL space, not content worth scraping
+  # under either prefix separately.
   - match: contains
     pattern: "/realitycheck"
     reason: "url_pattern:/realitycheck"
