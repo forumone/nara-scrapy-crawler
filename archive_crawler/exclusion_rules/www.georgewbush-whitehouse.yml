@@ -28,9 +28,6 @@ rules:
   - match: contains
     pattern: "/text/"
     reason: "url_pattern:/text/"
-  - match: regex
-    pattern: '\.es\.html$'
-    reason: "url_pattern:.es.html"
   - match: contains
     pattern: "/goodbye/"
     reason: "url_pattern:/goodbye/"
