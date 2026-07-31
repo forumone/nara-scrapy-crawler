@@ -53,23 +53,26 @@ class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
     def parse_item(self, response):
         if self._is_excluded_response(response):
             return
+        warnings = []
         # CW6 pages have no <blockquote> wrapper and empty <title> tags.
         # Content is paragraphs directly in <body> beneath nav divs (#menufloat, #frozen-spacer).
         body = self._extract_text(response, 'body')
         if not body:
-            self._log_exclusion(response.url, 'no_body')
-            return
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
         # h1/h2 not present on any inspected pages; title tag is populated on index pages
         # but empty on dated documents; slug derivation handles the dated-document case.
         title = self._extract_title(response) or _title_from_slug(response.url)
         if not title:
-            self._log_exclusion(response.url, 'no_title')
-            return
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
         item = ArchiveItem()
         item['url'] = response.url
         item['title'] = title
         item['full_text'] = body
-        item['teaser_text'] = self._teaser(body)
+        item['teaser_text'] = self._teaser(body) if body else ''
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
+        item['warnings'] = ','.join(warnings)
         yield item

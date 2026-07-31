@@ -38,43 +38,55 @@ class ObamaPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
             yield from self._parse_generic(response)
 
     def _parse_petition(self, response):
+        warnings = []
         title = response.css('h1.title::text').get(default='').strip()
         if not title:
             title = response.css('h1::text').get(default='').strip()
         if not title:
-            self._log_exclusion(response.url, 'no_title')
-            return
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
 
         date = re.sub(r'\s+', ' ', response.css('h4.petition-attribution::text').get(default='')).strip()
         body = self._extract_text(response, '.field-name-body .field-items .field-item')
+        if not body:
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
         full_text = f"{body} {date}".strip() if (date and any(c.isdigit() for c in date)) else body
 
         item = ArchiveItem()
         item['url'] = response.url
         item['title'] = title
         item['full_text'] = full_text
-        item['teaser_text'] = self._teaser(body)
+        item['teaser_text'] = self._teaser(body) if body else ''
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
+        item['warnings'] = ','.join(warnings)
         yield item
 
     def _parse_generic(self, response):
+        warnings = []
         title = response.css('h1.title::text').get(default='').strip()
         if not title:
             title = response.css('h1::text').get(default='').strip()
         if not title:
-            self._log_exclusion(response.url, 'no_title')
-            return
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
 
         body = self._extract_text(response, '.field-name-body .field-items .field-item')
         if not body:
             body = self._extract_text(response, '#content-main')
+        if not body:
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
 
         item = ArchiveItem()
         item['url'] = response.url
         item['title'] = title
         item['full_text'] = body
-        item['teaser_text'] = self._teaser(body)
+        item['teaser_text'] = self._teaser(body) if body else ''
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
+        item['warnings'] = ','.join(warnings)
         yield item

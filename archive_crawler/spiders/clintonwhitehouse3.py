@@ -36,19 +36,22 @@ class ClintonWhiteHouse3Spider(ArchiveSpiderMixin, scrapy.Spider):
     def parse_item(self, response):
         if self._is_excluded_response(response):
             return
+        warnings = []
         body = self._extract_press_release_body(response)
         if not body:
-            self._log_exclusion(response.url, 'no_body')
-            return
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
         title = self._extract_title(response)
         if not title:
-            self._log_exclusion(response.url, 'no_title')
-            return
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
         item = ArchiveItem()
         item['url'] = response.url
         item['title'] = title
         item['full_text'] = body
-        item['teaser_text'] = self._teaser(body)
+        item['teaser_text'] = self._teaser(body) if body else ''
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
+        item['warnings'] = ','.join(warnings)
         yield item

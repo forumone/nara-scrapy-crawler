@@ -11,6 +11,7 @@ from scrapy.selector import Selector
 from w3lib.html import remove_tags, remove_tags_with_content
 
 from archive_crawler import exclusion_rules as _exclusion_rules_module
+from archive_crawler.items import HarvestItem
 
 # Shared by _census_links across every spider that mixes in
 # ExclusionLoggingMixin - stateless/config-only, safe to reuse. No
@@ -603,11 +604,11 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
             ]
             if listing_containers:
                 view_urls = {lnk.url for lnk in self.LISTING_VIEW_LINK_EXTRACTOR.extract_links(response)}
-        yield {
-            'url': response.url,
-            'is_listing': bool(listing_containers),
-            'depth': response.request.meta.get('depth', 0) if response.request else 0,
-        }
+        yield HarvestItem(
+            url=response.url,
+            is_listing=bool(listing_containers),
+            depth=response.request.meta.get('depth', 0) if response.request else 0,
+        )
         self._census_links(response)
         if response.url not in self.FORCE_SKIP_LISTING_URLS:
             for index, container in listing_containers:
@@ -629,12 +630,30 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
                     response, container_index=index, view_id=view_id,
                     display_id=display_id, _skip_census=True,
                 )
+        if not listing_containers:
+            yield from self._maybe_scrape_item(response)
         for rule in self._rules:
             links = self._apply_nav_deny(self._filter_web_urls(rule.link_extractor.extract_links(response)))
             for link in links:
                 if link.url in view_urls:
                     continue
                 yield response.follow(link.url, callback=self.parse_nav)
+
+    def _maybe_scrape_item(self, response):
+        """Fusion hook: no-op unless a subclass also composes
+        ArchiveSpiderMixin and defines _scrape_item (site-specific content
+        extraction, same role as a standalone spider's parse_item). Lets a
+        harvest-only subclass (e.g. obama_whitehouse_harvest.py, or any new
+        site explored before its content-extraction selectors are written)
+        share this parse_nav unchanged, while a fused subclass extracts
+        content inline on the same response already fetched for nav
+        discovery - no second fetch."""
+        scrape_item = getattr(self, '_scrape_item', None)
+        if scrape_item is None:
+            return
+        item = scrape_item(response)
+        if item is not None:
+            yield item
 
     # CrawlSpider routes each start_urls response through parse_start_url
     # instead of the Rule's callback, so without this override a listing
@@ -762,6 +781,12 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
 
 
 class ArchiveSpiderMixin(ExclusionLoggingMixin):
+    # Below this length (measured on the final full_text, after all
+    # stripping/normalization), a non-empty body gets a 'short_body' warning
+    # rather than being treated as ordinary content. Override per-spider, or
+    # per-run via -a short_body_threshold=<N>; see _get_short_body_threshold.
+    SHORT_BODY_THRESHOLD = 30
+
     # CSS selectors for site-specific boilerplate to strip before text extraction,
     # in addition to the shared selectors (#menufloat, .mobile-select, etc.).
     # Override in subclasses, e.g.: EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)
@@ -802,7 +827,7 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         if not text:
             return ''
         # Strip repeated-punctuation runs (separators like "________" or "********").
-        text = re.sub(r'([\W_])\1{2,} ?', '', text)
+        text = re.sub(r'([\W_])\1{4,} ?', '', text)
         text = re.sub(r'\s+', ' ', text).strip()
         if len(text) <= max_len:
             return text
@@ -875,10 +900,30 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         if not title:
             raw = sel.css('title::text').get(default='').strip()
             title = remove_tags(raw)
-        title = re.sub(r'([\W_])\1{2,}', '', title)
+        title = re.sub(r'([\W_])\1{4,}', '', title)
         title = html.unescape(title)
         title = _INVISIBLE_RE.sub('', title)
         return re.sub(r'\s+', ' ', title).strip()
+
+    def _get_short_body_threshold(self):
+        # -a short_body_threshold=<N> arrives as a plain string instance
+        # attribute via Scrapy's standard -a handling, hence the int() cast.
+        return int(getattr(self, 'short_body_threshold', self.SHORT_BODY_THRESHOLD))
+
+    def _slug_title(self, url):
+        """Fallback title for a no_title row: last URL path segment, known
+        extension stripped, '-'/'_' replaced with spaces, no title-casing
+        (preserves acronyms like EO12902/AFVTBXL5 as-is). E.g.
+        /omb/fedreg/pp99-1.html -> 'pp99 1'. Synthesized, not authored - the
+        warnings column's own no_title marker is what signals that, so no
+        extra bracket-wrapping is added here."""
+        segment = urlparse(url).path.rstrip('/').rsplit('/', 1)[-1]
+        for ext in self._get_exclusion_rules().extensions.get('values', []):
+            suffix = '.' + ext.lower()
+            if segment.lower().endswith(suffix):
+                segment = segment[:-len(suffix)]
+                break
+        return re.sub(r'[-_]+', ' ', segment).strip()
 
     def _make_request(self, url, **kwargs):
         kwargs.setdefault('callback', self.parse_item)
@@ -1006,7 +1051,7 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         text = html.unescape(re.sub(r'\s+', ' ', text).strip())
         # Strip repeated-punctuation runs (separators like "________" or
         # "********"), same as _teaser() already does for the teaser text.
-        text = re.sub(r'([\W_])\1{2,} ?', '', text)
+        text = re.sub(r'([\W_])\1{4,} ?', '', text)
         text = re.sub(r'\s+', ' ', text).strip()
         text = _INVISIBLE_RE.sub('', text)
         # Loop to a fixpoint rather than a single pass: letterhead components

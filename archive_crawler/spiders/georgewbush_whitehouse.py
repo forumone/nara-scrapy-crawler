@@ -51,6 +51,7 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
     def parse_item(self, response):
         if self._is_excluded_response(response):
             return
+        warnings = []
         # Selector chain across distinct sub-site layouts on this archive:
         # 1. #news_container — main WH press release layout (inside #whitebox).
         # 2. #whitebox — speeches/remarks on a slightly different WH template.
@@ -80,18 +81,20 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
             or self._extract_text(response, '//td[a[@name="content"]]')
         )
         if not body:
-            self._log_exclusion(response.url, 'no_body')
-            return
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
         # No h1 on most pages; <title> tag matches the bolded article heading.
         title = self._extract_title(response)
         if not title:
-            self._log_exclusion(response.url, 'no_title')
-            return
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
         item = ArchiveItem()
         item['url'] = response.url
         item['title'] = title
         item['full_text'] = body
-        item['teaser_text'] = self._teaser(body)
+        item['teaser_text'] = self._teaser(body) if body else ''
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
+        item['warnings'] = ','.join(warnings)
         yield item

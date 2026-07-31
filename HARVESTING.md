@@ -1,9 +1,12 @@
 # Harvesting a New Site
 
 This document describes the end-to-end process for adding a new site to the crawl
-pipeline. The two-phase approach (harvest URLs first, scrape content second) allows
-for auditing the full URL list before any content is fetched, making coverage gaps
-and unexpected pages visible before they become data problems.
+pipeline. Some patterns below split URL discovery and content extraction into two
+separate spiders (sitemap-based sites, `generic_crawl_harvest`/`generic_crawl`);
+the `NavHarvesterMixin` pattern uses one spider for both, with content extraction
+added once selectors are ready. Either way, discovering the full URL list before
+writing (or before running) any content-extraction code makes coverage gaps and
+unexpected pages visible early, rather than after they've become data problems.
 
 Check for a sitemap first (`/sitemap.xml`, `/sitemap_index.xml`, or a `Sitemap:`
 directive in `robots.txt`) — if one exists, skip everything else in this document
@@ -29,10 +32,14 @@ deduplicates URLs case-insensitively, drops non-web assets (PDFs, images, etc.),
 outputs a harvest CSV — one `url` column, one row per content page — without
 fetching any content pages itself. Used by all of Clinton (CW1–6), Biden, and GWBush.
 
-Then write a dedicated content spider using `ArchiveSpiderMixin` (same pattern as
-Step 4 in the nav-harvester walkthrough below) to scrape from that harvest CSV.
-See README's "Sitemap-Based Archive Spiders" section for a worked example against
-an existing spider.
+Since `sitemap_harvest` never fetches a content page itself, there's no
+response here to extract content from inline. Write a separate content
+spider (plain `scrapy.Spider` + `ArchiveSpiderMixin`, reading the harvest
+CSV as `url_file`) to scrape from it, same as every sitemap-based spider
+(CW1–6, Biden, GWBush) does. See README's "Sitemap-Based Archive Spiders"
+section for a worked example, and its "Warnings column" section for the
+`parse_item` shape (`no_body`/`no_title`/`short_body` flag rather than
+exclude).
 
 ---
 
@@ -48,13 +55,13 @@ by themselves require `NavHarvesterMixin` below.
 **Use `NavHarvesterMixin`** when a site's pagination doesn't follow the
 `?page=`/`/page/` convention (custom offset/cursor params, JS-driven infinite
 scroll, etc.), or when listing rows need a specific CSS selector to identify
-the real content link rather than generic link-following. One spider does
-both ordinary nav link-following and, if step 1 finds a reliable listing
-container + pager selector, automatic listing pagination-walking in the same
-pass — no second spider, no merge step. See "Step-by-step: nav harvester"
-below. A legacy two-spider variant (list-first) also exists for a site where
-no such selector pair can be made reliable — see the callout at the end of
-that section.
+the real content link rather than generic link-following. One spider handles
+nav link-following, listing pagination-walking (if step 1 finds a reliable
+listing container + pager selector), and content extraction, all in a single
+pass over each fetched response. See "Step-by-step: nav harvester" below. A
+legacy two-spider variant (list-first) also exists for a site where no such
+selector pair can be made reliable — see the callout at the end of that
+section.
 
 If you are not sure, start with site discovery (step 1) and try `generic_crawl_harvest`
 first — if the pagination doesn't match the standard convention or content links can't
@@ -64,18 +71,27 @@ be reliably distinguished from navigation/facet noise, fall back to `NavHarveste
 
 ## Step-by-step: nav harvester
 
-One spider (using `NavHarvesterMixin`) runs a single full-site discovery
-crawl that finds ordinary content and listing pages in the same pass and,
-where a listing is flagged, walks its pagination automatically the first
-time each listing's item set is seen — see
+A single spider class, composing `NavHarvesterMixin` and `ArchiveSpiderMixin`
+together, runs one full-site discovery crawl: it finds ordinary content and
+listing pages in the same pass, walks a newly-flagged listing's pagination
+automatically the first time each listing's item set is seen, and extracts
+that page's title/body/teaser on the same fetched response. See
 [ARCHITECTURE.md](ARCHITECTURE.md#listing-fingerprint-dedup-navharvestermixin)
 for the fingerprint mechanism this relies on, including its known
 limitations and the discovery you should do before trusting it against a
-new site. This is the current recommended pattern for any new
-listing-bearing, no-sitemap site. A legacy list-first variant, not used by
-any current site in this repo, is described in the callout at the end of
-this section for a site where step 1 can't produce a reliable listing
-container + pager selector pair.
+new site. This is the recommended pattern for any listing-bearing,
+no-sitemap site — `letsmove.py` and `obama_whitehouse.py` are worked
+examples. A legacy list-first variant is described in the callout at the
+end of this section, for a site where step 1 can't produce a reliable
+listing container + pager selector pair.
+
+Content extraction is optional at first: a class composing only
+`NavHarvesterMixin` (no `ArchiveSpiderMixin`, no `_scrape_item` method) is a
+pure harvest-only spider — useful for auditing the full URL list before
+writing any selectors. Add `ArchiveSpiderMixin` and a `_scrape_item` method
+to that same class later (step 4) to start getting content on the very next
+run — `_maybe_scrape_item` (in `base.py`) extracts content whenever
+`_scrape_item` exists on the class, skipping it otherwise.
 
 ### Step 1 — Discovery
 
@@ -87,7 +103,7 @@ Inspect the live site to answer these questions before writing any code:
   more than one listing page if the site has more than one visual template
   for listings (e.g. a teaser-card blog archive vs. a table-based photo/video
   gallery can use completely different item-link markup even on the same
-  site — `obama_whitehouse_harvest.py`'s `_listing_pagination_items` handles
+  site — `obama_whitehouse.py`'s `_listing_pagination_items` handles
   two such templates).
 - What container reliably wraps *both* a listing's item rows and its
   pager/filter controls? (e.g. Drupal Views' own `.view` wrapper) This is
@@ -114,10 +130,11 @@ Inspect the live site to answer these questions before writing any code:
 
 ### Step 2 — Nav + listing discovery crawl
 
-Create `archive_crawler/spiders/<site>_harvest.py` using `NavHarvesterMixin`.
-Set `SOURCE_SITE` to match the content spider's own `SOURCE_SITE` (they share
-one `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml` file), and — if step 1
-found a reliable listing-container selector and pager selector — set all
+Create `archive_crawler/spiders/<site>.py` using `NavHarvesterMixin`. Set
+`SOURCE_SITE` (this class will compose `ArchiveSpiderMixin` too once step 4
+adds content extraction, so there's only one `SOURCE_SITE`/one exclusion
+rules file for this site), and — if step 1 found a reliable listing-container
+selector and pager selector — set all
 three of `LISTING_VIEW_LINK_EXTRACTOR`, `LISTING_CONTAINER_SELECTOR`, and
 `LISTING_PAGER_SELECTOR` (required together) so the crawler can safely
 wander into a listing it's never seen before: it flags the page
@@ -143,10 +160,10 @@ from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
 from archive_crawler.spiders.base import NavHarvesterMixin
 
-class MySiteHarvestSpider(NavHarvesterMixin, CrawlSpider):
-    name = "mysite_harvest"
+class MySiteSpider(NavHarvesterMixin, CrawlSpider):
+    name = "mysite"
     allowed_domains = ["example.archives.gov"]
-    SOURCE_SITE = 'example'  # matches the content spider's SOURCE_SITE
+    SOURCE_SITE = 'example'
 
     # Optional, required together: only set these if step 1 found a
     # reliable listing container AND a pager selector that reliably
@@ -195,7 +212,7 @@ with, so point it at an empty CSV (header row only):
 ```
 echo "url" > data/mysite/mysite_empty-listing.csv
 
-scrapy crawl mysite_harvest \
+scrapy crawl mysite \
     -a listing_file=data/mysite/mysite_empty-listing.csv \
     -s DEPTH_LIMIT=10 \
     -s DEPTH_PRIORITY=1 \
@@ -203,6 +220,11 @@ scrapy crawl mysite_harvest \
     -s SCHEDULER_MEMORY_QUEUE=scrapy.squeues.FifoMemoryQueue \
     -O data/mysite/mysite_harvest-full.csv
 ```
+
+(`-O` works fine here since this class doesn't compose `ArchiveSpiderMixin`
+yet — one feed, one output file, exactly like any other Scrapy spider. Step
+4 switches to a `FEEDS` dict in `custom_settings` once there are two feeds
+to keep separate.)
 
 The `DEPTH_PRIORITY`/`SCHEDULER_*` flags switch Scrapy's default LIFO
 (depth-first) traversal to breadth-first. This matters beyond just even
@@ -243,52 +265,97 @@ preemptively).
 
 ### Step 4 — Scrape
 
-Create `archive_crawler/spiders/<site>.py` using `ArchiveSpiderMixin`. It reads
-from `url_file` (the harvest CSV from step 2) and extracts title, body, and teaser.
+Add `ArchiveSpiderMixin` to the **same class** from step 2, and give it a
+`_scrape_item(self, response)` method — same role as a standalone spider's
+`parse_item`, but called by `_maybe_scrape_item` (in `base.py`) on the
+response `parse_nav` already fetched for discovery, not a second request.
+This pattern has no `url_file` and no separate content-spider file — that's
+a different pattern, used by the sitemap-based spiders (see "Sitemap
+harvester" above), not by `NavHarvesterMixin` sites.
+
+`_scrape_item` follows the same accumulate-and-continue shape as every
+other content spider in this repo: `no_body`/`no_title` don't drop the row
+(a real page was fetched — flag it, don't hide it), `short_body` flags a
+non-empty body under `SHORT_BODY_THRESHOLD` (default 30 chars, override via
+`SHORT_BODY_THRESHOLD` class attr or `-a short_body_threshold=<N>`), and a
+missing title falls back to `_slug_title(url)` (last URL path segment,
+extension stripped, `-`/`_` → spaces). See `warnings-column-plan.md` (or any
+of `letsmove.py`/`obama_whitehouse.py`) for the full rationale.
 
 ```python
-import csv
-import scrapy
-from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin
+from archive_crawler.items import ArchiveItem, HarvestItem
+from archive_crawler.spiders.base import ArchiveSpiderMixin, NavHarvesterMixin
 
-class MySiteSpider(ArchiveSpiderMixin, scrapy.Spider):
+class MySiteSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     name = "mysite"
+    allowed_domains = ["example.archives.gov"]
     SOURCE_SITE = 'mysite'
     SOURCE_TYPE = 'Archived White House Websites'
+    EXCLUSIONS_FILE_SUFFIX = 'exclusions'  # one merged file, not nav+content
 
-    def start_requests(self):
-        url_file = getattr(self, 'url_file', None)
-        if not url_file:
-            raise ValueError("url_file argument is required: -a url_file=data/mysite/mysite_harvest_full.csv")
-        with open(url_file, newline='', encoding='utf-8') as f:
-            for row in csv.DictReader(f):
-                yield scrapy.Request(row['url'], callback=self.parse_item)
+    # ... LISTING_*, start_urls, rules, _listing_pagination_items/
+    # _listing_pagination_next_url from step 2, unchanged ...
 
-    def parse_item(self, response):
+    custom_settings = {
+        'DEPTH_LIMIT': 10,
+        'CRAWLSPIDER_FOLLOW_LINKS': False,
+        # Two named feeds from one run, item_classes-filtered to the
+        # matching schema, since both a harvest row and a content row can
+        # come from the same page.
+        'FEEDS': {
+            'data/mysite/mysite_harvest-full.csv': {
+                'format': 'csv', 'overwrite': True,
+                'item_classes': [HarvestItem],
+                'fields': ['url', 'is_listing', 'depth'],
+            },
+            'data/mysite/mysite.csv': {
+                'format': 'csv', 'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': ['url', 'title', 'teaser_text', 'full_text',
+                           'source_site', 'source_type', 'warnings'],
+            },
+        },
+    }
+
+    def _scrape_item(self, response):
+        if self._is_excluded_response(response):
+            return None
+        warnings = []
         body = self._extract_text(response, '#maincontent .content')
         if not body:
-            return
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
         title = response.css('h1').xpath('string(.)').get(default='').strip()
         if not title:
-            return
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
+
         item = ArchiveItem()
         item['url'] = response.url
         item['title'] = title
         item['full_text'] = body
-        item['teaser_text'] = self._teaser(body)
+        item['teaser_text'] = self._teaser(body) if body else ''
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
-        yield item
+        item['warnings'] = ','.join(warnings)
+        return item
 ```
 
-Run it:
+Run it — same `listing_file` invocation as step 2, no `-O` needed since
+`custom_settings['FEEDS']` defines both output paths directly (a cmdline
+`-O`/`-o` would override that whole dict rather than adding to it):
 
 ```
 scrapy crawl mysite \
-    -a url_file=data/mysite/mysite_harvest-full.csv \
-    -o data/mysite/mysite.csv
+    -a listing_file=data/mysite/mysite_empty-listing.csv
 ```
+
+A bare invocation like this always includes content extraction, once
+`_scrape_item` exists on the class. To get harvest-only output from a class
+that already has `_scrape_item` defined, comment it out (or drop
+`ArchiveSpiderMixin`) temporarily — `_maybe_scrape_item` no-ops whenever
+`_scrape_item` doesn't exist on the class.
 
 ---
 
@@ -402,13 +469,15 @@ with site-specific selectors, same as any other new site's scraper.
 
 ## Naming conventions
 
-**Unified pattern (current):**
+**`NavHarvesterMixin` pattern:**
 
 | File | Spider name |
 |---|---|
-| `<site>_harvest.py` | `<site>_harvest` |
 | `<site>.py` | `<site>` |
-| Output CSVs | `data/<site>/<site>_harvest-full.csv`, `data/<site>/<site>.csv` |
+| Output CSVs | `data/<site>/<site>_harvest-full.csv`, `data/<site>/<site>.csv` (two `FEEDS` from one run) |
+
+One file, one class, one crawl (step 2's discovery-only version and step
+4's content-extracting version are the same file, not two).
 
 **Legacy list-first pattern:**
 

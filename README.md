@@ -68,11 +68,14 @@ scrapy crawl generic_crawl \
 
 ---
 
-## 🏛️ Obama White House Spider (Unified Harvest + Content Spider)
+## 🏛️ Obama White House Spider
 
-`obamawhitehouse.archives.gov` has no sitemap. A single unified harvester,
-`obama_whitehouse_harvest.py`, does nav-style link-following and
-listing-pagination-walking as one spider, one pass, one output CSV.
+`obamawhitehouse.archives.gov` has no sitemap. `obama_whitehouse.py` is one
+spider that does nav-style link-following, listing-pagination-walking, and
+content extraction (title/body/teaser) all on the same fetched response, in
+a single crawl. (`letsmove.py` follows the identical pattern for
+`letsmove.obamawhitehouse.archives.gov`, a much smaller site — same shape,
+worth reading if this one feels too large as a first example.)
 
 `LISTING_VIEW_LINK_EXTRACTOR` (scoped to `.view`), `LISTING_CONTAINER_SELECTOR`
 (`'.view'`), and `LISTING_PAGER_SELECTOR` (`'.pager-current'`), required
@@ -98,25 +101,31 @@ for the full mechanism, its known limitations, and the `FORCE_SKIP_LISTING_URLS`
 
 All harvester and content CSV files are stored under `data/{source_site}/` subdirectories (the root `data/` is git-tracked via `data/.gitkeep`; `.csv` files are gitignored).
 
-### Step 1: Unified harvest
+### Step 1: Harvest + scrape
 
 Crawls the whole site starting from the homepage, recording every page along
-with an `is_listing` flag and its `depth`, and automatically walking each
-newly-discovered listing's own pagination inline to extract its item URLs
-directly into the same output file — no merge step, no curated seed list
-needed. `listing_file` is still a required argument (inherited from
-`NavHarvesterMixin`), but there's no prior harvest to seed it with — point it
-at an empty CSV (header row only):
+with an `is_listing` flag and its `depth`, automatically walking each
+newly-discovered listing's own pagination inline, and extracting
+title/body/teaser from every non-listing page on the same response — one
+crawl, two output files via `custom_settings['FEEDS']`. `listing_file` is
+still a required argument (inherited from `NavHarvesterMixin`), but there's
+no prior harvest to seed it with on a first run — point it at an empty CSV
+(header row only):
 
 ```bash
 echo "url" > data/www.obamawhitehouse/www.obamawhitehouse_empty-listing.csv
 
-scrapy crawl obama_whitehouse_harvest \
+scrapy crawl obama_whitehouse \
   -a listing_file=data/www.obamawhitehouse/www.obamawhitehouse_empty-listing.csv \
   -s DOWNLOAD_DELAY=0.15 \
-  -s CONCURRENT_REQUESTS_PER_DOMAIN=8 \
-  -O data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv
+  -s CONCURRENT_REQUESTS_PER_DOMAIN=8
 ```
+
+No `-O`/`-o` needed (or wanted — either would override the two-feed `FEEDS`
+dict already set in `custom_settings` rather than adding to it); the harvest
+and content CSVs both come from `custom_settings['FEEDS']`, at
+`data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv` and
+`data/www.obamawhitehouse/www.obamawhitehouse.csv` respectively.
 
 Run this **untimed** (no `CLOSESPIDER_TIMEOUT`) so it actually exhausts the
 site rather than stopping mid-traversal. Default scheduler (LIFO/DFS) is
@@ -125,9 +134,18 @@ distance during the original `DEPTH_LIMIT` tuning; the spider's own
 `DEPTH_LIMIT` is now set high enough that ordering doesn't matter for
 completeness either way.
 
+At the default `DOWNLOAD_DELAY=1`, a full crawl takes a long time — run it on
+a remote server, not a local machine; see "Recommended run settings" below
+for throttling overrides. `_scrape_item` includes a `#video-info .caption`
+fallback selector specifically for `/photos-and-video/video/*` gallery pages,
+which otherwise extract zero body text under the standard selectors despite
+often having a real, substantive caption — no boilerplate (date/duration/
+download-link lines also present in that block) is stripped from it, per
+this project's general preference for flagging over silent text-stripping.
+
 ### Step 2: Spot-check listing detections (as needed)
 
-Filter the output CSV for `is_listing=True` rows and spot-check them for
+Filter the harvest CSV for `is_listing=True` rows and spot-check them for
 false positives — a content page that merely embeds a single-item view can
 still carry the same `.view` wrapper as a real listing, though a populated
 pager block inside it is a much stronger signal than raw `.views-row`
@@ -137,24 +155,14 @@ above). If fingerprinting is ever confirmed to have missed a real duplicate
 catalog on this site, add the offending URL to `FORCE_SKIP_LISTING_URLS`
 rather than re-introducing a curated seed list.
 
-### Step 3: Crawl content
+### Harvest-only mode
 
-Reads the unified harvest CSV and crawls each content page.
-
-```bash
-scrapy crawl obama_whitehouse \
-  -a url_file=data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv \
-  -O data/www.obamawhitehouse/www.obamawhitehouse.csv
-```
-
-At the default `DOWNLOAD_DELAY=1`, a full crawl takes a long time — run it on
-a remote server, not a local machine; see "Recommended run settings" below
-for throttling overrides. `parse_item` includes a `#video-info .caption`
-fallback selector specifically for `/photos-and-video/video/*` gallery pages,
-which otherwise extract zero body text under the standard selectors despite
-often having a real, substantive caption — no boilerplate (date/duration/
-download-link lines also present in that block) is stripped from it, per
-this project's general preference for flagging over silent text-stripping.
+A class composing `NavHarvesterMixin` without `ArchiveSpiderMixin`/
+`_scrape_item` is a pure harvest-only spider by construction —
+`_maybe_scrape_item` (`base.py`) only extracts content when `_scrape_item`
+exists on the class. `obama_whitehouse.py` defines `_scrape_item`, so it
+always extracts content; getting harvest-only output from it would mean a
+temporary variant with that method removed.
 
 ---
 
@@ -206,17 +214,28 @@ Replace `clintonwhitehouse2` with any of: `clintonwhitehouse1`, `clintonwhitehou
 
 Some archives contain large directories of non-content URLs (print-friendly variants, image gallery wrappers, etc.). Each spider's `start_requests` filters these out at request-generation time (per `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`) and records them in the exclusions CSV. No manual pre-filtering of the harvest file is required.
 
+### Warnings column
+
+`no_body`/`no_title`/`short_body` are **not** exclusions — a real page was
+fetched, so it's included in the main output CSV, flagged via the
+`warnings` column (comma-separated if more than one applies) instead of
+being dropped:
+
+| Warning | Meaning |
+|---|---|
+| `no_body` | Body selector(s) returned empty text. `full_text`/`teaser_text` are empty strings; `title` still extracted normally if present. |
+| `short_body` | Body extracted fine but is under `SHORT_BODY_THRESHOLD` (default 30 chars) — override per-spider (class attribute) or per-run (`-a short_body_threshold=<N>`). |
+| `no_title` | No title could be extracted. `title` falls back to `_slug_title(url)` — last URL path segment, extension stripped, `-`/`_` → spaces, no title-casing (e.g. `pp99-1.html` → `pp99 1`). This is a synthesized, not authored, title; the `warnings` column is what signals that. |
+
 ### Exclusion output
 
-Each scrape spider automatically writes a `{source_site}_exclusions.csv` alongside the output CSV when the spider closes. Each row contains the skipped URL and a typed reason:
+Each scrape spider automatically writes a `{source_site}_exclusions.csv` alongside the output CSV when the spider closes. Each row contains the skipped URL and a typed reason. Unlike the warnings above, these rows never appear in the main output CSV at all — there's no successfully-fetched, parseable page behind any of these reasons:
 
 | Reason | Description |
 |---|---|
 | `url_pattern:/foo/` | URL matched a known non-content path prefix |
 | `frameset` | Page is a frameset with no extractable content |
 | `non_text_response` | Response body isn't text (e.g. a binary file served from an extension-less URL a link-following crawl swept up) |
-| `no_body` | Body selector returned empty text |
-| `no_title` | No title could be extracted |
 | `http_404` | HTTP 404 response |
 | `http_3xx` | Redirect not followed (redirects are disabled globally) |
 | `http_5xx` | Server error |
@@ -262,8 +281,8 @@ All harvester and content output files follow a consistent naming scheme:
 |---|---|
 | `data/{source_site}/{source_site}_harvest-listing.csv` | Listing harvest output: content items extracted from known listing pages (legacy list-first no-sitemap spiders only, see `HARVESTING.md`) |
 | `data/{source_site}/{source_site}_harvest-nav.csv` | Nav harvest output: pages found by crawling site navigation, plus any `is_listing`/`depth` columns if the nav spider sets `LISTING_VIEW_LINK_EXTRACTOR` (legacy list-first no-sitemap spiders only) |
-| `data/{source_site}/{source_site}_harvest-full.csv` | Content-spider input: merged output for legacy list-first sites, written directly by a unified harvester (e.g. `obama_whitehouse_harvest.py`) |
-| `data/{source_site}/{source_site}.csv` | Final content output |
+| `data/{source_site}/{source_site}_harvest-full.csv` | Content-spider input for sitemap-based/legacy sites; one of two `FEEDS` outputs from the same run for `NavHarvesterMixin` sites that also extract content (e.g. `obama_whitehouse.py`, `letsmove.py`) |
+| `data/{source_site}/{source_site}.csv` | Final content output (includes a `warnings` column — see "Warnings column" above) |
 | `data/{source_site}/{source_site}_exclusions.csv` | Skipped URLs with typed reasons (written on spider close) |
 | `data/{source_site}/{source_site}-errors-{timestamp}.log` | Scrapy ERROR-level log (written by `ErrorFileLogger` extension) |
 
@@ -293,19 +312,21 @@ To check whether a site has a sitemap, try `{base_url}/sitemap.xml` and `{base_u
 
 Two patterns exist:
 
-- **Unified (recommended default)** — one spider does nav-style
-  link-following AND automatically walks every newly-discovered listing's
+- **Single spider (recommended default)** — one spider does nav-style
+  link-following, automatically walks every newly-discovered listing's
   pagination inline (via `NavHarvesterMixin`'s fingerprint dedup - no
-  curated seed list), no merge step. Copy
-  `archive_crawler/spiders/obama_whitehouse_harvest.py`, update `name`,
-  `allowed_domains`, `SOURCE_SITE`, `LISTING_VIEW_LINK_EXTRACTOR`/
-  `LISTING_CONTAINER_SELECTOR`/`LISTING_PAGER_SELECTOR`, and implement
-  `_listing_pagination_items`/`_listing_pagination_next_url` (each takes a
-  single container Selector, not the full response) for the new site's
-  listing template(s).
-  Remember to raise `DEPTH_LIMIT` well past whatever the longest expected
-  pagination chain is (see that spider's own `custom_settings` comment for
-  why).
+  curated seed list), and extracts content on the same fetched response.
+  Copy `archive_crawler/spiders/letsmove.py` (smaller, simpler starting
+  point) or `archive_crawler/spiders/obama_whitehouse.py` (larger site,
+  multiple listing templates), update `name`, `allowed_domains`,
+  `SOURCE_SITE`, `LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_CONTAINER_SELECTOR`/
+  `LISTING_PAGER_SELECTOR`, implement `_listing_pagination_items`/
+  `_listing_pagination_next_url` (each takes a single container Selector,
+  not the full response), and write `_scrape_item` for the new site's
+  content selectors (see `HARVESTING.md`'s nav-harvester walkthrough, step
+  4, for the full shape including the `warnings` column). Remember to raise
+  `DEPTH_LIMIT` well past whatever the longest expected pagination chain is
+  (see either spider's own `custom_settings` comment for why).
 - **Legacy list-first (two spiders)** — still a supported fallback for a
   site where a separate listing-only harvester is easier to reason about,
   though no site in this repo currently uses it. See `HARVESTING.md`'s
@@ -329,6 +350,7 @@ All sitemap-based spiders inherit from `ArchiveSpiderMixin`, which provides:
 - `_extract_text(response, selector)` — strips NARA banners, nav boilerplate, and invisible Unicode before returning plain text
 - `_log_exclusion(url, reason)` — records a skipped URL; written to `_exclusions.csv` on spider close
 - `_get_exclusion_rules()` — loads `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`, overlaid with `-a rules_file=<path>` `-a rules_mode=append|replace` if given
+- `_get_short_body_threshold()` / `_slug_title(url)` — the `warnings` column's `short_body` threshold (default 30 chars, see "Warnings column" above) and `no_title` fallback title
 - `EXTRA_STRIP_SELECTORS` / `EXTRA_STRIP_XPATH` — per-spider hooks for site-specific boilerplate
 
 ### Validating output
@@ -362,13 +384,13 @@ python audit_url_gaps.py \
 
 `spiders/crawl_spider.py`: Phase 2 (spider name `generic_crawl`). Reads the phase-1 harvest CSV and extracts title/body/teaser from each URL. Dynamically accepts `url_file`, `site_id`, and `source_type`.
 
-`spiders/base.py`: `ArchiveSpiderMixin` — shared extraction, exclusion tracking, and boilerplate stripping for all archive content spiders.
+`spiders/base.py`: `ArchiveSpiderMixin` — shared extraction, exclusion tracking, and boilerplate stripping for all archive content spiders. `NavHarvesterMixin` — shared nav link-following, listing-fingerprint pagination-walking, and (via `_maybe_scrape_item`) the fusion hook that lets a class composing both mixins extract content inline with no second fetch.
 
 `exclusion_rules.py`: Loads per-domain URL exclusion rules from `exclusion_rules/<SOURCE_SITE>.yml` (extension allow/deny list, `contains`/`regex` URL-pattern rules, nav-crawl deny patterns, generic-crawl pagination/query-param config). Every harvest-capable spider accepts `-a rules_file=<path>` and `-a rules_mode=append|replace` to overlay a per-run override on the committed file without editing it.
 
 `exclusion_rules/`: One committed YAML file per domain (see `exclusion_rules.py` above). New sites should get one even if empty, so `-a rules_file`/`-a rules_mode` always has a base to overlay onto.
 
-`items.py`: Defines the strict schema (Title, Full Text, Teaser, Source Site, Source Type).
+`items.py`: `ArchiveItem` — the strict content schema (URL, Title, Full Text, Teaser, Source Site, Source Type, Warnings). `HarvestItem` — the URL/is_listing/depth schema yielded by every `NavHarvesterMixin` spider's discovery pass.
 
 `extensions/error_log.py`: `ErrorFileLogger` — mirrors Scrapy ERROR-level log output to a per-run file alongside the output CSV.
 

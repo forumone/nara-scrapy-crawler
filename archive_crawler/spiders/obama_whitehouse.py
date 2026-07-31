@@ -1,19 +1,149 @@
-import csv
 import json
 
-import scrapy
+from scrapy.linkextractors import LinkExtractor
+from scrapy.spiders import CrawlSpider, Rule
 
-from archive_crawler import exclusion_rules
-from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin
+from archive_crawler.items import ArchiveItem, HarvestItem
+from archive_crawler.spiders.base import ArchiveSpiderMixin, NavHarvesterMixin
 
 
-class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
+class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
+    """Fused nav-harvest + content-scrape pass for obamawhitehouse.archives.gov,
+    which has no sitemap. One CrawlSpider does both ordinary nav
+    link-following and automatic listing pagination-walking via
+    NavHarvesterMixin's fingerprint mechanism (see that mixin's docstring
+    and ARCHITECTURE.md for the full mechanism and its known limitations) -
+    no curated seed list, no separate merge step - and, on the same
+    already-fetched response, this site's content extraction (_scrape_item)
+    via the _maybe_scrape_item hook. No second fetch.
+
+    This is what protects against every /photos-and-video/{video,
+    photogallery}/* permalink embedding the same sitewide "browse other
+    videos/galleries" catalog: the first permalink encountered walks the
+    catalog once, and every subsequent permalink's identical item set
+    hashes to the same fingerprint and is flagged-and-skipped, never
+    re-walked.
+
+    This file used to be two spiders: obama_whitehouse_harvest.py for
+    discovery, obama_whitehouse.py + url_file for content - retired, see
+    ~/.claude/projects/-home-caesius-git-scrapy/plans/
+    unified-harvest-scrape-plan.md. A pure harvest-only pass needs no flag:
+    a class composing NavHarvesterMixin without _scrape_item already gets
+    harvest-only behavior for free via _maybe_scrape_item's no-op.
+
+    The old content spider's not_in_seed_list diagnostic (outbound links on
+    a content page checked against the complete, already-finished harvest
+    URL set) has no fused equivalent - there's no complete prior harvest to
+    check a link against when discovery and extraction share one pass; any
+    non-excluded link gets its own request queued and eventually visited,
+    by construction. Dropped, not ported.
+    """
+
     name = "obama_whitehouse"
     allowed_domains = ["obamawhitehouse.archives.gov"]
 
     SOURCE_SITE = 'www.obamawhitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
+    EXCLUSIONS_FILE_SUFFIX = 'exclusions'
+
+    # .view is Drupal Views' own wrapper and reliably encloses both a
+    # listing's item rows and its pager/filter controls, confirmed across
+    # two distinct templates (teaser-card blog/author listings and the
+    # table-based photo/video gallery view both render inside a .view div).
+    # .view presence ALONE is not enough, though - ordinary topic/content
+    # pages that merely embed a "related videos"/"related blog posts" widget
+    # also render inside a .view container with real links, but carry no
+    # pager (confirmed: /issues/education/k-12 and the Cairo speech page
+    # both do this). LISTING_PAGER_SELECTOR requires an actual populated
+    # pager - .pager-current, confirmed present on both real listing
+    # templates - before a page counts as a listing at all.
+    # deny_extensions=() disables Scrapy's own built-in IGNORED_EXTENSIONS
+    # denylist (pdf/doc/zip/jpg/etc.) so our own is_web_url allow-list
+    # (archive_crawler/exclusion_rules/<site>.yml) is the sole authority on
+    # what counts as a web page.
+    LISTING_VIEW_LINK_EXTRACTOR = LinkExtractor(
+        restrict_css='.view',
+        allow_domains=['obamawhitehouse.archives.gov'],
+        deny_extensions=(),
+    )
+    LISTING_CONTAINER_SELECTOR = '.view'
+    LISTING_PAGER_SELECTOR = '.pager-current'
+
+    # DEPTH_LIMIT raised well past the mixin's usual 20 to comfortably clear
+    # the longest known listing pagination chain
+    # (briefing-room/statements-and-releases, 1,176 pages). Scrapy's
+    # DepthMiddleware counts every response.follow() call toward one shared
+    # depth counter regardless of which callback issued it, with no way to
+    # reset/exempt a specific chain - so _walk_listing_pagination's own
+    # pager-following would otherwise get silently killed well short of a
+    # long listing's true end. Safe to raise this high: nav's own ordinary
+    # link-following reaches full graph closure at a much shallower depth
+    # regardless of the ceiling, and the fingerprint dedup that protects
+    # against video/photogallery fan-out is a separate, content-based
+    # mechanism independent of DEPTH_LIMIT.
+    #
+    # FEEDS replaces the old two-spider -O invocation with two named feeds
+    # from this one run, item_classes-filtered to the matching schema - the
+    # exact fields each of today's separately-produced CSVs already has.
+    custom_settings = {
+        'DEPTH_LIMIT': 1300,
+        'CRAWLSPIDER_FOLLOW_LINKS': False,
+        'FEEDS': {
+            'data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [HarvestItem],
+                'fields': ['url', 'is_listing', 'depth'],
+            },
+            'data/www.obamawhitehouse/www.obamawhitehouse.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
+
+    start_urls = ['https://obamawhitehouse.archives.gov/']
+
+    rules = (
+        Rule(
+            # allow= anchors to the exact hostname; allow_domains alone would
+            # also match subdomains like letsmove.obamawhitehouse.archives.gov.
+            LinkExtractor(
+                allow=r'//obamawhitehouse\.archives\.gov/',
+                allow_domains=['obamawhitehouse.archives.gov'],
+                deny_extensions=(),
+            ),
+            callback='parse_nav',
+            follow=False,  # links followed manually in parse_nav, only from non-listing pages
+        ),
+    )
+
+    # Three known listing templates: teaser-card (.views-row h2/h3 a, e.g.
+    # blog/author pages), table-based gallery (.views-field-title, e.g.
+    # photo/video galleries), and person-directory (.views-row
+    # .views-field-nid a, e.g. /blog/authors).
+    def _listing_pagination_items(self, container):
+        links = container.css(
+            '.views-row h2 a::attr(href), .views-row h3 a::attr(href)'
+        ).getall()
+        if not links:
+            links = container.css('.views-field-title a::attr(href)').getall()
+        if not links:
+            links = container.css('.views-row .views-field-nid a::attr(href)').getall()
+        return links
+
+    # .pager-current's immediately-following sibling <li> holds the forward
+    # link in both templates (a "Next" link in the teaser-card pager, a
+    # numbered page link in the gallery pager) - one selector covers both
+    # rather than branching on .pager-next (which the gallery template
+    # doesn't use at all).
+    def _listing_pagination_next_url(self, container):
+        return container.css('.pager-current + li a::attr(href)').get()
 
     @staticmethod
     def _extract_gallery_captions(response):
@@ -42,51 +172,30 @@ class ObamaWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
         descriptions = settings.get('wh_photog', {}).get('descriptions') or []
         return ' '.join(d.strip() for d in descriptions if d and d.strip())
 
-    def start_requests(self):
-        url_file = getattr(self, 'url_file', None)
-        if not url_file:
-            raise ValueError("url_file argument is required: -a url_file=data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv")
-        rules = self._get_exclusion_rules()
-        self._seed_urls = set()
-        with open(url_file, newline='', encoding='utf-8-sig') as f:
-            for row in csv.DictReader(f):
-                url = row['url']
-                self._seed_urls.add(url)
-                reason = exclusion_rules.match_exclude(url, rules)
-                if reason:
-                    self._log_exclusion(url, reason)
-                else:
-                    yield self._make_request(url)
-
-    def parse_item(self, response):
+    def _scrape_item(self, response):
         if self._is_excluded_response(response):
-            return
-        # Every outbound link on a real content page, checked against this
-        # run's own seed list - a link _census_links doesn't otherwise
-        # exclude (external domain, non-http scheme, rules:/nav_deny match,
-        # non-web extension) but that ALSO never made it into harvest-full.csv
-        # is real content our nav/listing harvesting never found at all,
-        # discoverable only by scraping content pages themselves.
-        for url in self._census_links(response):
-            if url not in self._seed_urls:
-                self._log_exclusion(url, 'not_in_seed_list')
+            return None
+        warnings = []
         body = (self._extract_text(response, '.field-items .field-item') or
                 self._extract_text(response, '.longpage-sections') or
                 self._extract_text(response, '#content') or
                 self._extract_text(response, '#video-info .caption') or
                 self._extract_gallery_captions(response))
         if not body:
-            self._log_exclusion(response.url, 'no_body')
-            return
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
         title = self._extract_title(response)
         if not title:
-            self._log_exclusion(response.url, 'no_title')
-            return
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
+
         item = ArchiveItem()
         item['url'] = response.url
         item['title'] = title
         item['full_text'] = body
-        item['teaser_text'] = self._teaser(body)
+        item['teaser_text'] = self._teaser(body) if body else ''
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
-        yield item
+        item['warnings'] = ','.join(warnings)
+        return item
