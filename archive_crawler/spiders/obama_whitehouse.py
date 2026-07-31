@@ -167,7 +167,13 @@ class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         if self._is_excluded_response(response):
             return None
         warnings = []
-        body = (self._extract_text(response, '.field-items .field-item') or
+        # _extract_first_substantial, not _extract_text: a Drupal "Panels"
+        # landing page (e.g. /sotu) renders 100+ unrelated .field-item panes
+        # in document order, and the first one can be an unrelated
+        # video-embed-fallback link rather than real content - scan for the
+        # first pane whose cleaned text actually clears the short_body
+        # threshold instead of blindly taking the first match (D-009).
+        body = (self._extract_first_substantial(response, '.field-items .field-item') or
                 self._extract_text(response, '.longpage-sections') or
                 self._extract_text(response, '#content') or
                 self._extract_text(response, '#video-info .caption') or

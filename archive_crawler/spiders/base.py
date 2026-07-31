@@ -923,9 +923,14 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
             response.text,
         )
         sel = Selector(text=html_text)
+        # :not(.element-invisible) excludes Drupal's screen-reader-only
+        # utility class (e.g. a "Search form" accessibility label rendered
+        # as an h2 ahead of any real heading on some obamawhitehouse Panels
+        # pages) - never real visible content on any site, not a
+        # site-specific judgment call.
         title = (
-            ArchiveSpiderMixin._combine_headings(sel.css('h1').xpath('string(.)').getall())
-            or ArchiveSpiderMixin._combine_headings(sel.css('h2').xpath('string(.)').getall())
+            ArchiveSpiderMixin._combine_headings(sel.css('h1:not(.element-invisible)').xpath('string(.)').getall())
+            or ArchiveSpiderMixin._combine_headings(sel.css('h2:not(.element-invisible)').xpath('string(.)').getall())
         )
         if _MASTHEAD_TITLE_RE.match(title):
             # The heading is just the masthead - the real subject, if the
@@ -1051,8 +1056,39 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
             match = response.css(selector).get()
         if not match:
             return ''
+        return self._clean_matched_html(match)
+
+    def _extract_first_substantial(self, response, selector):
+        """Like _extract_text, but for a CSS selector with multiple
+        same-shape candidate matches in document order (e.g. a Drupal
+        Panels landing page rendering 100+ unrelated .field-item panes,
+        where the first in document order can be an unrelated
+        video-embed-fallback link rather than the real content). Returns
+        the first match whose cleaned text meets the short_body threshold,
+        skipping earlier matches that clean down to nothing or near-nothing.
+        Falls back to the first match's own cleaned text (same result
+        _extract_text would give) if none clear the threshold - CSS only,
+        not meant for XPath selectors."""
+        if response.css('frameset'):
+            return ''
+        threshold = self._get_short_body_threshold()
+        first_cleaned = None
+        for match in response.css(selector).getall():
+            cleaned = self._clean_matched_html(match)
+            if first_cleaned is None:
+                first_cleaned = cleaned
+            if len(cleaned) >= threshold:
+                return cleaned
+        return first_cleaned or ''
+
+    def _clean_matched_html(self, match):
         try:
-            cleaned = remove_tags_with_content(match, which_ones=('script', 'style'))
+            # iframe: browser-fallback content inside the tag (e.g. a
+            # YouTube embed's fallback <a> link, sometimes stored literally
+            # HTML-escaped, e.g. "&lt;a href=...&gt;") is never real visible
+            # page text - same non-content status as script/style, not a
+            # site-specific judgment call (D-009).
+            cleaned = remove_tags_with_content(match, which_ones=('script', 'style', 'iframe'))
         except TypeError:
             cleaned = ''
         # Remove injected/boilerplate UI elements BEFORE the </div>→space
