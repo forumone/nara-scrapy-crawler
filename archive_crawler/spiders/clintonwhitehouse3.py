@@ -4,7 +4,7 @@ import scrapy
 
 from archive_crawler import exclusion_rules
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin, PRESS_RELEASE_LETTERHEAD_PATTERNS
+from archive_crawler.spiders.base import ArchiveSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
 
 class ClintonWhiteHouse3Spider(ArchiveSpiderMixin, scrapy.Spider):
@@ -14,7 +14,7 @@ class ClintonWhiteHouse3Spider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'clintonwhitehouse3'
     SOURCE_TYPE = 'Archived White House Websites'
 
-    LEADING_TEXT_STRIP_PATTERNS = PRESS_RELEASE_LETTERHEAD_PATTERNS
+    LEADING_TEXT_STRIP_PATTERNS = TEXT_VERSION_TOGGLE_PATTERNS
 
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)

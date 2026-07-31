@@ -60,18 +60,34 @@ _MONTHS = (
 )
 _WEEKDAYS = r'(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)'
 
-# Shared press-release letterhead used by CW1-6 and GWBush (and appended
-# after the CW4/CW5 nav-banner pattern for pages that use the plain
-# letterhead instead). Components appear in varying combinations and order
-# (e.g. GWBush puts "For Immediate Release" before "Office of the Press
-# Secretary"), so these are meant to be applied in a fixpoint loop rather
-# than a single pass - see _extract_text.
+# Anchor text for a page's plain-text/no-graphics twin, e.g. "[Text version]"
+# linking wf-work.html to wf-work-plain.html - a UI toggle link, not authored
+# content, so it stays stripped regardless of the letterhead policy below.
+# Flattened into ordinary text by _extract_text's tag-stripping,
+# indistinguishable from real content by the time this pattern runs.
+TEXT_VERSION_TOGGLE_PATTERNS = (
+    re.compile(r'^\s*\[\s*(?:Text|Graphics)\s+Version\s*\]\s*', re.IGNORECASE),
+)
+
+# Retired from active stripping 2026-07-31 (client-facing policy: scrape
+# letterhead/dateline/contact text as-is, no warning column - see
+# ~/.claude/projects/-home-caesius-git-scrapy/plans/
+# content-remediation-policy-review-plan.md). No longer referenced by any
+# spider's LEADING_TEXT_STRIP_PATTERNS. Kept, not deleted, in case a future
+# post-hoc boilerplate-removal script is ever wanted - re-scraping to
+# recover this text if it were deleted and needed again would cost far more
+# than keeping already-tested regexes around unused.
 #
-# The masthead only strips when immediately followed by a recognized
-# continuation, never unconditionally, so it doesn't eat legitimate titles
+# Components appeared in varying combinations and order on CW1-6/GWBush
+# (e.g. GWBush puts "For Immediate Release" before "Office of the Press
+# Secretary"), which is why this was applied in a fixpoint loop rather than
+# a single pass when it was active - see _extract_text's git history.
+#
+# The masthead only stripped when immediately followed by a recognized
+# continuation, never unconditionally, so it didn't eat legitimate titles
 # that happen to start with "The White House" (e.g. "The White House
 # Visitors Office" or "The White House Conference on the New Economy").
-PRESS_RELEASE_LETTERHEAD_PATTERNS = (
+_RETIRED_PRESS_RELEASE_LETTERHEAD_PATTERNS = (
     re.compile(
         r'^\s*T\s*H\s*E\s+W\s*H\s*I\s*T\s*E\s+H\s*O\s*U\s*S\s*E\b\s*'
         r'(?=Office\s+of\s+the\s+(?:Press\s+Secretary|Vice\s+President)\b'
@@ -90,11 +106,6 @@ PRESS_RELEASE_LETTERHEAD_PATTERNS = (
     re.compile(r'^\s*Contact:?\s*[\d\-() ]{7,20}\s*', re.IGNORECASE),
     re.compile(r'^\s*' + _WEEKDAYS + r',?\s+' + _MONTHS + r'\s+\d{1,2},?\s*\d{4}\s*', re.IGNORECASE),
     re.compile(r'^\s*' + _MONTHS + r'\s+\d{1,2},?\s*\d{4}\s*', re.IGNORECASE),
-    # Anchor text for a page's plain-text/no-graphics twin, e.g.
-    # "[Text version]" linking wf-work.html to wf-work-plain.html. Flattened
-    # into ordinary text by _extract_text's tag-stripping, indistinguishable
-    # from real content by the time this pattern runs.
-    re.compile(r'^\s*\[\s*(?:Text|Graphics)\s+Version\s*\]\s*', re.IGNORECASE),
 )
 
 # Clinton-era press-release pages (CW1-5) often have the masthead as its own
@@ -117,6 +128,32 @@ _DATELINE_ONLY_RE = re.compile(
     r'^\s*(?:' + _WEEKDAYS + r',?\s+)?' + _MONTHS + r'\s+\d{1,2}(?:-\d{1,2})?,?\s*\d{4}\.?\s*$',
     re.IGNORECASE,
 )
+
+# CW4/CW5 OMB PAYGO cost-estimate pages (same report series, different alias
+# directory per site) have no h1/h2/<title> a generic selector can use, but
+# carry a machine-extractable "BILL TITLE: ... BILL PURPOSE:" field in the
+# body text itself, optionally followed by "LAW NUMBER: P.L. ###-###". No
+# URL-path gating needed - the paired BILL TITLE/BILL PURPOSE markers are
+# specific enough not to false-positive on unrelated content.
+_OMB_PAYGO_BILL_TITLE_RE = re.compile(
+    r'BILL TITLE:\s*(.*?)\s*BILL PURPOSE:', re.IGNORECASE | re.DOTALL,
+)
+_OMB_PAYGO_LAW_NUMBER_RE = re.compile(r'LAW NUMBER:\s*(P\.?L\.?\s*[\d\-]+)', re.IGNORECASE)
+
+
+def omb_paygo_title(body):
+    """Return a composed title from an OMB PAYGO page's BILL TITLE/LAW
+    NUMBER fields, or None if the body doesn't contain that pattern. Meant
+    as a fallback after _extract_title comes up empty, not a replacement
+    for it - see CW4/CW5's parse_item."""
+    bill_m = _OMB_PAYGO_BILL_TITLE_RE.search(body)
+    if not bill_m:
+        return None
+    bill_title = re.sub(r'\s+', ' ', bill_m.group(1)).strip()
+    law_m = _OMB_PAYGO_LAW_NUMBER_RE.search(body)
+    if law_m:
+        return f'OMB PAYGO Cost Estimate: {bill_title} ({law_m.group(1).strip()})'
+    return f'OMB PAYGO Cost Estimate: {bill_title}'
 
 
 def _spider_exclusion_rules(spider):
@@ -640,14 +677,15 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
                 yield response.follow(link.url, callback=self.parse_nav)
 
     def _maybe_scrape_item(self, response):
-        """Fusion hook: no-op unless a subclass also composes
-        ArchiveSpiderMixin and defines _scrape_item (site-specific content
-        extraction, same role as a standalone spider's parse_item). Lets a
-        harvest-only subclass (e.g. obama_whitehouse_harvest.py, or any new
+        """No-op unless a subclass also composes ArchiveSpiderMixin and
+        defines _scrape_item (site-specific content extraction, same role
+        as a standalone spider's parse_item). A subclass composing only
+        NavHarvesterMixin (e.g. open_obama_whitehouse_harvest.py, or a new
         site explored before its content-extraction selectors are written)
-        share this parse_nav unchanged, while a fused subclass extracts
-        content inline on the same response already fetched for nav
-        discovery - no second fetch."""
+        shares this parse_nav unchanged and stays harvest-only. A subclass
+        that also defines _scrape_item (e.g. letsmove.py,
+        obama_whitehouse.py) extracts content inline on the same response
+        already fetched for nav discovery - no second fetch."""
         scrape_item = getattr(self, '_scrape_item', None)
         if scrape_item is None:
             return

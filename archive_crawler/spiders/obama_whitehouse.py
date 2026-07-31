@@ -8,14 +8,13 @@ from archive_crawler.spiders.base import ArchiveSpiderMixin, NavHarvesterMixin
 
 
 class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
-    """Fused nav-harvest + content-scrape pass for obamawhitehouse.archives.gov,
+    """Nav-harvest + content-scrape spider for obamawhitehouse.archives.gov,
     which has no sitemap. One CrawlSpider does both ordinary nav
     link-following and automatic listing pagination-walking via
     NavHarvesterMixin's fingerprint mechanism (see that mixin's docstring
-    and ARCHITECTURE.md for the full mechanism and its known limitations) -
-    no curated seed list, no separate merge step - and, on the same
-    already-fetched response, this site's content extraction (_scrape_item)
-    via the _maybe_scrape_item hook. No second fetch.
+    and ARCHITECTURE.md for the full mechanism and its known limitations),
+    and - on that same fetched response - this site's content extraction
+    (_scrape_item) via the _maybe_scrape_item hook.
 
     This is what protects against every /photos-and-video/{video,
     photogallery}/* permalink embedding the same sitewide "browse other
@@ -24,19 +23,11 @@ class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     hashes to the same fingerprint and is flagged-and-skipped, never
     re-walked.
 
-    This file used to be two spiders: obama_whitehouse_harvest.py for
-    discovery, obama_whitehouse.py + url_file for content - retired, see
-    ~/.claude/projects/-home-caesius-git-scrapy/plans/
-    unified-harvest-scrape-plan.md. A pure harvest-only pass needs no flag:
-    a class composing NavHarvesterMixin without _scrape_item already gets
-    harvest-only behavior for free via _maybe_scrape_item's no-op.
-
-    The old content spider's not_in_seed_list diagnostic (outbound links on
-    a content page checked against the complete, already-finished harvest
-    URL set) has no fused equivalent - there's no complete prior harvest to
-    check a link against when discovery and extraction share one pass; any
-    non-excluded link gets its own request queued and eventually visited,
-    by construction. Dropped, not ported.
+    There's no not_in_seed_list-style diagnostic here (outbound links on a
+    content page checked against a complete, already-finished harvest URL
+    set) - there's no complete prior harvest to check a link against when
+    discovery and extraction share one pass; any non-excluded link gets its
+    own request queued and eventually visited, by construction.
     """
 
     name = "obama_whitehouse"

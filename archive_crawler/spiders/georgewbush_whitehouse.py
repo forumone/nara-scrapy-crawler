@@ -5,7 +5,7 @@ import scrapy
 
 from archive_crawler import exclusion_rules
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin, PRESS_RELEASE_LETTERHEAD_PATTERNS
+from archive_crawler.spiders.base import ArchiveSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
 
 class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
@@ -21,7 +21,7 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
     # element that contains the gif removes the whole nav block.
     EXTRA_STRIP_XPATH = ('.//center[.//img[@src="/911/images/star.gif"]]',)
 
-    LEADING_TEXT_STRIP_PATTERNS = PRESS_RELEASE_LETTERHEAD_PATTERNS
+    LEADING_TEXT_STRIP_PATTERNS = TEXT_VERSION_TOGGLE_PATTERNS
 
     # "White House News" is a breadcrumb/section label this template inserts
     # between the headline and the body text on ~6% of pages. Confirmed via

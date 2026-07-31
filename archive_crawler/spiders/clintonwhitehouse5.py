@@ -5,7 +5,7 @@ import scrapy
 
 from archive_crawler import exclusion_rules
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin, PRESS_RELEASE_LETTERHEAD_PATTERNS
+from archive_crawler.spiders.base import ArchiveSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS, omb_paygo_title
 
 
 class ClintonWhiteHouse5Spider(ArchiveSpiderMixin, scrapy.Spider):
@@ -20,16 +20,17 @@ class ClintonWhiteHouse5Spider(ArchiveSpiderMixin, scrapy.Spider):
     # pages. The nav links appear as "Help Site Map", "Text Only Help Site
     # Map", or "Help Site Map Text Only" depending on the page - order and
     # presence of "Text Only" both vary. Strip through whichever form
-    # appears, keeping only what follows it. The remaining pages use the
-    # plain press-release letterhead instead, handled by the shared pattern
-    # set appended below.
+    # appears, keeping only what follows it - this is nav chrome, stripped
+    # regardless of the letterhead-content policy below. The remaining pages
+    # use the plain press-release letterhead instead - no longer stripped,
+    # see TEXT_VERSION_TOGGLE_PATTERNS.
     LEADING_TEXT_STRIP_PATTERNS = (
         re.compile(
             r'^\s*T\s*H\s*E\s+W\s*H\s*I\s*T\s*E\s+H\s*O\s*U\s*S\s*E\b'
             r'.*?\b(?:Text\s+Only\s+)?Help\s+Site\s+Map(?:\s+Text\s+Only)?\b\s*',
             re.IGNORECASE,
         ),
-    ) + PRESS_RELEASE_LETTERHEAD_PATTERNS
+    ) + TEXT_VERSION_TOGGLE_PATTERNS
 
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
@@ -58,6 +59,8 @@ class ClintonWhiteHouse5Spider(ArchiveSpiderMixin, scrapy.Spider):
         elif len(body) < self._get_short_body_threshold():
             warnings.append('short_body')
         title = self._extract_title(response)
+        if not title:
+            title = omb_paygo_title(body)
         if not title:
             warnings.append('no_title')
             title = self._slug_title(response.url)

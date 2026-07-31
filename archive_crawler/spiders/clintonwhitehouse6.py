@@ -6,7 +6,7 @@ import scrapy
 
 from archive_crawler import exclusion_rules
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin, PRESS_RELEASE_LETTERHEAD_PATTERNS
+from archive_crawler.spiders.base import ArchiveSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
 
 def _title_from_slug(url):
@@ -31,7 +31,7 @@ class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
     # file. Strip it so the link text doesn't appear at the start of every full_text.
     EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)
 
-    LEADING_TEXT_STRIP_PATTERNS = PRESS_RELEASE_LETTERHEAD_PATTERNS
+    LEADING_TEXT_STRIP_PATTERNS = TEXT_VERSION_TOGGLE_PATTERNS
 
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)

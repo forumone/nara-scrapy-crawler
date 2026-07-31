@@ -6,20 +6,12 @@ from archive_crawler.spiders.base import ArchiveSpiderMixin, NavHarvesterMixin
 
 
 class LetsMoveSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
-    """Fused nav-harvest + content-scrape pass for
+    """Nav-harvest + content-scrape spider for
     letsmove.obamawhitehouse.archives.gov. One CrawlSpider walks every page
     exactly once: parse_nav (NavHarvesterMixin) discovers/flags listings and
-    auto-walks pagination as before, and - on the same already-fetched
-    response, no second request - also runs this site's content extraction
-    (_scrape_item, ArchiveSpiderMixin's role) via the _maybe_scrape_item
-    hook. See ~/.claude/projects/-home-caesius-git-scrapy/plans/
-    unified-harvest-scrape-plan.md for the full design rationale.
-
-    This file used to be two spiders: letsmove_harvest.py for discovery,
-    letsmove.py + url_file for content - retired, see that plan. A pure
-    harvest-only pass needs no flag: a class composing NavHarvesterMixin
-    without _scrape_item (this site's content-extraction method) already
-    gets harvest-only behavior for free via _maybe_scrape_item's no-op.
+    auto-walks pagination, and - on that same fetched response, no second
+    request - also runs this site's content extraction (_scrape_item,
+    ArchiveSpiderMixin's role) via the _maybe_scrape_item hook.
 
     Much smaller/lower-risk than the Obama WH site: one main listing section
     (/blog/), no video/photogallery-style shared-catalog concern. Individual
@@ -56,13 +48,12 @@ class LetsMoveSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     # pagination chain (this site's pager URLs are opaque hashed tokens, not
     # sequential page numbers, so the chain length has to be walked rather
     # than inferred from the markup). Same DepthMiddleware-shares-one-counter
-    # reasoning as obama_whitehouse_harvest.py: without raising this,
+    # reasoning as obama_whitehouse.py: without raising this,
     # _walk_listing_pagination's own pager-following would get silently cut
     # off well short of the listing's true end.
     #
-    # FEEDS replaces the old two-spider -O invocation with two named feeds
-    # from this one run, item_classes-filtered to the matching schema - the
-    # exact fields each of today's separately-produced CSVs already has.
+    # FEEDS gives two named feeds from this one run, item_classes-filtered
+    # to the matching schema - a harvest CSV and a content CSV.
     custom_settings = {
         'DEPTH_LIMIT': 200,
         'CRAWLSPIDER_FOLLOW_LINKS': False,
