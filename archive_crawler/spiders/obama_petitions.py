@@ -17,8 +17,8 @@ class ObamaPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
 
     # Output path is automatic, derived from SOURCE_SITE - pass -O <path> on
     # the CLI to override (Scrapy's -O/-o setting takes precedence over
-    # custom_settings['FEEDS'], same mechanism already used by the fused
-    # nav-harvest spiders).
+    # custom_settings['FEEDS'], the same mechanism letsmove.py and
+    # obama_whitehouse.py already use for their own output).
     custom_settings = {
         'FEEDS': {
             'data/petitions.obamawhitehouse/petitions.obamawhitehouse.csv': {

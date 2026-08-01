@@ -24,13 +24,21 @@ harvester with no site-specific code to write:
 ```
 scrapy crawl sitemap_harvest \
     -a sitemap_url=https://example.archives.gov/sitemap.xml \
-    -O data/example/example_harvest-full.csv
+    -a source_site=example
 ```
 
 It fetches the sitemap (or sitemap index, recursing into all sub-sitemaps),
 deduplicates URLs case-insensitively, drops non-web assets (PDFs, images, etc.), and
-outputs a harvest CSV — one `url` column, one row per content page — without
+writes a harvest CSV — one `url` column, one row per content page — without
 fetching any content pages itself. Used by all of Clinton (CW1–6), Biden, and GWBush.
+
+Output is automatic, derived from `source_site`: the harvest CSV goes to
+`data/example/example_harvest-full.csv`, and any dropped non-web-extension
+URLs go to `data/example/example_harvest-dropped.csv` (only written if at
+least one URL was actually dropped). This is the one spider in the project
+where `-O`/`-o` don't control output at all — pass `-a harvest_file=<path>`
+and/or `-a dropped_file=<path>` to override either default explicitly.
+Without `source_site`, `harvest_file` becomes required.
 
 Since `sitemap_harvest` never fetches a content page itself, there's no
 response here to extract content from inline. Write a separate content
@@ -59,7 +67,7 @@ the real content link rather than generic link-following. One spider handles
 nav link-following, listing pagination-walking (if step 1 finds a reliable
 listing container + pager selector), and content extraction, all in a single
 pass over each fetched response. See "Step-by-step: nav harvester" below. A
-legacy two-spider variant (list-first) also exists for a site where no such
+two-spider list-first variant also exists for a site where no such
 selector pair can be made reliable — see the callout at the end of that
 section.
 
@@ -81,7 +89,7 @@ for the fingerprint mechanism this relies on, including its known
 limitations and the discovery you should do before trusting it against a
 new site. This is the recommended pattern for any listing-bearing,
 no-sitemap site — `letsmove.py` and `obama_whitehouse.py` are worked
-examples. A legacy list-first variant is described in the callout at the
+examples. A list-first variant is described in the callout at the
 end of this section, for a site where step 1 can't produce a reliable
 listing container + pager selector pair.
 
@@ -158,25 +166,41 @@ is what tells the two apart.
 ```python
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
+from archive_crawler.items import HarvestItem
 from archive_crawler.spiders.base import NavHarvesterMixin
 
 class MySiteSpider(NavHarvesterMixin, CrawlSpider):
     name = "mysite"
-    allowed_domains = ["example.archives.gov"]
-    SOURCE_SITE = 'example'
+    allowed_domains = ["mysite.archives.gov"]
+    SOURCE_SITE = 'mysite'
+
+    # Output path is automatic, derived from SOURCE_SITE - pass -O <path>
+    # on the CLI to override. Only one feed at this step (no content
+    # extraction yet); step 4 adds a second FEEDS entry once _scrape_item
+    # exists on the class.
+    custom_settings = {
+        'FEEDS': {
+            'data/mysite/mysite_harvest-full.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [HarvestItem],
+                'fields': ['url', 'is_listing', 'depth'],
+            },
+        },
+    }
 
     # Optional, required together: only set these if step 1 found a
     # reliable listing container AND a pager selector that reliably
     # indicates real pagination (not just any link inside the container).
     LISTING_VIEW_LINK_EXTRACTOR = LinkExtractor(
         restrict_css='.view',
-        allow_domains=['example.archives.gov'],
+        allow_domains=['mysite.archives.gov'],
     )
     LISTING_CONTAINER_SELECTOR = '.view'
     LISTING_PAGER_SELECTOR = '.pager-current'
 
     start_urls = [
-        "https://example.archives.gov/",
+        "https://mysite.archives.gov/",
         # A single homepage seed is often enough at a generous DEPTH_LIMIT -
         # add more only if a full (untimed) run still logs genuine
         # depth-exceeded ignores for a section, not preemptively.
@@ -185,8 +209,8 @@ class MySiteSpider(NavHarvesterMixin, CrawlSpider):
     rules = (
         Rule(
             LinkExtractor(
-                allow=r'//example\.archives\.gov/',
-                allow_domains=['example.archives.gov'],
+                allow=r'//mysite\.archives\.gov/',
+                allow_domains=['mysite.archives.gov'],
             ),
             callback='parse_nav',
             follow=False,  # omit process_links=; parse_nav applies
@@ -217,14 +241,12 @@ scrapy crawl mysite \
     -s DEPTH_LIMIT=10 \
     -s DEPTH_PRIORITY=1 \
     -s SCHEDULER_DISK_QUEUE=scrapy.squeues.PickleFifoDiskQueue \
-    -s SCHEDULER_MEMORY_QUEUE=scrapy.squeues.FifoMemoryQueue \
-    -O data/mysite/mysite_harvest-full.csv
+    -s SCHEDULER_MEMORY_QUEUE=scrapy.squeues.FifoMemoryQueue
 ```
 
-(`-O` works fine here since this class doesn't compose `ArchiveSpiderMixin`
-yet — one feed, one output file, exactly like any other Scrapy spider. Step
-4 switches to a `FEEDS` dict in `custom_settings` once there are two feeds
-to keep separate.)
+No `-O` needed — `custom_settings['FEEDS']` already defines the output
+path. Step 4 adds a second `FEEDS` entry (for content) to that same dict
+once `_scrape_item` exists on the class.
 
 The `DEPTH_PRIORITY`/`SCHEDULER_*` flags switch Scrapy's default LIFO
 (depth-first) traversal to breadth-first. This matters beyond just even
@@ -288,7 +310,7 @@ from archive_crawler.spiders.base import ArchiveSpiderMixin, NavHarvesterMixin
 
 class MySiteSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     name = "mysite"
-    allowed_domains = ["example.archives.gov"]
+    allowed_domains = ["mysite.archives.gov"]
     SOURCE_SITE = 'mysite'
     SOURCE_TYPE = 'Archived White House Websites'
     EXCLUSIONS_FILE_SUFFIX = 'exclusions'  # one merged file, not nav+content
@@ -359,7 +381,7 @@ that already has `_scrape_item` defined, comment it out (or drop
 
 ---
 
-## Legacy: list-first split harvester
+## List-first split harvester
 
 Not used by any current site in this repo — both existing no-sitemap sites
 use the unified pattern above. Kept as a documented fallback for a
@@ -383,10 +405,23 @@ import scrapy
 
 class MySiteHarvestListSpider(scrapy.Spider):
     name = "mysite_harvest_list"
-    allowed_domains = ["example.archives.gov"]
+    allowed_domains = ["mysite.archives.gov"]
+
+    # Output path is automatic, derived from this spider's own site - pass
+    # -O <path> on the CLI to override.
+    custom_settings = {
+        'FEEDS': {
+            'data/mysite/mysite_harvest-listing.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'fields': ['url'],
+            },
+        },
+    }
+
     start_urls = [
-        "https://example.archives.gov/blog/",
-        "https://example.archives.gov/news/",
+        "https://mysite.archives.gov/blog/",
+        "https://mysite.archives.gov/news/",
         # ... every known listing page, curated up front
     ]
 
@@ -405,12 +440,16 @@ class MySiteHarvestListSpider(scrapy.Spider):
             yield response.follow(next_page, callback=self.parse)
 ```
 
+`mysite_harvest_nav` (the second spider, a `NavHarvesterMixin` class with
+`LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_PAGER_SELECTOR` left unset) gets the
+same `custom_settings['FEEDS']` treatment, keyed to its own
+`data/mysite/mysite_harvest-nav.csv` path:
+
 ```
-scrapy crawl mysite_harvest_list -o data/mysite/mysite_harvest-listing.csv
+scrapy crawl mysite_harvest_list
 
 scrapy crawl mysite_harvest_nav \
-    -a listing_file=data/mysite/mysite_harvest-listing.csv \
-    -O data/mysite/mysite_harvest-nav.csv
+    -a listing_file=data/mysite/mysite_harvest-listing.csv
 ```
 
 The two output CSVs then need merging by `url` (dedup, union of columns —
@@ -479,7 +518,7 @@ with site-specific selectors, same as any other new site's scraper.
 One file, one class, one crawl (step 2's discovery-only version and step
 4's content-extracting version are the same file, not two).
 
-**Legacy list-first pattern:**
+**List-first pattern:**
 
 | File | Spider name |
 |---|---|
