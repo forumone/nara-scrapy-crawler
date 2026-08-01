@@ -92,3 +92,14 @@ rules:
   - match: regex
     pattern: '/news/releases/-\d+\.html$'
     reason: "url_pattern:bare_negative_release"
+  # /fragments/ holds server-side template includes (css/nav/banner/frozen-
+  # warning snippets), not standalone content pages - identifiable by their
+  # own naming convention (css-*, *-navigation, *-top, *-banner, bodytag*,
+  # frozen-warning*, ask-archives*). Confirmed 2026-08-01: 13/13 sampled
+  # across all 85 site-wide URLs are either empty or pure nav-chrome text
+  # ("Math Challenge Choose your grade level...", "Skip Main Navigation
+  # PRESIDENT | VICE PRESIDENT..."), zero exceptions. Example:
+  # https://georgewbush-whitehouse.archives.gov/fragments/css-home.html
+  - match: contains
+    pattern: "/fragments/"
+    reason: "url_pattern:/fragments/"
