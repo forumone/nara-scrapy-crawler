@@ -1,4 +1,5 @@
 import json
+import re
 
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
@@ -173,11 +174,24 @@ class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         # video-embed-fallback link rather than real content - scan for the
         # first pane whose cleaned text actually clears the short_body
         # threshold instead of blindly taking the first match (D-009).
+        # Whole-body fallback (/sites/default/ only): these are standalone
+        # uploaded files, not real Drupal node pages - none of the selectors
+        # above ever match since there's no Drupal theme wrapper at all.
+        # Confirmed 2026-08-01 against 13 live samples (mostly OMB budget
+        # appendix documents, plus at least one Bootstrap-styled standalone
+        # report): all 13 recovered clean, substantial, well-bounded content
+        # with no visible boilerplate leakage - no chrome/nav to leak in the
+        # first place, since these files have no site template wrapped
+        # around them. Scoped to this one prefix so it can't mask genuine
+        # no_body pages elsewhere on the site.
         body = (self._extract_first_substantial(response, '.field-items .field-item') or
                 self._extract_text(response, '.longpage-sections') or
                 self._extract_text(response, '#content') or
                 self._extract_text(response, '#video-info .caption') or
-                self._extract_gallery_captions(response))
+                self._extract_gallery_captions(response) or
+                (self._extract_text(response, 'body')
+                    if re.search(r'/sites/default/', response.url)
+                    else ''))
         if not body:
             warnings.append('no_body')
         elif len(body) < self._get_short_body_threshold():
