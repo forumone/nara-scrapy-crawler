@@ -81,3 +81,14 @@ rules:
   - match: regex
     pattern: '/history/thisday/\d{4}\.html$'
     reason: "url_pattern:thisday_bare_date"
+  # Bare negative-numbered release pages are letterhead-only stubs (dateline
+  # + "Printer-Friendly Version Email This Page", no actual release text) -
+  # the real selectors (#news_container/#whitebox) match normally here, so
+  # these silently pass with zero warnings whenever the letterhead text
+  # clears the short_body threshold. Confirmed 2026-08-01: 36/36 production
+  # rows (72 total harvest URLs) are letterhead-only, 30/36 with zero
+  # warnings at all. Example:
+  # https://georgewbush-whitehouse.archives.gov/news/releases/-10.html
+  - match: regex
+    pattern: '/news/releases/-\d+\.html$'
+    reason: "url_pattern:bare_negative_release"
