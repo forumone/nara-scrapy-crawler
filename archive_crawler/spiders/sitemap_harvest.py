@@ -35,6 +35,15 @@ class SitemapHarvestSpider(scrapy.Spider):
 
     name = "sitemap_harvest"
 
+    # Some sites' sitemap URLs themselves 301 (e.g. a WordPress/Yoast site
+    # serving /sitemap.xml -> /sitemap_index.xml); under the project-wide
+    # REDIRECT_ENABLED=False default that redirect is silently dropped
+    # instead of followed, yielding zero items instead of an error. Safe to
+    # re-enable here since this spider only ever fetches sitemap/index XML,
+    # never a content page - no redirect-detection signal is being traded
+    # away.
+    custom_settings = {'REDIRECT_ENABLED': True}
+
     def __init__(self, sitemap_url=None, dropped_file=None, source_site=None,
                  rules_file=None, rules_mode='append', *args, **kwargs):
         if not sitemap_url:

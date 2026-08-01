@@ -4,6 +4,11 @@ import scrapy
 class TrumpPetitionsHarvestSpider(scrapy.Spider):
     name = "trump_petitions_harvest"
     allowed_domains = ["petitions.trumpwhitehouse.archives.gov"]
+
+    # See open_obama_whitehouse_harvest.py's identical override - this site's
+    # pager links also 301 to a canonicalized URL, silently truncating
+    # pagination under the project-wide REDIRECT_ENABLED=False default.
+    custom_settings = {'REDIRECT_ENABLED': True}
     start_urls = [
         "https://petitions.trumpwhitehouse.archives.gov/",
         "https://petitions.trumpwhitehouse.archives.gov/about",
