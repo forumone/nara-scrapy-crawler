@@ -12,15 +12,30 @@ extensions:
   values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
 
 rules:
+  # Text-only mirror of the main site (11k of 26k URLs) - same content,
+  # plain-text template. Example:
+  # https://clintonwhitehouse5.archives.gov/textonly/WH/New/SouthAsia/photo_gallery/day_3/photo16.html
   - match: contains
     pattern: "/textonly/"
     reason: "url_pattern:/textonly/"
+  # Lowercase alias directory duplicating /OMB/'s content (omb: 1815 URLs,
+  # OMB: 169 - both fold into the same canonical set /OMB-upper/ below
+  # already captures). Example:
+  # https://clintonwhitehouse5.archives.gov/omb/legislative/sap/1999/HR436-h.html
   - match: contains
     pattern: "/omb/"
     reason: "url_pattern:/omb/"
+  # Canonical-cased OMB directory, itself an alias of /OMB-upper/ (see
+  # below) on this site - kept as its own rule since /omb/ and /OMB/ are
+  # deliberately distinct, case-sensitive matches. Example:
+  # https://clintonwhitehouse5.archives.gov/WH/EOP/OMB/MAX/1intro.html
   - match: contains
     pattern: "/OMB/"
     reason: "url_pattern:/OMB/"
+  # Backup/mirror alias directory (~ /OMB-upper/'s content). /OMB-upper/
+  # itself is kept as the single canonical, most-complete unique OMB set on
+  # this site - not excluded, no rule needed for it. Example:
+  # https://clintonwhitehouse5.archives.gov/OMB-bak/legislative/sap/1999/HR2513-h.html
   - match: contains
     pattern: "/OMB-bak/"
     reason: "url_pattern:/OMB-bak/"

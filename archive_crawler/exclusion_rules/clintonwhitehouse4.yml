@@ -13,12 +13,22 @@ extensions:
   values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
 
 rules:
+  # Text-only mirror of the main site (11k of 25k URLs) - same content,
+  # plain-text template. Example:
+  # https://clintonwhitehouse4.archives.gov/textonly/WH/New/SAmerica/venezuela.html
   - match: contains
     pattern: "/textonly/"
     reason: "url_pattern:/textonly/"
+  # Alias prefix for the canonical /OMB/ directory (1969 paths, 1932 with a
+  # scraped /OMB/ counterpart - the 37 exceptions are paygo pages also
+  # excluded from /OMB/ at parse time via no_title). Example:
+  # https://clintonwhitehouse4.archives.gov/OMB-upper/legislative/sap/2000/HR4577-r.html
   - match: contains
     pattern: "/OMB-upper/"
     reason: "url_pattern:/OMB-upper/"
+  # Lowercase-prefixed alias for the same canonical /OMB/ directory as
+  # /OMB-upper/ above. Example:
+  # https://clintonwhitehouse4.archives.gov/omb-lower/legislative/sap/1999/HR434-s.html
   - match: contains
     pattern: "/omb-lower/"
     reason: "url_pattern:/omb-lower/"

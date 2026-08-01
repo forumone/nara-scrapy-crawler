@@ -8,6 +8,7 @@ extensions:
 
 rules:
   # CMS-generated template shells with no real content of their own.
+  # Example: https://georgewbush-whitehouse.archives.gov/omb/template.html
   - match: regex
     pattern: 'template\.html$'
     reason: "cms_template"
@@ -18,31 +19,65 @@ rules:
   # dead ends). The /print/ and /text/ rules below still correctly exclude
   # the /images/print/ and /images/text/ nested variants on their own.
   # .v.html pages are video transcript variants (11k URLs); skip to avoid
-  # duplicating the main content page.
+  # duplicating the main content page. Example:
+  # https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/print/20030519-1.v.html
   - match: regex
     pattern: '\.v\.html$'
     reason: "url_pattern:.v.html"
   # /print/ subdirectories are printer-friendly duplicates of main content
-  # (68k URLs).
+  # (68k URLs). Example:
+  # https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/print/text/20030519-1_d051903-515h.html
   - match: contains
     pattern: "/print/"
     reason: "url_pattern:/print/"
   # /text/ subdirectories are plain-text duplicates of main content (94k
-  # URLs).
+  # URLs). Example:
+  # https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/text/20030512_d050603-5-515h.html
   - match: contains
     pattern: "/text/"
     reason: "url_pattern:/text/"
   # /goodbye/ pages are exit-redirect interstitials with no content.
+  # Example:
+  # https://georgewbush-whitehouse.archives.gov/goodbye/04463f6e6bff2a47f4b44a986d66486f5071c18c.html
   - match: contains
     pattern: "/goodbye/"
     reason: "url_pattern:/goodbye/"
   # -js.html pages are numbered slideshow/gallery-frame pages (one image per
-  # frame, e.g. president/holiday/historicalpets2/04-js.html). Confirmed
-  # 2026-08-01 against the full re-crawl output: 338 total, 335 (99.1%)
-  # no_body; the 3 exceptions are short duplicate teaser blurbs shared
-  # across multiple -js.html index pages (same or near-identical text,
-  # e.g. two distinct URLs both titled "State of the Union 2003" with
-  # word-for-word identical intro text), not substantive unique content.
+  # frame). Confirmed 2026-08-01 against the full re-crawl output: 338
+  # total, 335 (99.1%) no_body; the 3 exceptions are short duplicate teaser
+  # blurbs shared across multiple -js.html index pages (same or
+  # near-identical text, e.g. two distinct URLs both titled "State of the
+  # Union 2003" with word-for-word identical intro text), not substantive
+  # unique content. Example:
+  # https://georgewbush-whitehouse.archives.gov/president/holiday/historicalpets2/04-js.html
   - match: regex
     pattern: '-js\.html$'
     reason: "url_pattern:-js.html"
+  # Bare headshot/photo pages with no caption or body text at all - the
+  # companion bio_*.html/bios/*.html pages at the same paths (1,823 URLs
+  # across both directories below) are the real content and are 0%
+  # excluded/flagged; confirmed 2026-08-01 that every photo_NNNN.html under
+  # these two directories (1,973 URLs combined) is 100% no_body, with zero
+  # exceptions. Example:
+  # https://georgewbush-whitehouse.archives.gov/results/leadership/photo_606.html
+  - match: regex
+    pattern: '/(results/leadership|v/results\.gov/.+)/photo_\d+\.html$'
+    reason: "url_pattern:photo_NNNN.html"
+  # Flash-only interactive pages with no extractable text (a "-flash"
+  # variant exists alongside a "-nonflash"/plain variant with the real
+  # content, e.g. history/eeobtour/construction_nonflash.html). Confirmed
+  # 2026-08-01: 29/29 site-wide 100% no_body. Example:
+  # https://georgewbush-whitehouse.archives.gov/history/eeobtour/historicalview-1900-flash.html
+  - match: regex
+    pattern: '-flash\.html$'
+    reason: "url_pattern:-flash.html"
+  # Bare-date "this day in history" pages under /history/thisday/ are a
+  # JS-rendered duplicate of the *_njs.html ("no JS") variant holding the
+  # real content for the same date - confirmed 2026-08-01: 364/364 bare
+  # NNNN.html URLs are 100% no_body, while the corresponding 366 *_njs.html
+  # URLs for the same dates are 100% clean with real content. Example:
+  # https://georgewbush-whitehouse.archives.gov/history/thisday/0202.html
+  # (compare: https://georgewbush-whitehouse.archives.gov/history/thisday/0202_njs.html)
+  - match: regex
+    pattern: '/history/thisday/\d{4}\.html$'
+    reason: "url_pattern:thisday_bare_date"

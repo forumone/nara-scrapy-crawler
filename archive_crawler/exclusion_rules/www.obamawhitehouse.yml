@@ -12,6 +12,8 @@ rules:
   # counterpart. Deliberately excludes /index__q_page=, /index__q_order=, and
   # /index__q_category= - those are genuine pagination/sort/filter variants
   # with different content, not duplicates.
+  # Example:
+  # https://obamawhitehouse.archives.gov/blog/2012/01/25/everything-you-need-know-about-presidents-blueprint-manufacturing/index__q_tw_p=twt.html
   - match: regex
     pattern: '/index__q_(tw_p|utm_source|utm_expid)=[^/]*\.html$'
     reason: "duplicate_tracking_param_suffix"
@@ -23,10 +25,44 @@ rules:
   # is excluded outright rather than left to the fingerprint mechanism.
   # Excluded from both nav and content-scrape via rules: alone - a pure
   # duplicate-URL space, not content worth scraping under either prefix
-  # separately.
+  # separately. Example:
+  # https://obamawhitehouse.archives.gov/realitycheck/briefing-room
   - match: contains
     pattern: "/realitycheck"
     reason: "url_pattern:/realitycheck"
+
+  # State-profile pages under /ondcp/state/ have no real body text of their
+  # own - every one links out to a bare PDF, and the "content" the extractor
+  # picks up is just that PDF's filename. Confirmed 2026-08-01: 51/51 URLs
+  # (all 50 states + DC) have either a bare-PDF-filename body or none at
+  # all, with zero exceptions. Example:
+  # https://obamawhitehouse.archives.gov/ondcp/state/rhodeisland
+  - match: contains
+    pattern: "/ondcp/state/"
+    reason: "url_pattern:/ondcp/state/"
+
+  # /ondcp/strategy-appendix and its sort/order query-string variants are a
+  # listing page whose only extractable text is its own title, duplicated
+  # into the body ("ONDCP Strategy Appendix") - no real list content is
+  # ever captured. Confirmed 2026-08-01: 7/7 URLs (the base page plus 6
+  # sort=asc/desc x 3 field variants) are 100% this same duplicate-title
+  # body. Example:
+  # https://obamawhitehouse.archives.gov/ondcp/strategy-appendix
+  - match: contains
+    pattern: "/ondcp/strategy-appendix"
+    reason: "url_pattern:/ondcp/strategy-appendix"
+
+  # Per-initiative "submitted comments" pages under CEQ initiatives are
+  # empty listing placeholders - the extracted body is just a heading
+  # ("Submitted Comments", sometimes prefixed with the initiative's name)
+  # with no actual comment content beneath it, and one even leaks a raw
+  # "Please select 'More Views' from the dropdown" UI instruction into the
+  # body. Confirmed 2026-08-01: 6/6 URLs matching this pattern are this
+  # same placeholder pattern, with zero exceptions. Example:
+  # https://obamawhitehouse.archives.gov/administration/eop/ceq/initiatives/pandg/comments
+  - match: regex
+    pattern: '/administration/eop/ceq/initiatives/[^/]+/comments$'
+    reason: "url_pattern:ceq_initiative_comments"
 
 # nav_deny is for exclusions that should hold the nav crawler back without
 # also excluding the URL from a content scrape reached some other way - see
