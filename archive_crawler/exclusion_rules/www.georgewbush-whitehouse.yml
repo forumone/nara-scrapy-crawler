@@ -36,3 +36,13 @@ rules:
   - match: contains
     pattern: "/goodbye/"
     reason: "url_pattern:/goodbye/"
+  # -js.html pages are numbered slideshow/gallery-frame pages (one image per
+  # frame, e.g. president/holiday/historicalpets2/04-js.html). Confirmed
+  # 2026-08-01 against the full re-crawl output: 338 total, 335 (99.1%)
+  # no_body; the 3 exceptions are short duplicate teaser blurbs shared
+  # across multiple -js.html index pages (same or near-identical text,
+  # e.g. two distinct URLs both titled "State of the Union 2003" with
+  # word-for-word identical intro text), not substantive unique content.
+  - match: regex
+    pattern: '-js\.html$'
+    reason: "url_pattern:-js.html"
