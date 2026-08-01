@@ -7,6 +7,7 @@ extensions:
   values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
 
 rules:
+  # CMS-generated template shells with no real content of their own.
   - match: regex
     pattern: 'template\.html$'
     reason: "cms_template"
@@ -16,15 +17,22 @@ rules:
   # confirmed 99.4% of these are real, scrapable photo-essay captions, not
   # dead ends). The /print/ and /text/ rules below still correctly exclude
   # the /images/print/ and /images/text/ nested variants on their own.
+  # .v.html pages are video transcript variants (11k URLs); skip to avoid
+  # duplicating the main content page.
   - match: regex
     pattern: '\.v\.html$'
     reason: "url_pattern:.v.html"
+  # /print/ subdirectories are printer-friendly duplicates of main content
+  # (68k URLs).
   - match: contains
     pattern: "/print/"
     reason: "url_pattern:/print/"
+  # /text/ subdirectories are plain-text duplicates of main content (94k
+  # URLs).
   - match: contains
     pattern: "/text/"
     reason: "url_pattern:/text/"
+  # /goodbye/ pages are exit-redirect interstitials with no content.
   - match: contains
     pattern: "/goodbye/"
     reason: "url_pattern:/goodbye/"

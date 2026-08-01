@@ -31,6 +31,16 @@ class SitemapHarvestSpider(scrapy.Spider):
     allowlist is used (html/htm/php/asp/aspx/shtml/cfm/cgi). -a rules_file
     and -a rules_mode=append|replace overlay a per-run override on top of
     source_site's committed file, same as every other spider.
+
+    Only the extension allowlist is applied here - the rest of a site's
+    committed rules_file (url-pattern excludes, etc.) is not, since those
+    are evaluated per-content-page at the content spider's own
+    start_requests, not during harvest. Don't be surprised if the final
+    item count comes in well under the sitemap's raw URL total on a site
+    with a lot of non-HTML assets listed in it (e.g. georgewbush-whitehouse:
+    ~229k raw sitemap entries, ~222k after this filter, ~6.5k dropped as
+    PDFs/images/etc.) - that gap is expected, not a sign the harvest ran
+    short.
     """
 
     name = "sitemap_harvest"
