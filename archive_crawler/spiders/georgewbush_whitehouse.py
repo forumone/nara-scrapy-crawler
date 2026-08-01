@@ -86,6 +86,19 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
         # 9. .content01 — OMB ExpectMore.gov summary pages (different template).
         # 10. //td[a[@name="content"]] — First Lady news/releases pages; content is in the
         #     TD that contains the skip-nav anchor (CSS :has() not supported by cssselect).
+        # 11. body (whole-document fallback, /infocus/iraq/ and /omb/budget/ only) — these
+        #     are pre-2003 nested-<table> pages with no id/class attributes anywhere, so
+        #     none of the selectors above can ever match. Confirmed 2026-08-01 against 15
+        #     live samples: real content recovered cleanly in 13/15 (a little nav-link text
+        #     - "Skip Main Navigation Site Search", a closing OMB link bar - bookends the
+        #     real content on budget pages, accepted per-project as a fine trade for
+        #     resilience over precision on already-poorly-structured pages); the other 2
+        #     were genuine thin gallery-launcher pages ("View the Latest Photo Gallery"),
+        #     correctly landing as short_body instead of a blank no_body. Scoped to just
+        #     these two URL prefixes rather than site-wide, so it can't mask genuine
+        #     no_body pages elsewhere (e.g. the -js.html/photo_NNNN.html slideshow-frame
+        #     exclusions - those are excluded via exclusion_rules before reaching here
+        #     anyway, but other legitimately-empty page types on this site are not).
         body = (
             self._extract_text(response, '#news_container')
             or self._extract_text(response, '#whitebox')
@@ -97,6 +110,9 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
             or self._extract_text(response, '.popupBodyWrap01')
             or self._extract_text(response, '.content01')
             or self._extract_text(response, '//td[a[@name="content"]]')
+            or (self._extract_text(response, 'body')
+                if re.search(r'/(infocus/iraq|omb/budget)/', response.url)
+                else '')
         )
         if not body:
             warnings.append('no_body')
