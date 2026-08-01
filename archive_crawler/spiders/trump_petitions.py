@@ -15,6 +15,24 @@ class TrumpPetitionsSpider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'petitions.trumpwhitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # Output path is automatic, derived from SOURCE_SITE - pass -O <path> on
+    # the CLI to override (Scrapy's -O/-o setting takes precedence over
+    # custom_settings['FEEDS'], same mechanism already used by the fused
+    # nav-harvest spiders).
+    custom_settings = {
+        'FEEDS': {
+            'data/petitions.trumpwhitehouse/petitions.trumpwhitehouse.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
+
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
         if not url_file:

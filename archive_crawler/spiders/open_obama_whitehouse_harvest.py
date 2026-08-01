@@ -11,7 +11,19 @@ class OpenObamaWhiteHouseHarvestSpider(scrapy.Spider):
     # truncates pagination after page 1. Safe to re-enable here since this
     # spider only ever yields {'url': ...} - no redirect-detection signal
     # (unlike the content spiders) is being traded away.
-    custom_settings = {'REDIRECT_ENABLED': True}
+    #
+    # Output path is automatic, derived from this spider's own site - pass
+    # -O <path> on the CLI to override.
+    custom_settings = {
+        'REDIRECT_ENABLED': True,
+        'FEEDS': {
+            'data/open.obamawhitehouse/open.obamawhitehouse_harvest.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'fields': ['url'],
+            },
+        },
+    }
     start_urls = [
         "https://open.obamawhitehouse.archives.gov",
         "https://open.obamawhitehouse.archives.gov/budget",

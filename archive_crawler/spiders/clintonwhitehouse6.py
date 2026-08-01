@@ -27,6 +27,24 @@ class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'clintonwhitehouse6'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # Output path is automatic, derived from SOURCE_SITE - pass -O <path> on
+    # the CLI to override (Scrapy's -O/-o setting takes precedence over
+    # custom_settings['FEEDS'], same mechanism already used by the fused
+    # nav-harvest spiders).
+    custom_settings = {
+        'FEEDS': {
+            'data/clintonwhitehouse6/clintonwhitehouse6.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
+
     # Each CW6 page has a "View Header" link pointing to its companion .header.html
     # file. Strip it so the link text doesn't appear at the start of every full_text.
     EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)

@@ -218,9 +218,19 @@ class ExclusionLoggingMixin:
         exclusions = getattr(self, '_exclusions', [])
         if not exclusions:
             return
-        out_dir = os.path.join('data', self.SOURCE_SITE)
-        os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, f'{self.SOURCE_SITE}_{self.EXCLUSIONS_FILE_SUFFIX}.csv')
+        # -a exclusions_file=<path> overrides the derived default - no
+        # explicit __init__ parameter needed for this, since plain
+        # scrapy.Spider.__init__ already assigns any unrecognized -a kwarg
+        # as an instance attribute.
+        out_path = getattr(self, 'exclusions_file', None)
+        if not out_path:
+            out_dir = os.path.join('data', self.SOURCE_SITE)
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, f'{self.SOURCE_SITE}_{self.EXCLUSIONS_FILE_SUFFIX}.csv')
+        else:
+            out_dir = os.path.dirname(out_path)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
         with open(out_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=['url', 'reason'])
             writer.writeheader()

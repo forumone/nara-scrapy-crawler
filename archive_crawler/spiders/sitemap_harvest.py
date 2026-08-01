@@ -12,18 +12,32 @@ class SitemapHarvestSpider(scrapy.Spider):
     """Generic sitemap URL harvester.
 
     Fetches a sitemap (or sitemap index), recurses into sub-sitemaps,
-    deduplicates URLs (case-insensitive), drops non-web assets, and yields
-    one {'url': url} item per discoverable content page — without fetching
-    any of those pages.
+    deduplicates URLs (case-insensitive), drops non-web assets, and writes
+    one row per discoverable content page - without fetching any of those
+    pages.
 
     Usage:
         scrapy crawl sitemap_harvest \\
             -a sitemap_url=https://example.archives.gov/sitemap.xml \\
-            -O data/example_harvest-full.csv
+            -a source_site=example
 
-    Pass -a dropped_file=data/example/example_harvest-dropped.csv to also
-    record every non-web-extension URL dropped during the harvest (PDFs,
-    images, etc.) — otherwise those drops are only summarized in the log.
+    Output is automatic, derived from source_site: harvest_file defaults to
+    data/<source_site>/<source_site>_harvest-full.csv, and dropped_file
+    (non-web-extension URLs, only written if at least one was dropped)
+    defaults to data/<source_site>/<source_site>_harvest-dropped.csv. Pass
+    -a harvest_file=<path> and/or -a dropped_file=<path> to override either
+    default explicitly. If source_site isn't given, harvest_file must be
+    passed explicitly (there's nothing to derive a path from), and dropped
+    URLs are only summarized in the log, not written to a file, unless
+    dropped_file is also passed explicitly.
+
+    Unlike every other spider in this project, -O/-o do NOT control this
+    spider's output. It writes plain CSVs directly in closed() - the same
+    mechanism the exclusions-file logging already uses - rather than via
+    Scrapy's FEEDS/FeedExporter, since source_site (and therefore the
+    default path) isn't known until the spider is instantiated with its
+    runtime -a arguments, which is after Scrapy would already have read
+    custom_settings from the class.
 
     Pass -a source_site=<name> to load that domain's extension allowlist
     from archive_crawler/exclusion_rules/<name>.yml (e.g. to admit PDFs on a
@@ -54,8 +68,9 @@ class SitemapHarvestSpider(scrapy.Spider):
     # away.
     custom_settings = {'REDIRECT_ENABLED': True}
 
-    def __init__(self, sitemap_url=None, dropped_file=None, source_site=None,
-                 rules_file=None, rules_mode='append', *args, **kwargs):
+    def __init__(self, sitemap_url=None, harvest_file=None, dropped_file=None,
+                 source_site=None, rules_file=None, rules_mode='append',
+                 *args, **kwargs):
         if not sitemap_url:
             raise ValueError(
                 "sitemap_url is required: "
@@ -63,7 +78,21 @@ class SitemapHarvestSpider(scrapy.Spider):
             )
         self._start_url = sitemap_url
         self._seen = set()
-        self._dropped_file = dropped_file
+        self._harvested = []
+        self._harvest_file = harvest_file or (
+            os.path.join('data', source_site, f'{source_site}_harvest-full.csv')
+            if source_site else None
+        )
+        if not self._harvest_file:
+            raise ValueError(
+                "harvest_file is required when source_site is not given: "
+                "-a harvest_file=data/example/example_harvest-full.csv "
+                "(or pass -a source_site=<name> to derive it automatically)"
+            )
+        self._dropped_file = dropped_file or (
+            os.path.join('data', source_site, f'{source_site}_harvest-dropped.csv')
+            if source_site else None
+        )
         self._dropped = []
         self._exclusion_rules = (
             exclusion_rules.load_rules(source_site, rules_file, rules_mode)
@@ -99,9 +128,17 @@ class SitemapHarvestSpider(scrapy.Spider):
                     self._dropped.append({'url': url, 'reason': 'non_web_extension'})
                     continue
                 self._seen.add(key)
-                yield {'url': url}
+                self._harvested.append({'url': url})
 
     def closed(self, reason):
+        out_dir = os.path.dirname(self._harvest_file)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(self._harvest_file, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.DictWriter(f, fieldnames=['url'])
+            writer.writeheader()
+            writer.writerows(self._harvested)
+
         if not self._dropped:
             return
         self.logger.info(

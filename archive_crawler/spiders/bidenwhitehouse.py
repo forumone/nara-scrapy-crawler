@@ -15,6 +15,24 @@ class BidenWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'www.bidenwhitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # Output path is automatic, derived from SOURCE_SITE - pass -O <path> on
+    # the CLI to override (Scrapy's -O/-o setting takes precedence over
+    # custom_settings['FEEDS'], same mechanism already used by the fused
+    # nav-harvest spiders).
+    custom_settings = {
+        'FEEDS': {
+            'data/www.bidenwhitehouse/www.bidenwhitehouse.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
+
     # Presidential bio pages (/about-the-white-house/presidents/*) embed the
     # full nav list of all U.S. presidents ahead of the actual bio text.
     # Strip through the last name in that list, kept fixed since these are

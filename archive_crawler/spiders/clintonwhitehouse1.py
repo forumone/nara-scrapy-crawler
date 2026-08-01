@@ -14,6 +14,24 @@ class ClintonWhiteHouse1Spider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'clintonwhitehouse1'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # Output path is automatic, derived from SOURCE_SITE - pass -O <path> on
+    # the CLI to override (Scrapy's -O/-o setting takes precedence over
+    # custom_settings['FEEDS'], same mechanism already used by the fused
+    # nav-harvest spiders).
+    custom_settings = {
+        'FEEDS': {
+            'data/clintonwhitehouse1/clintonwhitehouse1.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
+
     LEADING_TEXT_STRIP_PATTERNS = TEXT_VERSION_TOGGLE_PATTERNS
 
     def start_requests(self):

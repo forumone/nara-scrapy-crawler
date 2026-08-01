@@ -15,6 +15,24 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'www.georgewbush-whitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # Output path is automatic, derived from SOURCE_SITE - pass -O <path> on
+    # the CLI to override (Scrapy's -O/-o setting takes precedence over
+    # custom_settings['FEEDS'], same mechanism already used by the fused
+    # nav-harvest spiders).
+    custom_settings = {
+        'FEEDS': {
+            'data/www.georgewbush-whitehouse/www.georgewbush-whitehouse.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
+
     # /911/ pages use <center><img src="/911/images/star.gif"></center> as a
     # decorative separator between nav links (including the literal text
     # "<before" and "next>" from prev/next anchors). Stripping the center

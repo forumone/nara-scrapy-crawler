@@ -15,6 +15,24 @@ class ClintonWhiteHouse4Spider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'clintonwhitehouse4'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # Output path is automatic, derived from SOURCE_SITE - pass -O <path> on
+    # the CLI to override (Scrapy's -O/-o setting takes precedence over
+    # custom_settings['FEEDS'], same mechanism already used by the fused
+    # nav-harvest spiders).
+    custom_settings = {
+        'FEEDS': {
+            'data/clintonwhitehouse4/clintonwhitehouse4.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
+
     # This template prepends a letter-spaced "T H E W H I T E H O U S E"
     # banner plus the page title and nav links to the body text on ~90% of
     # pages. The nav links appear as "Help Site Map", "Text Only Help Site

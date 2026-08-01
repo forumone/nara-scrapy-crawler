@@ -9,7 +9,19 @@ class ObamaPetitionsHarvestSpider(scrapy.Spider):
     # against the same silent-truncation-on-301 failure mode under the
     # project-wide REDIRECT_ENABLED=False default, should this site's start
     # pages ever redirect the way its sibling sites' pagers do.
-    custom_settings = {'REDIRECT_ENABLED': True}
+    #
+    # Output path is automatic, derived from this spider's own site - pass
+    # -O <path> on the CLI to override.
+    custom_settings = {
+        'REDIRECT_ENABLED': True,
+        'FEEDS': {
+            'data/petitions.obamawhitehouse/petitions.obamawhitehouse_harvest.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'fields': ['url'],
+            },
+        },
+    }
     start_urls = [
         "https://petitions.obamawhitehouse.archives.gov/",
         "https://petitions.obamawhitehouse.archives.gov/about",
