@@ -40,7 +40,7 @@ pip install -r requirements.txt
 
 `generic_crawl` is a two-phase spider pair, not a single spider — run both to test locally without spinning up Docker.
 
-It's starter/example tooling, not a production-ready scraper for an arbitrary new site: phase 2's selectors are tuned to the site templates already seen in this repo, not universal. Expect to get zero or few items on a genuinely new site's first run — that means the template needs its own selectors added (or a subclass, see `crawl_spider.py`'s docstring), not that the crawl failed. `run_crawl.sh` / `run_crawl_interactive.sh` wrap this same pair for convenience; the same caveat applies to their output.
+It's starter/example tooling, not a production-ready scraper for an arbitrary new site: phase 2's selectors are tuned to the site templates already seen in this repo, not universal. Expect to get zero or few items on a genuinely new site's first run — that means the template needs its own selectors added (or a subclass, see `generic_crawl.py`'s docstring), not that the crawl failed. `run_crawl.sh` / `run_crawl_interactive.sh` wrap this same pair for convenience; the same caveat applies to their output.
 
 **Phase 1** (`generic_crawl_harvest`, a `CrawlSpider`) discovers URLs by following links from a seed URL:
 
@@ -129,10 +129,9 @@ and content CSVs both come from `custom_settings['FEEDS']`, at
 
 Run this **untimed** (no `CLOSESPIDER_TIMEOUT`) so it actually exhausts the
 site rather than stopping mid-traversal. Default scheduler (LIFO/DFS) is
-fine here — BFS was only useful for validating `depth` as true shortest-path
-distance during the original `DEPTH_LIMIT` tuning; the spider's own
-`DEPTH_LIMIT` is now set high enough that ordering doesn't matter for
-completeness either way.
+fine here — this site's `DEPTH_LIMIT` is already tuned high enough that
+ordering doesn't matter for completeness. See HARVESTING.md's nav-harvester
+step 2 for when BFS actually matters vs. not.
 
 At the default `DOWNLOAD_DELAY=1`, a full crawl takes a long time — run it on
 a remote server, not a local machine; see "Recommended run settings" below
@@ -329,10 +328,9 @@ Two patterns exist:
   4, for the full shape including the `warnings` column). Remember to raise
   `DEPTH_LIMIT` well past whatever the longest expected pagination chain is
   (see either spider's own `custom_settings` comment for why).
-- **List-first (two spiders)** — still a supported fallback for a
-  site where a separate listing-only harvester is easier to reason about,
-  though no site in this repo currently uses it. See `HARVESTING.md`'s
-  "List-first split harvester" for the full walkthrough.
+- **List-first (two spiders)** — considered and rejected, not a supported
+  fallback. See `HARVESTING.md`'s "List-first split harvester" section for
+  why.
 
 ### Creating a sitemap-based content spider
 
@@ -389,7 +387,7 @@ python audit_url_gaps.py \
 
 `spiders/generic_crawl_harvest.py`: Phase 1 of the generic two-phase spider pair. Uses CrawlSpider and LinkExtractors to walk the site from a seed URL and write a URL-per-row CSV. Dynamically accepts `url`, `source_site`, `rules_file`, and `rules_mode`.
 
-`spiders/crawl_spider.py`: Phase 2 (spider name `generic_crawl`). Reads the phase-1 harvest CSV and extracts title/body/teaser from each URL. Dynamically accepts `url_file`, `site_id`, and `source_type`.
+`spiders/generic_crawl.py`: Phase 2 (spider name `generic_crawl`). Reads the phase-1 harvest CSV and extracts title/body/teaser from each URL. Dynamically accepts `url_file`, `site_id`, and `source_type`.
 
 `spiders/base.py`: `ArchiveSpiderMixin` — shared extraction, exclusion tracking (writes `{SOURCE_SITE}_exclusions.csv` automatically on spider close, overridable with `-a exclusions_file=<path>`), and boilerplate stripping for all archive content spiders. `NavHarvesterMixin` — shared nav link-following and listing-fingerprint pagination-walking; when a class composes both mixins and defines `_scrape_item`, `_maybe_scrape_item` also extracts content on that same fetched response, with no second fetch.
 

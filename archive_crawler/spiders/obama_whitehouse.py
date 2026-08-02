@@ -173,7 +173,7 @@ class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         # in document order, and the first one can be an unrelated
         # video-embed-fallback link rather than real content - scan for the
         # first pane whose cleaned text actually clears the short_body
-        # threshold instead of blindly taking the first match (D-009).
+        # threshold instead of blindly taking the first match.
         # Whole-body fallback (/sites/default/ only): these are standalone
         # uploaded files, not real Drupal node pages - none of the selectors
         # above ever match since there's no Drupal theme wrapper at all.

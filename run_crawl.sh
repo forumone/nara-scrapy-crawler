@@ -79,5 +79,5 @@ echo "Phase 2 complete: ${ITEM_COUNT} item(s) written to $OUTPUT_FILE"
 if [ "$ITEM_COUNT" -le 0 ]; then
     echo "generic_crawl's selectors are tuned to known site templates, not universal - a zero count"
     echo "usually means this site's markup doesn't match them yet, not that the crawl failed. See"
-    echo "HARVESTING.md and crawl_spider.py's docstring for how to extend or subclass it."
+    echo "HARVESTING.md and generic_crawl.py's docstring for how to extend or subclass it."
 fi

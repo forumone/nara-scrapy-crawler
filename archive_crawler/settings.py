@@ -56,12 +56,12 @@ FEED_FORMAT = 'jsonl'
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 
-# 2. Page Count Limit (MUST BE INT)
+# Page Count Limit (MUST BE INT)
 page_count_env = os.getenv('CLOSESPIDER_PAGECOUNT')
 if page_count_env:
     CLOSESPIDER_PAGECOUNT = int(page_count_env)
 
-# 3. Depth Limit (MUST BE INT)
+# Depth Limit (MUST BE INT)
 depth_env = os.getenv('DEPTH_LIMIT')
 if depth_env:
     DEPTH_LIMIT = int(depth_env)
@@ -78,29 +78,11 @@ if depth_env:
 #    "Accept-Language": "en",
 #}
 
-# Enable or disable spider middlewares
-# See https://docs.scrapy.org/en/latest/topics/spider-middleware.html
-#SPIDER_MIDDLEWARES = {
-#    "archive_crawler.middlewares.ArchiveCrawlerSpiderMiddleware": 543,
-#}
-
-# Enable or disable downloader middlewares
-# See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
-#DOWNLOADER_MIDDLEWARES = {
-#    "archive_crawler.middlewares.ArchiveCrawlerDownloaderMiddleware": 543,
-#}
-
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html
 EXTENSIONS = {
     "archive_crawler.extensions.error_log.ErrorFileLogger": 100,
 }
-
-# Configure item pipelines
-# See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
-#ITEM_PIPELINES = {
-#    "archive_crawler.pipelines.ArchiveCrawlerPipeline": 300,
-#}
 
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html

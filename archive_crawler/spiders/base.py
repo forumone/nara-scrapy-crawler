@@ -69,14 +69,12 @@ TEXT_VERSION_TOGGLE_PATTERNS = (
     re.compile(r'^\s*\[\s*(?:Text|Graphics)\s+Version\s*\]\s*', re.IGNORECASE),
 )
 
-# Retired from active stripping 2026-07-31 (client-facing policy: scrape
-# letterhead/dateline/contact text as-is, no warning column - see
-# ~/.claude/projects/-home-caesius-git-scrapy/plans/
-# content-remediation-policy-review-plan.md). No longer referenced by any
-# spider's LEADING_TEXT_STRIP_PATTERNS. Kept, not deleted, in case a future
-# post-hoc boilerplate-removal script is ever wanted - re-scraping to
-# recover this text if it were deleted and needed again would cost far more
-# than keeping already-tested regexes around unused.
+# Currently unused - not referenced by any spider's LEADING_TEXT_STRIP_PATTERNS.
+# TODO: decide whether to keep or delete once client direction on letterhead
+# removal is settled. Kept for now, not deleted, in case a future post-hoc
+# boilerplate-removal script is ever wanted - re-scraping to recover this
+# text if it were deleted and needed again would cost far more than keeping
+# already-tested regexes around unused.
 #
 # Components appeared in varying combinations and order on CW1-6/GWBush
 # (e.g. GWBush puts "For Immediate Release" before "Office of the Press
@@ -1096,8 +1094,8 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
             # iframe: browser-fallback content inside the tag (e.g. a
             # YouTube embed's fallback <a> link, sometimes stored literally
             # HTML-escaped, e.g. "&lt;a href=...&gt;") is never real visible
-            # page text - same non-content status as script/style, not a
-            # site-specific judgment call (D-009).
+            # page text - same non-content status as script/style, applied
+            # uniformly rather than as a site-specific judgment call.
             cleaned = remove_tags_with_content(match, which_ones=('script', 'style', 'iframe'))
         except TypeError:
             cleaned = ''

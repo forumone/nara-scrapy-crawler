@@ -2,7 +2,7 @@
 
 Replaces the hardcoded per-spider if/elif URL-pattern filters, the shared
 extension allowlist, and generic_crawl_harvest's constants with a single
-data-driven mechanism. See url-exclusion-rules-yaml-plan.md for the design.
+data-driven mechanism.
 
 Rule files live at archive_crawler/exclusion_rules/<source_site>.yml, one
 per domain, structured as:
