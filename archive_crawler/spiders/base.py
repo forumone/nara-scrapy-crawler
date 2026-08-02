@@ -11,7 +11,7 @@ from scrapy.selector import Selector
 from w3lib.html import remove_tags, remove_tags_with_content
 
 from archive_crawler import exclusion_rules as _exclusion_rules_module
-from archive_crawler.items import HarvestItem
+from archive_crawler.items import ArchiveItem, HarvestItem
 
 # Shared by _census_links across every spider that mixes in
 # ExclusionLoggingMixin - stateless/config-only, safe to reuse. No
@@ -827,6 +827,30 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
 
 
 class ArchiveSpiderMixin(ExclusionLoggingMixin):
+    # Every subclass that doesn't set its own custom_settings gets a single
+    # FEEDS entry derived from SOURCE_SITE: data/<SOURCE_SITE>/<SOURCE_SITE>.csv,
+    # matching every other spider's automatic-output convention (see
+    # ExclusionLoggingMixin.closed for the same derivation applied to the
+    # exclusions CSV). A subclass that defines its own custom_settings (e.g.
+    # a NavHarvesterMixin site with two FEEDS entries, or generic_crawl's
+    # -O/-o-driven output) is left alone.
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if 'custom_settings' not in cls.__dict__ and getattr(cls, 'SOURCE_SITE', None):
+            cls.custom_settings = {
+                'FEEDS': {
+                    f'data/{cls.SOURCE_SITE}/{cls.SOURCE_SITE}.csv': {
+                        'format': 'csv',
+                        'overwrite': True,
+                        'item_classes': [ArchiveItem],
+                        'fields': [
+                            'url', 'title', 'teaser_text', 'full_text',
+                            'source_site', 'source_type', 'warnings',
+                        ],
+                    },
+                },
+            }
+
     # Below this length (measured on the final full_text, after all
     # stripping/normalization), a non-empty body gets a 'short_body' warning
     # rather than being treated as ordinary content. Override per-spider, or
@@ -975,6 +999,28 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
                 segment = segment[:-len(suffix)]
                 break
         return re.sub(r'[-_]+', ' ', segment).strip()
+
+    def start_requests(self):
+        """Shared by every content spider whose only input is a url_file CSV
+        (one 'url' column): read it, drop whatever this site's exclusion
+        rules match, request the rest. Override for a spider with a
+        different input shape (NavHarvesterMixin sites crawl from
+        start_urls instead and don't use this)."""
+        url_file = getattr(self, 'url_file', None)
+        if not url_file:
+            raise ValueError(
+                "url_file argument is required: "
+                f"-a url_file=data/{self.SOURCE_SITE}/{self.SOURCE_SITE}_harvest-full.csv"
+            )
+        rules = self._get_exclusion_rules()
+        with open(url_file, newline='', encoding='utf-8-sig') as f:
+            for row in csv.DictReader(f):
+                url = row['url']
+                reason = _exclusion_rules_module.match_exclude(url, rules)
+                if reason:
+                    self._log_exclusion(url, reason)
+                else:
+                    yield self._make_request(url)
 
     def _make_request(self, url, **kwargs):
         kwargs.setdefault('callback', self.parse_item)
@@ -1162,3 +1208,75 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         if self.MIDTEXT_STRIP_PATTERNS:
             text = re.sub(r'\s+', ' ', text).strip()
         return text
+
+
+class PetitionsSpiderMixin(ArchiveSpiderMixin):
+    """Shared by obama_petitions.py and trump_petitions.py - the same
+    Drupal petitions-site template, differing only in SOURCE_SITE/domain.
+    parse_item dispatches on URL shape: a petition detail page
+    (_parse_petition) gets its response-date appended to full_text when one
+    is present; every other page (listing, about, etc.) uses the plainer
+    _parse_generic, which also falls back to #content-main for pages
+    without the standard field-item body wrapper."""
+
+    def parse_item(self, response):
+        if self._is_excluded_response(response):
+            return
+        if '/petition/' in response.url:
+            yield from self._parse_petition(response)
+        else:
+            yield from self._parse_generic(response)
+
+    def _parse_petition(self, response):
+        warnings = []
+        title = response.css('h1.title::text').get(default='').strip()
+        if not title:
+            title = response.css('h1::text').get(default='').strip()
+        if not title:
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
+
+        date = re.sub(r'\s+', ' ', response.css('h4.petition-attribution::text').get(default='')).strip()
+        body = self._extract_text(response, '.field-name-body .field-items .field-item')
+        if not body:
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
+        full_text = f"{body} {date}".strip() if (date and any(c.isdigit() for c in date)) else body
+
+        item = ArchiveItem()
+        item['url'] = response.url
+        item['title'] = title
+        item['full_text'] = full_text
+        item['teaser_text'] = self._teaser(body) if body else ''
+        item['source_site'] = self.SOURCE_SITE
+        item['source_type'] = self.SOURCE_TYPE
+        item['warnings'] = ','.join(warnings)
+        yield item
+
+    def _parse_generic(self, response):
+        warnings = []
+        title = response.css('h1.title::text').get(default='').strip()
+        if not title:
+            title = response.css('h1::text').get(default='').strip()
+        if not title:
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
+
+        body = self._extract_text(response, '.field-name-body .field-items .field-item')
+        if not body:
+            body = self._extract_text(response, '#content-main')
+        if not body:
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
+
+        item = ArchiveItem()
+        item['url'] = response.url
+        item['title'] = title
+        item['full_text'] = body
+        item['teaser_text'] = self._teaser(body) if body else ''
+        item['source_site'] = self.SOURCE_SITE
+        item['source_type'] = self.SOURCE_TYPE
+        item['warnings'] = ','.join(warnings)
+        yield item

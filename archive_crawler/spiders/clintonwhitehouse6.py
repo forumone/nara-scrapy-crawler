@@ -1,10 +1,8 @@
-import csv
 import re
 from urllib.parse import urlparse
 
 import scrapy
 
-from archive_crawler import exclusion_rules
 from archive_crawler.items import ArchiveItem
 from archive_crawler.spiders.base import ArchiveSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
@@ -27,46 +25,11 @@ class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'clintonwhitehouse6'
     SOURCE_TYPE = 'Archived White House Websites'
 
-    # Output path is automatic, derived from SOURCE_SITE - pass -O <path> on
-    # the CLI to override (Scrapy's -O/-o setting takes precedence over
-    # custom_settings['FEEDS'], the same mechanism letsmove.py and
-    # obama_whitehouse.py already use for their own output).
-    custom_settings = {
-        'FEEDS': {
-            'data/clintonwhitehouse6/clintonwhitehouse6.csv': {
-                'format': 'csv',
-                'overwrite': True,
-                'item_classes': [ArchiveItem],
-                'fields': [
-                    'url', 'title', 'teaser_text', 'full_text',
-                    'source_site', 'source_type', 'warnings',
-                ],
-            },
-        },
-    }
-
     # Each CW6 page has a "View Header" link pointing to its companion .header.html
     # file. Strip it so the link text doesn't appear at the start of every full_text.
     EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)
 
     LEADING_TEXT_STRIP_PATTERNS = TEXT_VERSION_TOGGLE_PATTERNS
-
-    def start_requests(self):
-        url_file = getattr(self, 'url_file', None)
-        if not url_file:
-            raise ValueError(
-                "url_file argument is required: "
-                "-a url_file=data/clintonwhitehouse6/clintonwhitehouse6_harvest-full.csv"
-            )
-        rules = self._get_exclusion_rules()
-        with open(url_file, newline='', encoding='utf-8-sig') as f:
-            for row in csv.DictReader(f):
-                url = row['url']
-                reason = exclusion_rules.match_exclude(url, rules)
-                if reason:
-                    self._log_exclusion(url, reason)
-                else:
-                    yield self._make_request(url)
 
     def parse_item(self, response):
         if self._is_excluded_response(response):
