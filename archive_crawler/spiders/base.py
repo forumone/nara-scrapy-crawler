@@ -1,7 +1,7 @@
 import csv
 import html
 import re
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import scrapy
 from scrapy.selector import Selector
@@ -540,6 +540,14 @@ class PetitionsSpiderMixin(ArchiveSpiderMixin):
 
     def _scrape_item(self, response):
         if self._is_excluded_response(response):
+            return None
+        # Root/`/responses` pagination pages (`?page=N`) are followed for
+        # petition-link discovery (see NavHarvesterMixin's pagination walk)
+        # but carry no unique content of their own - logged as an exclusion
+        # (not just skipped) so harvest = scrape + exclude still holds.
+        parsed_url = urlparse(response.url)
+        if 'page' in parse_qs(parsed_url.query) or parsed_url.path.rstrip('/') == '/responses':
+            self._log_exclusion(response.url, 'pagination_listing_page')
             return None
         if '/petition/' in response.url:
             return self._parse_petition(response)

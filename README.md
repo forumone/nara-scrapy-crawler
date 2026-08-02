@@ -243,6 +243,7 @@ Each scrape spider automatically writes a `{source_site}_exclusions.csv` alongsi
 | `http_5xx` | Server error |
 | `network_error:<type>` | Connection-level failure |
 | `search_listing_page` | `open_obama_whitehouse.py`-specific: a `/search`/`/search/type/*` pagination page - fetched and followed for dataset-link discovery, but not a content page itself |
+| `pagination_listing_page` | `PetitionsSpiderMixin`-specific (`obama_petitions.py`/`trump_petitions.py`): a root or `/responses` pagination page (`?page=N`) - fetched and followed for petition-link discovery, but not a content page itself |
 
 ### URL gap analysis
 
