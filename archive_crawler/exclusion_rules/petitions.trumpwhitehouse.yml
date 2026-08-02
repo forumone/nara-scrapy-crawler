@@ -9,3 +9,13 @@ extensions:
 rules: []
 
 nav_deny: []
+
+# Read by trump_petitions_harvest (generic_crawl_harvest subclass) only -
+# the content spider never reads these two keys. Drupal Views pager links
+# on this site use the standard ?page=N convention (confirmed by the
+# pre-migration hand-rolled harvester's own pagination check).
+pagination:
+  - '\?page='
+
+query_params_allow:
+  - page
