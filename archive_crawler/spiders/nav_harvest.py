@@ -2,6 +2,8 @@ import csv
 import hashlib
 import re
 
+import scrapy
+
 from archive_crawler import exclusion_rules as _exclusion_rules_module
 from archive_crawler.items import HarvestItem
 from archive_crawler.spiders.exclusion_logging import ExclusionLoggingMixin
@@ -151,6 +153,16 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         # In-memory only, built up over one crawl run - see "Subclass
         # contract" above.
         self._seen_listing_fingerprints = set()
+
+    def start_requests(self):
+        """CrawlSpider has no start_requests of its own - it relies on the
+        plain scrapy.Spider default (one Request per start_urls entry,
+        routed to parse_start_url via CrawlSpider._parse). Explicit
+        override, called directly rather than via super(), because a
+        subclass that also composes ArchiveSpiderMixin would otherwise
+        inherit ITS start_requests (reads url_file - a different spider
+        shape entirely) ahead of scrapy.Spider's in MRO."""
+        return scrapy.Spider.start_requests(self)
 
     def _filter_web_urls(self, links):
         rules = self._get_exclusion_rules()
