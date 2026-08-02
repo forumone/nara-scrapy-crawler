@@ -1,105 +1,80 @@
 # URL-pattern exclusion rules for georgewbush-whitehouse (SOURCE_SITE =
 # www.georgewbush-whitehouse). Evaluated in order at start_requests time;
-# first match wins. See url-exclusion-rules-yaml-plan.md for the mechanism.
+# first match wins.
 
 extensions:
   mode: allow
   values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
 
 rules:
-  # CMS-generated template shells with no real content of their own.
+  # CMS-generated template shells with no real content of their own (46
+  # URLs).
   # Example: https://georgewbush-whitehouse.archives.gov/omb/template.html
   - match: regex
     pattern: 'template\.html$'
     reason: "cms_template"
-  # /images/ exclusion removed 2026-07-31 (was here pending a scoped
-  # re-scrape - see project_deferred_fixes_202607 memory /
-  # deferred-fixes-202607-plan.md for the 545-sample prevalence check that
-  # confirmed 99.4% of these are real, scrapable photo-essay captions, not
-  # dead ends). The /print/ and /text/ rules below still correctly exclude
-  # the /images/print/ and /images/text/ nested variants on their own.
-  # .v.html pages are video transcript variants (11k URLs); skip to avoid
-  # duplicating the main content page. Example:
-  # https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/print/20030519-1.v.html
+  # Video transcript variants (11,005 URLs) - duplicate the main content
+  # page.
+  # Example: https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/print/20030519-1.v.html
   - match: regex
     pattern: '\.v\.html$'
     reason: "url_pattern:.v.html"
-  # /print/ subdirectories are printer-friendly duplicates of main content
-  # (68k URLs). Example:
-  # https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/print/text/20030519-1_d051903-515h.html
+  # Printer-friendly duplicates of main content (65,049 URLs).
+  # Example: https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/print/text/20030519-1_d051903-515h.html
   - match: contains
     pattern: "/print/"
     reason: "url_pattern:/print/"
-  # /text/ subdirectories are plain-text duplicates of main content (94k
-  # URLs). Example:
-  # https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/text/20030512_d050603-5-515h.html
+  # Plain-text duplicates of main content (58,970 URLs).
+  # Example: https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/text/20030512_d050603-5-515h.html
   - match: contains
     pattern: "/text/"
     reason: "url_pattern:/text/"
-  # /goodbye/ pages are exit-redirect interstitials with no content.
-  # Example:
-  # https://georgewbush-whitehouse.archives.gov/goodbye/04463f6e6bff2a47f4b44a986d66486f5071c18c.html
+  # Exit-redirect interstitials with no content (1,967 URLs).
+  # Example: https://georgewbush-whitehouse.archives.gov/goodbye/04463f6e6bff2a47f4b44a986d66486f5071c18c.html
   - match: contains
     pattern: "/goodbye/"
     reason: "url_pattern:/goodbye/"
-  # -js.html pages are numbered slideshow/gallery-frame pages (one image per
-  # frame). Confirmed 2026-08-01 against the full re-crawl output: 338
-  # total, 335 (99.1%) no_body; the 3 exceptions are short duplicate teaser
-  # blurbs shared across multiple -js.html index pages (same or
-  # near-identical text, e.g. two distinct URLs both titled "State of the
-  # Union 2003" with word-for-word identical intro text), not substantive
-  # unique content. Example:
-  # https://georgewbush-whitehouse.archives.gov/president/holiday/historicalpets2/04-js.html
+  # Numbered slideshow/gallery-frame pages (338 URLs, one image per frame,
+  # ~99% no_body) - a handful of index pages share a short duplicate
+  # teaser blurb, not substantive unique content.
+  # Example: https://georgewbush-whitehouse.archives.gov/president/holiday/historicalpets2/04-js.html
   - match: regex
     pattern: '-js\.html$'
     reason: "url_pattern:-js.html"
-  # Bare headshot/photo pages with no caption or body text at all - the
-  # companion bio_*.html/bios/*.html pages at the same paths (1,823 URLs
-  # across both directories below) are the real content and are 0%
-  # excluded/flagged; confirmed 2026-08-01 that every photo_NNNN.html under
-  # these two directories (1,973 URLs combined) is 100% no_body, with zero
-  # exceptions. Example:
-  # https://georgewbush-whitehouse.archives.gov/results/leadership/photo_606.html
+  # Bare headshot/photo pages with no caption or body text (1,973 URLs) -
+  # the companion bio_*.html/bios/*.html pages (1,823 URLs) hold the real
+  # content.
+  # Example: https://georgewbush-whitehouse.archives.gov/results/leadership/photo_606.html
   - match: regex
     pattern: '/(results/leadership|v/results\.gov/.+)/photo_\d+\.html$'
     reason: "url_pattern:photo_NNNN.html"
-  # Flash-only interactive pages with no extractable text (a "-flash"
-  # variant exists alongside a "-nonflash"/plain variant with the real
-  # content, e.g. history/eeobtour/construction_nonflash.html). Confirmed
-  # 2026-08-01: 29/29 site-wide 100% no_body. Example:
-  # https://georgewbush-whitehouse.archives.gov/history/eeobtour/historicalview-1900-flash.html
+  # Flash-only interactive pages with no extractable text (29 URLs) - a
+  # "-nonflash" variant holds the real content, e.g.
+  # history/eeobtour/construction_nonflash.html.
+  # Example: https://georgewbush-whitehouse.archives.gov/history/eeobtour/historicalview-1900-flash.html
   - match: regex
     pattern: '-flash\.html$'
     reason: "url_pattern:-flash.html"
-  # Bare-date "this day in history" pages under /history/thisday/ are a
-  # JS-rendered duplicate of the *_njs.html ("no JS") variant holding the
-  # real content for the same date - confirmed 2026-08-01: 364/364 bare
-  # NNNN.html URLs are 100% no_body, while the corresponding 366 *_njs.html
-  # URLs for the same dates are 100% clean with real content. Example:
-  # https://georgewbush-whitehouse.archives.gov/history/thisday/0202.html
+  # Bare-date "this day in history" pages (364 URLs) - a JS-rendered
+  # duplicate of the *_njs.html variant, which holds the real content for
+  # the same date.
+  # Example: https://georgewbush-whitehouse.archives.gov/history/thisday/0202.html
   # (compare: https://georgewbush-whitehouse.archives.gov/history/thisday/0202_njs.html)
   - match: regex
     pattern: '/history/thisday/\d{4}\.html$'
     reason: "url_pattern:thisday_bare_date"
-  # Bare negative-numbered release pages are letterhead-only stubs (dateline
-  # + "Printer-Friendly Version Email This Page", no actual release text) -
-  # the real selectors (#news_container/#whitebox) match normally here, so
-  # these silently pass with zero warnings whenever the letterhead text
-  # clears the short_body threshold. Confirmed 2026-08-01: 36/36 production
-  # rows (72 total harvest URLs) are letterhead-only, 30/36 with zero
-  # warnings at all. Example:
-  # https://georgewbush-whitehouse.archives.gov/news/releases/-10.html
+  # Bare negative-numbered release pages (36 URLs) - letterhead-only stubs
+  # (dateline only, no actual release text). The real selectors match
+  # normally here, so these clear the short_body threshold and would
+  # otherwise pass silently with zero warnings.
+  # Example: https://georgewbush-whitehouse.archives.gov/news/releases/-10.html
   - match: regex
     pattern: '/news/releases/-\d+\.html$'
     reason: "url_pattern:bare_negative_release"
-  # /fragments/ holds server-side template includes (css/nav/banner/frozen-
-  # warning snippets), not standalone content pages - identifiable by their
-  # own naming convention (css-*, *-navigation, *-top, *-banner, bodytag*,
-  # frozen-warning*, ask-archives*). Confirmed 2026-08-01: 13/13 sampled
-  # across all 85 site-wide URLs are either empty or pure nav-chrome text
-  # ("Math Challenge Choose your grade level...", "Skip Main Navigation
-  # PRESIDENT | VICE PRESIDENT..."), zero exceptions. Example:
-  # https://georgewbush-whitehouse.archives.gov/fragments/css-home.html
+  # Server-side template includes (85 URLs - css/nav/banner snippets), not
+  # standalone content pages, identifiable by their own naming convention
+  # (css-*, *-navigation, *-top, *-banner).
+  # Example: https://georgewbush-whitehouse.archives.gov/fragments/css-home.html
   - match: contains
     pattern: "/fragments/"
     reason: "url_pattern:/fragments/"
