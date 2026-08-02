@@ -9,7 +9,7 @@ how-to (steps to harvest/scrape a new or existing site), see
 
 ## Listing fingerprint dedup (`NavHarvesterMixin`)
 
-`NavHarvesterMixin` (`archive_crawler/spiders/base.py`) powers every
+`NavHarvesterMixin` (`archive_crawler/spiders/nav_harvest.py`) powers every
 no-sitemap nav harvester. Its core problem: a site's navigation graph
 routinely embeds the *same* paginated listing (a "browse all videos"
 widget, a "recent posts" block) on thousands of distinct pages. Following

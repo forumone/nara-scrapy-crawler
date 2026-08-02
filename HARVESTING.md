@@ -88,7 +88,7 @@ Content extraction is optional at first: a class composing only
 pure harvest-only spider — useful for auditing the full URL list before
 writing any selectors. Add `ArchiveSpiderMixin` and a `_scrape_item` method
 to that same class later (step 4) to start getting content on the very next
-run — `_maybe_scrape_item` (in `base.py`) extracts content whenever
+run — `_maybe_scrape_item` (in `nav_harvest.py`) extracts content whenever
 `_scrape_item` exists on the class, skipping it otherwise.
 
 ### Step 1 — Discovery
@@ -157,7 +157,7 @@ is what tells the two apart.
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
 from archive_crawler.items import HarvestItem
-from archive_crawler.spiders.base import NavHarvesterMixin
+from archive_crawler.spiders.nav_harvest import NavHarvesterMixin
 
 class MySiteSpider(NavHarvesterMixin, CrawlSpider):
     name = "mysite"
@@ -217,7 +217,7 @@ If you override `custom_settings` in a subclass, it **replaces** the
 mixin's dict entirely rather than merging with it — keep
 `'CRAWLSPIDER_FOLLOW_LINKS': False` in whatever you set, or CrawlSpider's own
 built-in link-following silently re-enables for that spider (see the comment
-on `NavHarvesterMixin.custom_settings` in `base.py` for why).
+on `NavHarvesterMixin.custom_settings` in `nav_harvest.py` for why).
 
 `listing_file` is still a required argument (`NavHarvesterMixin.__init__`
 raises without it) — on a first run there's no prior harvest to seed it
@@ -286,7 +286,7 @@ preemptively).
 
 Add `ArchiveSpiderMixin` to the **same class** from step 2, and give it a
 `_scrape_item(self, response)` method — same role as a standalone spider's
-`parse_item`, but called by `_maybe_scrape_item` (in `base.py`) on the
+`parse_item`, but called by `_maybe_scrape_item` (in `nav_harvest.py`) on the
 response `parse_nav` already fetched for discovery, not a second request.
 This pattern has no `url_file` and no separate content-spider file — that's
 a different pattern, used by the sitemap-based spiders (see "Sitemap
@@ -304,7 +304,8 @@ rationale.
 
 ```python
 from archive_crawler.items import ArchiveItem, HarvestItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin, NavHarvesterMixin
+from archive_crawler.spiders.base import ArchiveSpiderMixin
+from archive_crawler.spiders.nav_harvest import NavHarvesterMixin
 
 class MySiteSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     name = "mysite"

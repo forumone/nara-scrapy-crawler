@@ -2,7 +2,8 @@ from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
 
 from archive_crawler.items import ArchiveItem, HarvestItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin, NavHarvesterMixin
+from archive_crawler.spiders.base import ArchiveSpiderMixin
+from archive_crawler.spiders.nav_harvest import NavHarvesterMixin
 
 
 class LetsMoveSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):

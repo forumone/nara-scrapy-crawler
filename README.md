@@ -97,7 +97,7 @@ entry points. See
 [ARCHITECTURE.md](ARCHITECTURE.md#listing-fingerprint-dedup-navharvestermixin)
 for the full mechanism, its known limitations, and the `FORCE_SKIP_LISTING_URLS`/
 `LISTING_MAX_PAGES` escape hatches, and `NavHarvesterMixin`'s own docstring
-(`archive_crawler/spiders/base.py`) for the mixin's API.
+(`archive_crawler/spiders/nav_harvest.py`) for the mixin's API.
 
 All harvester and content CSV files are stored under `data/{source_site}/` subdirectories (the root `data/` is git-tracked via `data/.gitkeep`; `.csv` files are gitignored).
 
@@ -158,7 +158,7 @@ rather than re-introducing a curated seed list.
 
 A class composing `NavHarvesterMixin` without `ArchiveSpiderMixin`/
 `_scrape_item` is a pure harvest-only spider by construction —
-`_maybe_scrape_item` (`base.py`) only extracts content when `_scrape_item`
+`_maybe_scrape_item` (`nav_harvest.py`) only extracts content when `_scrape_item`
 exists on the class. `obama_whitehouse.py` defines `_scrape_item`, so it
 always extracts content; getting harvest-only output from it would mean a
 temporary variant with that method removed.
@@ -389,7 +389,11 @@ python audit_url_gaps.py \
 
 `spiders/generic_crawl.py`: Phase 2 (spider name `generic_crawl`). Reads the phase-1 harvest CSV and extracts title/body/teaser from each URL. Dynamically accepts `url_file`, `site_id`, and `source_type`.
 
-`spiders/base.py`: `ArchiveSpiderMixin` — shared extraction, exclusion tracking (writes `{SOURCE_SITE}_exclusions.csv` automatically on spider close, overridable with `-a exclusions_file=<path>`), and boilerplate stripping for all archive content spiders. `NavHarvesterMixin` — shared nav link-following and listing-fingerprint pagination-walking; when a class composes both mixins and defines `_scrape_item`, `_maybe_scrape_item` also extracts content on that same fetched response, with no second fetch.
+`spiders/base.py`: `ArchiveSpiderMixin` — shared extraction and boilerplate stripping for all archive content spiders, plus `PetitionsSpiderMixin` (the obama_petitions/trump_petitions template) and `omb_paygo_title`. Every subclass that doesn't set its own `custom_settings` gets an automatic `FEEDS` entry derived from `SOURCE_SITE`.
+
+`spiders/nav_harvest.py`: `NavHarvesterMixin` — shared nav link-following and listing-fingerprint pagination-walking; when a class composes both this and `ArchiveSpiderMixin` and defines `_scrape_item`, `_maybe_scrape_item` also extracts content on that same fetched response, with no second fetch.
+
+`spiders/exclusion_logging.py`: `ExclusionLoggingMixin` — shared exclusion-rule access and logging (writes `{SOURCE_SITE}_exclusions.csv` automatically on spider close, overridable with `-a exclusions_file=<path>`) composed by both mixins above.
 
 `spiders/sitemap_harvest.py`: Generic, one-size-fits-all sitemap URL harvester, used by all sitemap-based sites (CW1–6, Biden, GWBush). Accepts `-a sitemap_url=`, `-a source_site=`, and optional `-a rules_file=`/`-a rules_mode=`. Output paths (`{source_site}_harvest-full.csv`, `{source_site}_harvest-dropped.csv`) are automatic, derived from `source_site`, and overridable with `-a harvest_file=`/`-a dropped_file=` — the one spider in the project where `-O`/`-o` don't control output at all.
 
