@@ -8,7 +8,16 @@ extensions:
 
 rules: []
 
-nav_deny: []
+# /search/field_tags/X/field_tags/Y/... chains combinatorially - each result
+# page links to every other facet combination. Plain /search?page=N
+# pagination (below) still reaches the full unfiltered dataset listing.
+nav_deny:
+  - '/field_tags/'
+  # /node/N/download is a resource-download endpoint, not a content page;
+  # some redirect off-domain, and REDIRECT_ENABLED=True follows redirects
+  # regardless of allowed_domains - block the endpoint itself instead of
+  # trying to filter its target.
+  - '/node/\d+/download'
 
 # Read by open_obama_whitehouse_harvest (generic_crawl_harvest subclass)
 # only - the content spider never reads these two keys. Drupal Views pager
