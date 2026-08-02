@@ -59,7 +59,22 @@ HARVEST_ARGS=(crawl generic_crawl_harvest -a "url=$TARGET_URL" \
     -O "$HARVEST_FILE")
 if [ -n "$SKIP_PATTERNS" ]; then
     echo "Skipping patterns: $SKIP_PATTERNS"
-    HARVEST_ARGS+=(-a "urls_to_skip=$SKIP_PATTERNS")
+    # generic_crawl_harvest no longer takes a urls_to_skip arg directly
+    # (retired 2026-07-24 in favor of exclusion_rules YAML) - translate
+    # the same comma-separated regex fragments into a one-off nav_deny
+    # rules_file instead, appended onto generic_crawl_harvest.yml's own
+    # default rules.
+    SKIP_RULES_FILE=$(mktemp --suffix=.yml)
+    trap 'rm -f "$SKIP_RULES_FILE"' EXIT
+    {
+        echo "nav_deny:"
+        IFS=',' read -ra SKIP_PATTERN_LIST <<< "$SKIP_PATTERNS"
+        for pattern in "${SKIP_PATTERN_LIST[@]}"; do
+            pattern="$(echo "$pattern" | xargs)"
+            printf "  - '%s'\n" "$pattern"
+        done
+    } > "$SKIP_RULES_FILE"
+    HARVEST_ARGS+=(-a "rules_file=$SKIP_RULES_FILE" -a "rules_mode=append")
 fi
 scrapy "${HARVEST_ARGS[@]}"
 
