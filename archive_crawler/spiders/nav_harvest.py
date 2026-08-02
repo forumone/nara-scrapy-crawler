@@ -2,6 +2,8 @@ import csv
 import hashlib
 import re
 
+import scrapy
+
 from archive_crawler import exclusion_rules as _exclusion_rules_module
 from archive_crawler.items import HarvestItem
 from archive_crawler.spiders.exclusion_logging import ExclusionLoggingMixin
@@ -284,10 +286,35 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         parse_start_url) without ever passing through _filter_web_urls -
         that only runs on links extracted from an already-fetched response,
         not on the seed URLs themselves.
+
+        The two checks below guard every remaining line in this method:
+        _detect_listing_containers, _census_links, and
+        _follow_ordinary_links all call response.css(...) or a
+        LinkExtractor's extract_links(response) unconditionally, both of
+        which need an lxml element tree. A URL with no extension hinting
+        at its real content type (e.g. a JSON API endpoint) can reach here
+        regardless of is_web_url's extension-based check, since that only
+        inspects the URL, not the response actually returned - two
+        different failure shapes result: a plain binary Response has no
+        .css()/.selector at all (AttributeError: no such method - the
+        isinstance check below, same as ArchiveSpiderMixin's
+        _is_excluded_response, catches this), while a JSON response IS a
+        TextResponse (isinstance alone won't catch it) but Scrapy's
+        auto-selector gives it a dict root instead of an lxml tree
+        (AttributeError: 'dict' object has no attribute 'iter' - the
+        selector.type check catches this one). XML and plain-text
+        responses are fine either way - parsel falls back to a working
+        HTML-parsed root for both.
         """
         if not _exclusion_rules_module.is_web_url(response.url, self._get_exclusion_rules()):
             return
         if self._is_already_known_url(response):
+            return
+        if not isinstance(response, scrapy.http.TextResponse):
+            self._log_exclusion(response.url, 'non_text_response')
+            return
+        if response.selector.type == 'json':
+            self._log_exclusion(response.url, 'non_text_response')
             return
         listing_containers, view_urls = self._detect_listing_containers(response)
         yield HarvestItem(
@@ -483,7 +510,19 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         (_walk_new_listings' caller already ran it on that same response
         before dispatching here) without skipping it for every later page
         in the chain, which never go through parse_nav at all.
+
+        Guards against a non-HTML response the same way parse_nav does
+        (see its docstring for why two checks are needed) - this method is
+        registered as its own Scrapy callback for pagination-page requests
+        (response.follow(..., callback=self._walk_listing_pagination,
+        ...)), so it never goes through parse_nav's own guard.
         """
+        if not isinstance(response, scrapy.http.TextResponse):
+            self._log_exclusion(response.url, 'non_text_response')
+            return
+        if response.selector.type == 'json':
+            self._log_exclusion(response.url, 'non_text_response')
+            return
         container = self._select_container(response, container_index, view_id, display_id)
         rules = self._get_exclusion_rules()
         for href in self._listing_pagination_items(container):
