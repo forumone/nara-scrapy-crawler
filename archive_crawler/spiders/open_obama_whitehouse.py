@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
 
@@ -82,6 +84,13 @@ class OpenSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
 
     def _scrape_item(self, response):
         if self._is_excluded_response(response):
+            return None
+        # /search and /search/type/* are pure pagination/listing scaffolding
+        # - still followed for dataset-link discovery (see parse_nav), just
+        # never recorded as a content row. Unlike _parse_generic's other
+        # no-body pages (homepage, group pages), a search results page
+        # isn't a named thing anyone would search for by title.
+        if urlparse(response.url).path.startswith('/search'):
             return None
         if 'dataset' in response.url:
             return self._parse_dataset(response)
