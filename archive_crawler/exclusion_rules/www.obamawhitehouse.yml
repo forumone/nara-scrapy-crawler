@@ -1,0 +1,52 @@
+# URL exclusion rules for obamawhitehouse (SOURCE_SITE = www.obamawhitehouse).
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules:
+  # This archived site "solidifies" what were originally live query-string
+  # parameters into literal /index__q_KEY=VALUE.html path segments. Scoped
+  # to tracking-only parameters (Twitter/UTM referral codes, 146 URLs)
+  # that don't affect rendered content, so a decorated URL duplicates its
+  # bare counterpart. Deliberately excludes /index__q_page=,
+  # /index__q_order=, and /index__q_category=, which are genuine
+  # pagination/sort/filter variants with different content.
+  # Example: https://obamawhitehouse.archives.gov/blog/2012/01/25/everything-you-need-know-about-presidents-blueprint-manufacturing/index__q_tw_p=twt.html
+  - match: regex
+    pattern: '/index__q_(tw_p|utm_source|utm_expid)=[^/]*\.html$'
+    reason: "duplicate_tracking_param_suffix"
+
+  # Legacy alias prefix for content already reachable under its canonical
+  # path (21 URLs) - a duplicate URL space, not additional content.
+  # Example: https://obamawhitehouse.archives.gov/realitycheck/briefing-room
+  - match: contains
+    pattern: "/realitycheck"
+    reason: "url_pattern:/realitycheck"
+
+  # State-profile pages with no real body text (51 URLs, all 50 states +
+  # DC) - each one only links out to a PDF, and the extracted "content" is
+  # just that PDF's filename.
+  # Example: https://obamawhitehouse.archives.gov/ondcp/state/rhodeisland
+  - match: contains
+    pattern: "/ondcp/state/"
+    reason: "url_pattern:/ondcp/state/"
+
+  # Listing page and its sort/order query-string variants (41 URLs) whose
+  # only extractable text is its own title, duplicated into the body.
+  # Example: https://obamawhitehouse.archives.gov/ondcp/strategy-appendix
+  - match: contains
+    pattern: "/ondcp/strategy-appendix"
+    reason: "url_pattern:/ondcp/strategy-appendix"
+
+  # Per-initiative "submitted comments" pages (6 URLs) - empty listing
+  # placeholders with no actual comment content beneath the heading.
+  # Example: https://obamawhitehouse.archives.gov/administration/eop/ceq/initiatives/pandg/comments
+  - match: regex
+    pattern: '/administration/eop/ceq/initiatives/[^/]+/comments$'
+    reason: "url_pattern:ceq_initiative_comments"
+
+# nav_deny: patterns excluded from nav-crawling only, without also
+# excluding the URL from a content scrape if reached another way. Empty
+# today.
+nav_deny: []

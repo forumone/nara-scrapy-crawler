@@ -1,0 +1,80 @@
+# URL-pattern exclusion rules for georgewbush-whitehouse (SOURCE_SITE =
+# www.georgewbush-whitehouse). Evaluated in order at start_requests time;
+# first match wins.
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules:
+  # CMS-generated template shells with no real content of their own (46
+  # URLs).
+  # Example: https://georgewbush-whitehouse.archives.gov/omb/template.html
+  - match: regex
+    pattern: 'template\.html$'
+    reason: "cms_template"
+  # Video transcript variants (11,005 URLs) - duplicate the main content
+  # page.
+  # Example: https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/print/20030519-1.v.html
+  - match: regex
+    pattern: '\.v\.html$'
+    reason: "url_pattern:.v.html"
+  # Printer-friendly duplicates of main content (65,049 URLs).
+  # Example: https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/print/text/20030519-1_d051903-515h.html
+  - match: contains
+    pattern: "/print/"
+    reason: "url_pattern:/print/"
+  # Plain-text duplicates of main content (58,970 URLs).
+  # Example: https://georgewbush-whitehouse.archives.gov/news/releases/2003/05/images/text/20030512_d050603-5-515h.html
+  - match: contains
+    pattern: "/text/"
+    reason: "url_pattern:/text/"
+  # Exit-redirect interstitials with no content (1,967 URLs).
+  # Example: https://georgewbush-whitehouse.archives.gov/goodbye/04463f6e6bff2a47f4b44a986d66486f5071c18c.html
+  - match: contains
+    pattern: "/goodbye/"
+    reason: "url_pattern:/goodbye/"
+  # Numbered slideshow/gallery-frame pages (338 URLs, one image per frame,
+  # ~99% no_body) - a handful of index pages share a short duplicate
+  # teaser blurb, not substantive unique content.
+  # Example: https://georgewbush-whitehouse.archives.gov/president/holiday/historicalpets2/04-js.html
+  - match: regex
+    pattern: '-js\.html$'
+    reason: "url_pattern:-js.html"
+  # Bare headshot/photo pages with no caption or body text (1,973 URLs) -
+  # the companion bio_*.html/bios/*.html pages (1,823 URLs) hold the real
+  # content.
+  # Example: https://georgewbush-whitehouse.archives.gov/results/leadership/photo_606.html
+  - match: regex
+    pattern: '/(results/leadership|v/results\.gov/.+)/photo_\d+\.html$'
+    reason: "url_pattern:photo_NNNN.html"
+  # Flash-only interactive pages with no extractable text (29 URLs) - a
+  # "-nonflash" variant holds the real content, e.g.
+  # history/eeobtour/construction_nonflash.html.
+  # Example: https://georgewbush-whitehouse.archives.gov/history/eeobtour/historicalview-1900-flash.html
+  - match: regex
+    pattern: '-flash\.html$'
+    reason: "url_pattern:-flash.html"
+  # Bare-date "this day in history" pages (364 URLs) - a JS-rendered
+  # duplicate of the *_njs.html variant, which holds the real content for
+  # the same date.
+  # Example: https://georgewbush-whitehouse.archives.gov/history/thisday/0202.html
+  # (compare: https://georgewbush-whitehouse.archives.gov/history/thisday/0202_njs.html)
+  - match: regex
+    pattern: '/history/thisday/\d{4}\.html$'
+    reason: "url_pattern:thisday_bare_date"
+  # Bare negative-numbered release pages (36 URLs) - letterhead-only stubs
+  # (dateline only, no actual release text). The real selectors match
+  # normally here, so these clear the short_body threshold and would
+  # otherwise pass silently with zero warnings.
+  # Example: https://georgewbush-whitehouse.archives.gov/news/releases/-10.html
+  - match: regex
+    pattern: '/news/releases/-\d+\.html$'
+    reason: "url_pattern:bare_negative_release"
+  # Server-side template includes (85 URLs - css/nav/banner snippets), not
+  # standalone content pages, identifiable by their own naming convention
+  # (css-*, *-navigation, *-top, *-banner).
+  # Example: https://georgewbush-whitehouse.archives.gov/fragments/css-home.html
+  - match: contains
+    pattern: "/fragments/"
+    reason: "url_pattern:/fragments/"

@@ -4,6 +4,23 @@ import scrapy
 class TrumpPetitionsHarvestSpider(scrapy.Spider):
     name = "trump_petitions_harvest"
     allowed_domains = ["petitions.trumpwhitehouse.archives.gov"]
+
+    # See open_obama_whitehouse_harvest.py's identical override - this site's
+    # pager links also 301 to a canonicalized URL, silently truncating
+    # pagination under the project-wide REDIRECT_ENABLED=False default.
+    #
+    # Output path is automatic, derived from this spider's own site - pass
+    # -O <path> on the CLI to override.
+    custom_settings = {
+        'REDIRECT_ENABLED': True,
+        'FEEDS': {
+            'data/petitions.trumpwhitehouse/petitions.trumpwhitehouse_harvest.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'fields': ['url'],
+            },
+        },
+    }
     start_urls = [
         "https://petitions.trumpwhitehouse.archives.gov/",
         "https://petitions.trumpwhitehouse.archives.gov/about",

@@ -1,0 +1,38 @@
+# URL-pattern exclusion rules for clintonwhitehouse5. Evaluated in order at
+# start_requests time; first match wins. Case-sensitive substring matches -
+# /omb/ and /OMB/ are deliberately distinct rules. /OMB-upper/ is kept as
+# the canonical, non-excluded OMB directory on this site: it has 1,984
+# URLs, exactly equal to /omb/ (1,815) + /OMB/ (169) combined, and
+# /OMB-bak/ duplicates it again - so /OMB-upper/ is the largest, most
+# complete unique OMB set, and the other three are excluded as duplicates.
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules:
+  # Text-only mirror of the main site (11,794 URLs) - same content,
+  # plain-text template.
+  # Example: https://clintonwhitehouse5.archives.gov/textonly/WH/New/SouthAsia/photo_gallery/day_3/photo16.html
+  - match: contains
+    pattern: "/textonly/"
+    reason: "url_pattern:/textonly/"
+  # Lowercase alias directory duplicating /OMB-upper/'s content (1,994
+  # URLs).
+  # Example: https://clintonwhitehouse5.archives.gov/omb/legislative/sap/1999/HR436-h.html
+  - match: contains
+    pattern: "/omb/"
+    reason: "url_pattern:/omb/"
+  # Canonical-cased alias directory duplicating /OMB-upper/'s content (25
+  # URLs) - kept as its own rule since /omb/ and /OMB/ are distinct,
+  # case-sensitive matches.
+  # Example: https://clintonwhitehouse5.archives.gov/WH/EOP/OMB/MAX/1intro.html
+  - match: contains
+    pattern: "/OMB/"
+    reason: "url_pattern:/OMB/"
+  # Backup/mirror alias directory duplicating /OMB-upper/'s content (1,986
+  # URLs).
+  # Example: https://clintonwhitehouse5.archives.gov/OMB-bak/legislative/sap/1999/HR2513-h.html
+  - match: contains
+    pattern: "/OMB-bak/"
+    reason: "url_pattern:/OMB-bak/"

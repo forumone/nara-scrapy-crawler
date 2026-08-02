@@ -1,9 +1,11 @@
 import csv
+import re
 
 import scrapy
 
+from archive_crawler import exclusion_rules
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin
+from archive_crawler.spiders.base import ArchiveSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS, omb_paygo_title
 
 
 class ClintonWhiteHouse5Spider(ArchiveSpiderMixin, scrapy.Spider):
@@ -13,6 +15,41 @@ class ClintonWhiteHouse5Spider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'clintonwhitehouse5'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # Output path is automatic, derived from SOURCE_SITE - pass -O <path> on
+    # the CLI to override (Scrapy's -O/-o setting takes precedence over
+    # custom_settings['FEEDS'], the same mechanism letsmove.py and
+    # obama_whitehouse.py already use for their own output).
+    custom_settings = {
+        'FEEDS': {
+            'data/clintonwhitehouse5/clintonwhitehouse5.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
+
+    # This template prepends a letter-spaced "T H E W H I T E H O U S E"
+    # banner plus the page title and nav links to the body text on ~90% of
+    # pages. The nav links appear as "Help Site Map", "Text Only Help Site
+    # Map", or "Help Site Map Text Only" depending on the page - order and
+    # presence of "Text Only" both vary. Strip through whichever form
+    # appears, keeping only what follows it - this is nav chrome, stripped
+    # regardless of the letterhead-content policy below. The remaining pages
+    # use the plain press-release letterhead instead - no longer stripped,
+    # see TEXT_VERSION_TOGGLE_PATTERNS.
+    LEADING_TEXT_STRIP_PATTERNS = (
+        re.compile(
+            r'^\s*T\s*H\s*E\s+W\s*H\s*I\s*T\s*E\s+H\s*O\s*U\s*S\s*E\b'
+            r'.*?\b(?:Text\s+Only\s+)?Help\s+Site\s+Map(?:\s+Text\s+Only)?\b\s*',
+            re.IGNORECASE,
+        ),
+    ) + TEXT_VERSION_TOGGLE_PATTERNS
+
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
         if not url_file:
@@ -20,45 +57,37 @@ class ClintonWhiteHouse5Spider(ArchiveSpiderMixin, scrapy.Spider):
                 "url_file argument is required: "
                 "-a url_file=data/clintonwhitehouse5/clintonwhitehouse5_harvest-full.csv"
             )
+        rules = self._get_exclusion_rules()
         with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 url = row['url']
-                # /textonly/ is a text-only mirror (11k of 26k URLs).
-                # OMB dirs: OMB-upper (1984 URLs) = omb (1815) + OMB (169); OMB-bak ≈ OMB-upper.
-                # Keep /OMB-upper/ as the most complete unique set; skip the rest.
-                if '/textonly/' in url:
-                    self._log_exclusion(url, 'url_pattern:/textonly/')
-                elif '/omb/' in url:
-                    self._log_exclusion(url, 'url_pattern:/omb/')
-                elif '/OMB/' in url:
-                    self._log_exclusion(url, 'url_pattern:/OMB/')
-                elif '/OMB-bak/' in url:
-                    self._log_exclusion(url, 'url_pattern:/OMB-bak/')
+                reason = exclusion_rules.match_exclude(url, rules)
+                if reason:
+                    self._log_exclusion(url, reason)
                 else:
                     yield self._make_request(url)
 
     def parse_item(self, response):
-        if response.css('frameset'):
-            self._log_exclusion(response.url, 'frameset')
+        if self._is_excluded_response(response):
             return
-        # 1990s static HTML — WH press releases use <blockquote> for content;
-        # non-briefing pages (OMB, CEQ, etc.) fall back to full body.
-        body = (
-            self._extract_text(response, 'blockquote')
-            or self._extract_text(response, 'body')
-        )
+        warnings = []
+        body = self._extract_press_release_body(response)
         if not body:
-            self._log_exclusion(response.url, 'no_body')
-            return
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
         title = self._extract_title(response)
         if not title:
-            self._log_exclusion(response.url, 'no_title')
-            return
+            title = omb_paygo_title(body)
+        if not title:
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
         item = ArchiveItem()
         item['url'] = response.url
         item['title'] = title
         item['full_text'] = body
-        item['teaser_text'] = self._teaser(body)
+        item['teaser_text'] = self._teaser(body) if body else ''
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
+        item['warnings'] = ','.join(warnings)
         yield item

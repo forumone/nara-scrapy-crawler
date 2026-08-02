@@ -1,0 +1,11 @@
+# URL exclusion rules for www.bidenwhitehouse. No URL-pattern exclusions
+# configured today; low-quality pages are handled via content-based checks
+# (no_body/no_title) instead.
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules: []
+
+nav_deny: []

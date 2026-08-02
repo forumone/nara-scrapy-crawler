@@ -1,0 +1,27 @@
+# URL-pattern exclusion rules for clintonwhitehouse4. Evaluated in order at
+# start_requests time; first match wins. Case-sensitive substring matches.
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules:
+  # Text-only mirror of the main site (11,533 URLs) - same content,
+  # plain-text template.
+  # Example: https://clintonwhitehouse4.archives.gov/textonly/WH/New/SAmerica/venezuela.html
+  - match: contains
+    pattern: "/textonly/"
+    reason: "url_pattern:/textonly/"
+  # Alias prefix for the canonical /OMB/ directory (1,969 URLs, 1,932 with
+  # a scraped /OMB/ counterpart - the 37 exceptions are paygo pages also
+  # excluded from /OMB/ at parse time).
+  # Example: https://clintonwhitehouse4.archives.gov/OMB-upper/legislative/sap/2000/HR4577-r.html
+  - match: contains
+    pattern: "/OMB-upper/"
+    reason: "url_pattern:/OMB-upper/"
+  # Lowercase-prefixed alias for the same canonical /OMB/ directory as
+  # /OMB-upper/ above (1,969 URLs).
+  # Example: https://clintonwhitehouse4.archives.gov/omb-lower/legislative/sap/1999/HR434-s.html
+  - match: contains
+    pattern: "/omb-lower/"
+    reason: "url_pattern:/omb-lower/"

@@ -1,0 +1,18 @@
+# URL exclusion rules for letsmove.obamawhitehouse. No URL-pattern
+# exclusions configured today; low-quality pages are handled via
+# content-based checks (no_body/no_title) instead. nav_deny below holds
+# the nav-crawler back from certain sections without excluding them from a
+# content scrape if reached another way.
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules: []
+
+nav_deny:
+  - '/sites/'
+  - '/user/'
+  - '/node/\d'
+  - '/print/'
+  - '/category/'

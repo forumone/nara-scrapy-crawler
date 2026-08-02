@@ -2,8 +2,9 @@ import csv
 
 import scrapy
 
+from archive_crawler import exclusion_rules
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin
+from archive_crawler.spiders.base import ArchiveSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
 
 class ClintonWhiteHouse3Spider(ArchiveSpiderMixin, scrapy.Spider):
@@ -13,6 +14,26 @@ class ClintonWhiteHouse3Spider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'clintonwhitehouse3'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # Output path is automatic, derived from SOURCE_SITE - pass -O <path> on
+    # the CLI to override (Scrapy's -O/-o setting takes precedence over
+    # custom_settings['FEEDS'], the same mechanism letsmove.py and
+    # obama_whitehouse.py already use for their own output).
+    custom_settings = {
+        'FEEDS': {
+            'data/clintonwhitehouse3/clintonwhitehouse3.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
+
+    LEADING_TEXT_STRIP_PATTERNS = TEXT_VERSION_TOGGLE_PATTERNS
+
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
         if not url_file:
@@ -20,32 +41,35 @@ class ClintonWhiteHouse3Spider(ArchiveSpiderMixin, scrapy.Spider):
                 "url_file argument is required: "
                 "-a url_file=data/clintonwhitehouse3/clintonwhitehouse3_harvest-full.csv"
             )
+        rules = self._get_exclusion_rules()
         with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
-                yield self._make_request(row['url'])
+                url = row['url']
+                reason = exclusion_rules.match_exclude(url, rules)
+                if reason:
+                    self._log_exclusion(url, reason)
+                else:
+                    yield self._make_request(url)
 
     def parse_item(self, response):
-        if response.css('frameset'):
-            self._log_exclusion(response.url, 'frameset')
+        if self._is_excluded_response(response):
             return
-        # 1990s static HTML — WH press releases use <blockquote> for content;
-        # non-briefing pages (OMB, CEQ, etc.) fall back to full body.
-        body = (
-            self._extract_text(response, 'blockquote')
-            or self._extract_text(response, 'body')
-        )
+        warnings = []
+        body = self._extract_press_release_body(response)
         if not body:
-            self._log_exclusion(response.url, 'no_body')
-            return
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
         title = self._extract_title(response)
         if not title:
-            self._log_exclusion(response.url, 'no_title')
-            return
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
         item = ArchiveItem()
         item['url'] = response.url
         item['title'] = title
         item['full_text'] = body
-        item['teaser_text'] = self._teaser(body)
+        item['teaser_text'] = self._teaser(body) if body else ''
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
+        item['warnings'] = ','.join(warnings)
         yield item

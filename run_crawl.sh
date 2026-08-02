@@ -1,25 +1,83 @@
 #!/bin/bash
 
-# Usage: ./run_crawl.sh <URL> <SITE_ID> <URLS_TO_SKIP>
+# Usage: ./run_crawl.sh <URL> <SITE_ID> [URLS_TO_SKIP] [--download-delay=N] [--concurrency=N] [--memory-limit=N]
+#
+# Runs the two-phase generic_crawl workflow: harvest URLs from a seed URL
+# (generic_crawl_harvest), then scrape title/body/teaser from each one
+# (generic_crawl). --download-delay and --concurrency map to Scrapy's
+# DOWNLOAD_DELAY and CONCURRENT_REQUESTS_PER_DOMAIN settings (default 1
+# each, matching settings.py) and apply to both phases. --memory-limit maps
+# to MEMUSAGE_LIMIT_MB (default 8192, matching settings.py, on the assumption
+# this script runs on a resource-rich remote server) — if a crawl exceeds
+# this, Scrapy closes the spider gracefully (flushing the feed export)
+# instead of the OS OOM-killing it outright. run_crawl_interactive.sh halves
+# this default for local dev testing.
 
-TARGET_URL=$1
-SITE_ID=$2
-SKIP_PATTERNS=$3
+set -euo pipefail
 
-if [ -z "$TARGET_URL" ]; then
-    echo "Error: No URL supplied"
+DOWNLOAD_DELAY=1
+CONCURRENCY=1
+MEMORY_LIMIT=8192
+POSITIONAL=()
+
+for arg in "$@"; do
+    case "$arg" in
+        --download-delay=*)
+            DOWNLOAD_DELAY="${arg#*=}"
+            ;;
+        --concurrency=*)
+            CONCURRENCY="${arg#*=}"
+            ;;
+        --memory-limit=*)
+            MEMORY_LIMIT="${arg#*=}"
+            ;;
+        *)
+            POSITIONAL+=("$arg")
+            ;;
+    esac
+done
+
+TARGET_URL=${POSITIONAL[0]:-}
+SITE_ID=${POSITIONAL[1]:-}
+SKIP_PATTERNS=${POSITIONAL[2]:-}
+
+if [ -z "$TARGET_URL" ] || [ -z "$SITE_ID" ]; then
+    echo "Error: URL and SITE_ID are required"
+    echo "Usage: ./run_crawl.sh <URL> <SITE_ID> [URLS_TO_SKIP] [--download-delay=N] [--concurrency=N]"
     exit 1
 fi
 
-echo "Starting Deep Crawl for: $TARGET_URL"
-echo "Restricted to domain of that URL."
+HARVEST_FILE="data/${SITE_ID}/${SITE_ID}_harvest-full.csv"
+OUTPUT_FILE="data/${SITE_ID}/${SITE_ID}.csv"
 
-# Construct the command
-CMD="scrapy crawl generic_crawl -a url=\"$TARGET_URL\" -a site_id=\"$SITE_ID\""
+echo "Phase 1: Harvesting URLs from $TARGET_URL"
+echo "Restricted to domain of that URL. delay=${DOWNLOAD_DELAY}s concurrency=${CONCURRENCY} memory-limit=${MEMORY_LIMIT}MB"
 
-if [ ! -z "$SKIP_PATTERNS" ]; then
+HARVEST_ARGS=(crawl generic_crawl_harvest -a "url=$TARGET_URL" \
+    -s "DOWNLOAD_DELAY=$DOWNLOAD_DELAY" -s "CONCURRENT_REQUESTS_PER_DOMAIN=$CONCURRENCY" \
+    -s "MEMUSAGE_LIMIT_MB=$MEMORY_LIMIT" \
+    -O "$HARVEST_FILE")
+if [ -n "$SKIP_PATTERNS" ]; then
     echo "Skipping patterns: $SKIP_PATTERNS"
-    CMD="$CMD -a urls_to_skip=\"$SKIP_PATTERNS\""
+    HARVEST_ARGS+=(-a "urls_to_skip=$SKIP_PATTERNS")
 fi
+scrapy "${HARVEST_ARGS[@]}"
 
-eval $CMD
+echo "Phase 2: Scraping content for each harvested URL"
+scrapy crawl generic_crawl \
+    -a "url_file=$HARVEST_FILE" -a "site_id=$SITE_ID" \
+    -s "DOWNLOAD_DELAY=$DOWNLOAD_DELAY" -s "CONCURRENT_REQUESTS_PER_DOMAIN=$CONCURRENCY" \
+    -s "MEMUSAGE_LIMIT_MB=$MEMORY_LIMIT" \
+    -O "$OUTPUT_FILE"
+
+ITEM_COUNT=0
+if [ -s "$OUTPUT_FILE" ]; then
+    ITEM_COUNT=$(($(wc -l < "$OUTPUT_FILE") - 1))
+fi
+echo
+echo "Phase 2 complete: ${ITEM_COUNT} item(s) written to $OUTPUT_FILE"
+if [ "$ITEM_COUNT" -le 0 ]; then
+    echo "generic_crawl's selectors are tuned to known site templates, not universal - a zero count"
+    echo "usually means this site's markup doesn't match them yet, not that the crawl failed. See"
+    echo "HARVESTING.md and generic_crawl.py's docstring for how to extend or subclass it."
+fi

@@ -1,9 +1,11 @@
 import csv
+import re
 
 import scrapy
 
+from archive_crawler import exclusion_rules
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin
+from archive_crawler.spiders.base import ArchiveSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
 
 class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
@@ -13,11 +15,39 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
     SOURCE_SITE = 'www.georgewbush-whitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
 
+    # Output path is automatic, derived from SOURCE_SITE - pass -O <path> on
+    # the CLI to override (Scrapy's -O/-o setting takes precedence over
+    # custom_settings['FEEDS'], the same mechanism letsmove.py and
+    # obama_whitehouse.py already use for their own output).
+    custom_settings = {
+        'FEEDS': {
+            'data/www.georgewbush-whitehouse/www.georgewbush-whitehouse.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
+
     # /911/ pages use <center><img src="/911/images/star.gif"></center> as a
     # decorative separator between nav links (including the literal text
     # "<before" and "next>" from prev/next anchors). Stripping the center
     # element that contains the gif removes the whole nav block.
     EXTRA_STRIP_XPATH = ('.//center[.//img[@src="/911/images/star.gif"]]',)
+
+    LEADING_TEXT_STRIP_PATTERNS = TEXT_VERSION_TOGGLE_PATTERNS
+
+    # "White House News" is a breadcrumb/section label this template inserts
+    # between the headline and the body text on ~6% of pages. Confirmed via
+    # sampling it never appears as part of real content, always as this
+    # exact standalone label.
+    MIDTEXT_STRIP_PATTERNS = (
+        re.compile(r'\s*White House News\s*'),
+    )
 
     def start_requests(self):
         url_file = getattr(self, 'url_file', None)
@@ -26,36 +56,20 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
                 "url_file argument is required: "
                 "-a url_file=data/www.georgewbush-whitehouse/georgewbush-whitehouse_harvest-full.csv"
             )
+        rules = self._get_exclusion_rules()
         with open(url_file, newline='', encoding='utf-8-sig') as f:
             for row in csv.DictReader(f):
                 url = row['url']
-                # /images/ subdirectory pages are photo gallery wrappers with no text (28k URLs).
-                # .v.html pages are video transcript variants (11k URLs); skip to avoid duplicates.
-                # /print/ subdirectories are printer-friendly duplicates of main content (68k URLs).
-                # /text/ subdirectories are plain-text duplicates of main content (94k URLs).
-                # .es.html pages are Spanish-language variants.
-                # /goodbye/ pages are exit-redirect interstitials with no content.
-                if url.endswith('template.html'):
-                    self._log_exclusion(url, 'cms_template')
-                elif '/images/' in url:
-                    self._log_exclusion(url, 'url_pattern:/images/')
-                elif url.endswith('.v.html'):
-                    self._log_exclusion(url, 'url_pattern:.v.html')
-                elif '/print/' in url:
-                    self._log_exclusion(url, 'url_pattern:/print/')
-                elif '/text/' in url:
-                    self._log_exclusion(url, 'url_pattern:/text/')
-                elif url.endswith('.es.html'):
-                    self._log_exclusion(url, 'url_pattern:.es.html')
-                elif '/goodbye/' in url:
-                    self._log_exclusion(url, 'url_pattern:/goodbye/')
+                reason = exclusion_rules.match_exclude(url, rules)
+                if reason:
+                    self._log_exclusion(url, reason)
                 else:
                     yield self._make_request(url)
 
     def parse_item(self, response):
-        if response.css('frameset'):
-            self._log_exclusion(response.url, 'frameset')
+        if self._is_excluded_response(response):
             return
+        warnings = []
         # Selector chain across distinct sub-site layouts on this archive:
         # 1. #news_container — main WH press release layout (inside #whitebox).
         # 2. #whitebox — speeches/remarks on a slightly different WH template.
@@ -72,6 +86,23 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
         # 9. .content01 — OMB ExpectMore.gov summary pages (different template).
         # 10. //td[a[@name="content"]] — First Lady news/releases pages; content is in the
         #     TD that contains the skip-nav anchor (CSS :has() not supported by cssselect).
+        # 11. body (whole-document fallback, site-wide) — covers pre-2003 nested-<table>
+        #     pages with no id/class attributes anywhere, so none of the selectors above
+        #     can ever match (e.g. /infocus/iraq/, /omb/budget/). Confirmed 2026-08-01
+        #     against 15 live /infocus/iraq/+/omb/budget/ samples (13/15 clean recoveries,
+        #     2 correctly downgraded to short_body) plus a 102-item site-wide random
+        #     sample covering many more sections (/kids/, /911/, /omb/library/, etc.):
+        #     89/102 (87%) recovered substantial real content, the rest were legitimately
+        #     thin (correctly landing as short_body) except for one true dead end
+        #     (/fragments/css-home.html, itself covered by the /fragments/ exclusion rule
+        #     above) - no case found where this fallback produces a misleadingly non-empty
+        #     result. Originally scoped to just /infocus/iraq/ and /omb/budget/; broadened
+        #     to site-wide once the 102-item sample confirmed the same zero-selector-match
+        #     root cause recurs across the whole site, not just those two sections. A
+        #     little nav-link text ("Skip Main Navigation Site Search", a closing OMB link
+        #     bar) can bookend the real content on old table-layout pages - accepted
+        #     per-project as a fine trade for resilience over precision on
+        #     already-poorly-structured pages.
         body = (
             self._extract_text(response, '#news_container')
             or self._extract_text(response, '#whitebox')
@@ -83,20 +114,23 @@ class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
             or self._extract_text(response, '.popupBodyWrap01')
             or self._extract_text(response, '.content01')
             or self._extract_text(response, '//td[a[@name="content"]]')
+            or self._extract_text(response, 'body')
         )
         if not body:
-            self._log_exclusion(response.url, 'no_body')
-            return
+            warnings.append('no_body')
+        elif len(body) < self._get_short_body_threshold():
+            warnings.append('short_body')
         # No h1 on most pages; <title> tag matches the bolded article heading.
         title = self._extract_title(response)
         if not title:
-            self._log_exclusion(response.url, 'no_title')
-            return
+            warnings.append('no_title')
+            title = self._slug_title(response.url)
         item = ArchiveItem()
         item['url'] = response.url
         item['title'] = title
         item['full_text'] = body
-        item['teaser_text'] = self._teaser(body)
+        item['teaser_text'] = self._teaser(body) if body else ''
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
+        item['warnings'] = ','.join(warnings)
         yield item

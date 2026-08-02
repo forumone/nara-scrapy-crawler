@@ -1,0 +1,15 @@
+# URL-pattern exclusion rules for clintonwhitehouse6. Evaluated in order at
+# start_requests time; first match wins.
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules:
+  # Companion header fragment for each page (20,118 URLs) - a separate
+  # URL holding just the page's masthead/nav chrome, linked from the main
+  # page via a "View Header" link, not standalone content.
+  # Example: https://clintonwhitehouse6.archives.gov/2000/05/header/2000-05-11-statement-by-the-presidenton-appropriations.header.html
+  - match: regex
+    pattern: '\.header\.html$'
+    reason: "header_companion"
