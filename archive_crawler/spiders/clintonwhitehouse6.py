@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 import scrapy
 
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
+from archive_crawler.spiders.base import UrlFileSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
 
 def _title_from_slug(url):
@@ -18,7 +18,7 @@ def _title_from_slug(url):
     return stem.replace('-', ' ').title() if stem else ''
 
 
-class ClintonWhiteHouse6Spider(ArchiveSpiderMixin, scrapy.Spider):
+class ClintonWhiteHouse6Spider(UrlFileSpiderMixin, scrapy.Spider):
     name = "clintonwhitehouse6"
     allowed_domains = ["clintonwhitehouse6.archives.gov"]
 

@@ -1,10 +1,10 @@
 import scrapy
 
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
+from archive_crawler.spiders.base import UrlFileSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
 
-class ClintonWhiteHouse1Spider(ArchiveSpiderMixin, scrapy.Spider):
+class ClintonWhiteHouse1Spider(UrlFileSpiderMixin, scrapy.Spider):
     name = "clintonwhitehouse1"
     allowed_domains = ["clintonwhitehouse1.archives.gov"]
 

@@ -307,33 +307,6 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
                 break
         return re.sub(r'[-_]+', ' ', segment).strip()
 
-    def start_requests(self):
-        """Shared by every content spider whose only input is a url_file CSV
-        (one 'url' column): read it, drop whatever this site's exclusion
-        rules match, request the rest. Override for a spider with a
-        different input shape (NavHarvesterMixin sites crawl from
-        start_urls instead and don't use this)."""
-        url_file = getattr(self, 'url_file', None)
-        if not url_file:
-            raise ValueError(
-                "url_file argument is required: "
-                f"-a url_file=data/{self.SOURCE_SITE}/{self.SOURCE_SITE}_harvest-full.csv"
-            )
-        rules = self._get_exclusion_rules()
-        with open(url_file, newline='', encoding='utf-8-sig') as f:
-            for row in csv.DictReader(f):
-                url = row['url']
-                reason = _exclusion_rules_module.match_exclude(url, rules)
-                if reason:
-                    self._log_exclusion(url, reason)
-                else:
-                    yield self._make_request(url)
-
-    def _make_request(self, url, **kwargs):
-        kwargs.setdefault('callback', self.parse_item)
-        kwargs.setdefault('errback', self._log_http_error)
-        return scrapy.Request(url, **kwargs)
-
     def _log_http_error(self, failure):
         from scrapy.spidermiddlewares.httperror import HttpError
         if failure.check(HttpError):
@@ -517,22 +490,60 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         return text
 
 
+class UrlFileSpiderMixin(ArchiveSpiderMixin):
+    """For a content spider whose only input is a url_file CSV (one 'url'
+    column) - the sitemap-based spiders (clintonwhitehouse1-6,
+    bidenwhitehouse, georgewbush_whitehouse). Deliberately NOT part of
+    plain ArchiveSpiderMixin: a NavHarvesterMixin-composed spider (which
+    also extends ArchiveSpiderMixin, for its content-extraction helpers)
+    crawls from start_urls instead and must fall through to CrawlSpider/
+    Spider's own start_requests - putting url_file-reading here instead of
+    on ArchiveSpiderMixin means that fallthrough needs no special-casing
+    anywhere, in either direction."""
+
+    def start_requests(self):
+        url_file = getattr(self, 'url_file', None)
+        if not url_file:
+            raise ValueError(
+                "url_file argument is required: "
+                f"-a url_file=data/{self.SOURCE_SITE}/{self.SOURCE_SITE}_harvest-full.csv"
+            )
+        rules = self._get_exclusion_rules()
+        with open(url_file, newline='', encoding='utf-8-sig') as f:
+            for row in csv.DictReader(f):
+                url = row['url']
+                reason = _exclusion_rules_module.match_exclude(url, rules)
+                if reason:
+                    self._log_exclusion(url, reason)
+                else:
+                    yield self._make_request(url)
+
+    def _make_request(self, url, **kwargs):
+        kwargs.setdefault('callback', self.parse_item)
+        kwargs.setdefault('errback', self._log_http_error)
+        return scrapy.Request(url, **kwargs)
+
+
 class PetitionsSpiderMixin(ArchiveSpiderMixin):
     """Shared by obama_petitions.py and trump_petitions.py - the same
     Drupal petitions-site template, differing only in SOURCE_SITE/domain.
-    parse_item dispatches on URL shape: a petition detail page
+    _scrape_item dispatches on URL shape: a petition detail page
     (_parse_petition) gets its response-date appended to full_text when one
     is present; every other page (listing, about, etc.) uses the plainer
     _parse_generic, which also falls back to #content-main for pages
-    without the standard field-item body wrapper."""
+    without the standard field-item body wrapper.
 
-    def parse_item(self, response):
+    Composed alongside NavHarvesterMixin by both spiders, listed first in
+    the MRO (`class ObamaPetitionsSpider(PetitionsSpiderMixin,
+    NavHarvesterMixin, CrawlSpider)`) so this _scrape_item is found before
+    NavHarvesterMixin's own _scrape_item = None default."""
+
+    def _scrape_item(self, response):
         if self._is_excluded_response(response):
-            return
+            return None
         if '/petition/' in response.url:
-            yield from self._parse_petition(response)
-        else:
-            yield from self._parse_generic(response)
+            return self._parse_petition(response)
+        return self._parse_generic(response)
 
     def _parse_petition(self, response):
         warnings = []
@@ -559,7 +570,7 @@ class PetitionsSpiderMixin(ArchiveSpiderMixin):
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
         item['warnings'] = ','.join(warnings)
-        yield item
+        return item
 
     def _parse_generic(self, response):
         warnings = []
@@ -586,4 +597,4 @@ class PetitionsSpiderMixin(ArchiveSpiderMixin):
         item['source_site'] = self.SOURCE_SITE
         item['source_type'] = self.SOURCE_TYPE
         item['warnings'] = ','.join(warnings)
-        yield item
+        return item

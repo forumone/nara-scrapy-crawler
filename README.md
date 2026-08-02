@@ -389,7 +389,7 @@ python audit_url_gaps.py \
 
 `spiders/generic_crawl.py`: Phase 2 (spider name `generic_crawl`). Reads the phase-1 harvest CSV and extracts title/body/teaser from each URL. Dynamically accepts `url_file`, `site_id`, and `source_type`.
 
-`spiders/base.py`: `ArchiveSpiderMixin` — shared extraction and boilerplate stripping for all archive content spiders, plus `PetitionsSpiderMixin` (the obama_petitions/trump_petitions template) and `omb_paygo_title`. Every subclass that doesn't set its own `custom_settings` gets an automatic `FEEDS` entry derived from `SOURCE_SITE`.
+`spiders/base.py`: `ArchiveSpiderMixin` — shared extraction and boilerplate stripping for all archive content spiders. Every subclass that doesn't set its own `custom_settings` gets an automatic `FEEDS` entry derived from `SOURCE_SITE`. `UrlFileSpiderMixin` (extends `ArchiveSpiderMixin`) adds `start_requests` for the sitemap-based spiders (CW1-6, Biden, GWBush) that read a `url_file` CSV - kept off `ArchiveSpiderMixin` itself so a NavHarvesterMixin-composed spider (which also extends `ArchiveSpiderMixin`, for its content-extraction helpers) falls through to `CrawlSpider`/`Spider`'s own `start_requests` without any MRO override needed. `PetitionsSpiderMixin` (the obama_petitions/trump_petitions template) and `omb_paygo_title` also live here.
 
 `spiders/nav_harvest.py`: `NavHarvesterMixin` — shared nav link-following and listing-fingerprint pagination-walking; when a class composes both this and `ArchiveSpiderMixin` and defines `_scrape_item`, `_maybe_scrape_item` also extracts content on that same fetched response, with no second fetch.
 

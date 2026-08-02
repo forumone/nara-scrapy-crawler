@@ -8,14 +8,9 @@ extensions:
 
 rules: []
 
-nav_deny: []
-
-# Read by trump_petitions_harvest (generic_crawl_harvest subclass) only -
-# the content spider never reads these two keys. Drupal Views pager links
-# on this site use the standard ?page=N convention (confirmed by the
-# pre-migration hand-rolled harvester's own pagination check).
-pagination:
-  - '\?page='
-
-query_params_allow:
-  - page
+# /user/login?destination=<page> appears on every single page (the
+# Drupal "log in to sign this petition" link) and always 404s in the
+# archive - not a content page, and without this the crawl wastes over
+# half its requests on predictable 404s.
+nav_deny:
+  - '/user/login'

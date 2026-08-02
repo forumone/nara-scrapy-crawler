@@ -3,10 +3,10 @@ import re
 import scrapy
 
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin
+from archive_crawler.spiders.base import UrlFileSpiderMixin
 
 
-class BidenWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
+class BidenWhiteHouseSpider(UrlFileSpiderMixin, scrapy.Spider):
     name = "bidenwhitehouse"
     allowed_domains = ["bidenwhitehouse.archives.gov"]
 

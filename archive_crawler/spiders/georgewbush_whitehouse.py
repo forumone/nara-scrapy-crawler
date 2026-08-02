@@ -3,10 +3,10 @@ import re
 import scrapy
 
 from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import ArchiveSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
+from archive_crawler.spiders.base import UrlFileSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
 
-class GeorgeWBushWhiteHouseSpider(ArchiveSpiderMixin, scrapy.Spider):
+class GeorgeWBushWhiteHouseSpider(UrlFileSpiderMixin, scrapy.Spider):
     name = "georgewbush_whitehouse"
     allowed_domains = ["georgewbush-whitehouse.archives.gov"]
 
