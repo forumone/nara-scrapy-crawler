@@ -231,7 +231,7 @@ being dropped:
 
 ### Exclusion output
 
-Each scrape spider automatically writes a `{source_site}_exclusions.csv` alongside the output CSV when the spider closes, no `-O`/`-a` needed — pass `-a exclusions_file=<path>` to override the derived default. Each row contains the skipped URL and a typed reason. Unlike the warnings above, these rows never appear in the main output CSV at all — there's no successfully-fetched, parseable page behind any of these reasons:
+Each scrape spider automatically writes a `{source_site}_exclusions.csv` alongside the output CSV when the spider closes, no `-O`/`-a` needed — pass `-a exclusions_file=<path>` to override the derived default. Each row contains the skipped URL and a typed reason. Unlike the warnings above, these rows never appear in the main output CSV at all — most reasons mean there was no successfully-fetched, parseable page behind them; a few (like `search_listing_page` below) mean the page fetched fine but was judged non-content at scrape time, and are logged explicitly for the same reason: harvest CSV rows should always be accounted for by either the content CSV or the exclusions CSV, never neither.
 
 | Reason | Description |
 |---|---|
@@ -242,6 +242,7 @@ Each scrape spider automatically writes a `{source_site}_exclusions.csv` alongsi
 | `http_3xx` | Redirect not followed (redirects are disabled globally) |
 | `http_5xx` | Server error |
 | `network_error:<type>` | Connection-level failure |
+| `search_listing_page` | `open_obama_whitehouse.py`-specific: a `/search`/`/search/type/*` pagination page - fetched and followed for dataset-link discovery, but not a content page itself |
 
 ### URL gap analysis
 

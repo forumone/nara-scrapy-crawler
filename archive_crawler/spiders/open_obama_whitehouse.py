@@ -89,8 +89,12 @@ class OpenSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         # - still followed for dataset-link discovery (see parse_nav), just
         # never recorded as a content row. Unlike _parse_generic's other
         # no-body pages (homepage, group pages), a search results page
-        # isn't a named thing anyone would search for by title.
+        # isn't a named thing anyone would search for by title. Logged as
+        # an exclusion (not just skipped) so harvest = scrape + exclude
+        # still holds - otherwise these URLs would appear in the harvest
+        # CSV but in neither the content CSV nor the exclusions CSV.
         if urlparse(response.url).path.startswith('/search'):
+            self._log_exclusion(response.url, 'search_listing_page')
             return None
         if 'dataset' in response.url:
             return self._parse_dataset(response)
