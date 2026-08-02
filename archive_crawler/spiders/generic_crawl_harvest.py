@@ -60,10 +60,23 @@ rules with a site-specific LinkExtractor. The harvest output format (a single
 """
 from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
-from scrapy.linkextractors import LinkExtractor
+from scrapy.linkextractors import IGNORED_EXTENSIONS, LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
 
 from archive_crawler import exclusion_rules
+
+# Baseline for a source_site whose exclusion_rules extensions mode is
+# 'allow' (the norm for any known site's own committed YAML) - an allow-list
+# isn't directly usable as deny_extensions, so this is what actually gets
+# applied at the LinkExtractor level for those sites. Scrapy's own
+# IGNORED_EXTENSIONS (images/office docs/archives/media) plus data-dump
+# formats (csv/json/xml/tsv/txt), since data-catalog-style sites (Drupal or
+# CKAN open-data catalogs) commonly link to raw data files directly, and
+# downloading one as if it were a page pulls potentially many MB into
+# memory for no benefit - no title/body for parse_url to extract anyway,
+# and some formats (JSON in particular) crash Scrapy's own HTML-assuming
+# link-extraction outright rather than just wasting bandwidth.
+_BASE_DENY_EXTENSIONS = [*IGNORED_EXTENSIONS, 'csv', 'json', 'xml', 'tsv', 'txt']
 
 
 def _strip_noise_query_params(links, allowed_query_params):
@@ -87,7 +100,7 @@ class GenericCrawlHarvestSpider(CrawlSpider):
 
         rules = exclusion_rules.load_rules(source_site or self.name, rules_file, rules_mode)
         deny_extensions = rules.extensions.get('values', []) \
-            if rules.extensions.get('mode') == 'deny' else []
+            if rules.extensions.get('mode') == 'deny' else _BASE_DENY_EXTENSIONS
         pagination_patterns = exclusion_rules.pagination_patterns(rules)
         allowed_query_params = exclusion_rules.allowed_query_params(rules)
         deny_list = exclusion_rules.nav_deny_patterns(rules)
