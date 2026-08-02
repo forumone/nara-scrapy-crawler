@@ -42,7 +42,7 @@ Without `source_site`, `harvest_file` becomes required.
 
 Since `sitemap_harvest` never fetches a content page itself, there's no
 response here to extract content from inline. Write a separate content
-spider (plain `scrapy.Spider` + `ArchiveSpiderMixin`, reading the harvest
+spider (plain `scrapy.Spider` + `UrlFileSpiderMixin`, reading the harvest
 CSV as `url_file`) to scrape from it, same as every sitemap-based spider
 (CW1–6, Biden, GWBush) does. See README's "Sitemap-Based Archive Spiders"
 section for a worked example, and its "Warnings column" section for the

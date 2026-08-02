@@ -185,7 +185,7 @@ This is the one spider in the project where `-O`/`-o` do **not** control output.
 
 The Clinton (CW1–6), Biden, and GWBush whitehouse spiders all follow the same two-step pattern: harvest URLs from the sitemap, then scrape content from each URL.
 
-All spiders inherit from `ArchiveSpiderMixin` (see `archive_crawler/spiders/base.py`), which provides shared extraction logic, exclusion tracking, and HTTP error handling.
+All spiders inherit from `UrlFileSpiderMixin` (see `archive_crawler/spiders/base.py`), which extends `ArchiveSpiderMixin` with `url_file`-reading `start_requests` and provides shared extraction logic, exclusion tracking, and HTTP error handling.
 
 ### Step 1: Harvest
 
@@ -312,16 +312,19 @@ To check whether a site has a sitemap, try `{base_url}/sitemap.xml` and `{base_u
 
 ### Creating a no-sitemap harvester
 
-Two patterns exist:
+Always one spider (`NavHarvesterMixin` + `ArchiveSpiderMixin` +
+`CrawlSpider`) doing nav-style link-following and content extraction on
+the same fetched response - no separate harvest pass. Two variants,
+depending on whether the site has a real listing-fan-out risk:
 
-- **Single spider (recommended default)** — one spider does nav-style
-  link-following, automatically walks every newly-discovered listing's
-  pagination inline (via `NavHarvesterMixin`'s fingerprint dedup - no
-  curated seed list), and extracts content on the same fetched response.
-  Copy `archive_crawler/spiders/letsmove.py` (smaller, simpler starting
-  point) or `archive_crawler/spiders/obama_whitehouse.py` (larger site,
-  multiple listing templates), update `name`, `allowed_domains`,
-  `SOURCE_SITE`, `LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_CONTAINER_SELECTOR`/
+- **With listing-fingerprint dedup** — for a site where the same
+  paginated listing (a "browse all videos" widget, a "recent posts"
+  block) is embedded on many distinct pages; without dedup, each embed's
+  pagination would be walked independently. Copy
+  `archive_crawler/spiders/letsmove.py` (smaller, simpler starting point)
+  or `archive_crawler/spiders/obama_whitehouse.py` (larger site, multiple
+  listing templates), update `name`, `allowed_domains`, `SOURCE_SITE`,
+  `LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_CONTAINER_SELECTOR`/
   `LISTING_PAGER_SELECTOR`, implement `_listing_pagination_items`/
   `_listing_pagination_next_url` (each takes a single container Selector,
   not the full response), and write `_scrape_item` for the new site's
@@ -329,6 +332,18 @@ Two patterns exist:
   4, for the full shape including the `warnings` column). Remember to raise
   `DEPTH_LIMIT` well past whatever the longest expected pagination chain is
   (see either spider's own `custom_settings` comment for why).
+- **Without dedup (simpler default when no fan-out risk is evident)** —
+  leave `LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_CONTAINER_SELECTOR`/
+  `LISTING_PAGER_SELECTOR` unset (the mixin's own default) and rely on
+  `DEPTH_LIMIT` + `nav_deny` for scope instead. Copy
+  `archive_crawler/spiders/open_obama_whitehouse.py` or
+  `archive_crawler/spiders/obama_petitions.py`/`trump_petitions.py`.
+  Watch specifically for facet/filter links (a site's own exposed-filter
+  or faceted-search UI) getting followed like ordinary content links,
+  since there's no container-pooling here to incidentally suppress them -
+  `exclusion_rules/open.obamawhitehouse.yml` has a worked example of the
+  nav_deny patterns this needed (both a path-based and a query-string-based
+  facet convention).
 - **List-first (two spiders)** — considered and rejected, not a supported
   fallback. See `HARVESTING.md`'s "List-first split harvester" section for
   why.
@@ -350,8 +365,14 @@ Copy an existing sitemap spider (e.g., `archive_crawler/spiders/clintonwhitehous
   `exclusion_rules.match_exclude(url, rules)`; no per-site Python needed.
 - CSS selectors in `parse_item` to match the new site's content structure
 
-All sitemap-based spiders inherit from `ArchiveSpiderMixin`, which provides:
-- `_make_request(url)` — sets up the standard callback and HTTP error errback
+All sitemap-based spiders inherit from `UrlFileSpiderMixin` (which itself
+extends `ArchiveSpiderMixin`, for its content-extraction helpers - kept
+separate specifically so a `NavHarvesterMixin`-composed spider, which also
+extends `ArchiveSpiderMixin`, never inherits url_file-reading behavior it
+doesn't use). Between the two, this gives every sitemap-based spider:
+- `start_requests()` / `_make_request(url)` (`UrlFileSpiderMixin`) — reads
+  `url_file`, drops whatever this site's exclusion rules match, requests
+  the rest with the standard callback and HTTP error errback
 - `_extract_title(response)` — h1 → h2 → `<title>` with HTML entity decoding and normalisation
 - `_extract_text(response, selector)` — strips NARA banners, nav boilerplate, and invisible Unicode before returning plain text
 - `_log_exclusion(url, reason)` — records a skipped URL; written to `_exclusions.csv` on spider close

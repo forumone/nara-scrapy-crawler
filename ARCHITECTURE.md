@@ -141,6 +141,80 @@ harvest are themselves the signal that exposes it for that exclusion, and
 building automatic alias detection here would remove exactly the visibility
 that caught `/realitycheck` in the first place.
 
+### Known consideration: facet/filter links
+
+`parse_nav`'s ordinary link-following loop (`_follow_ordinary_links`) has no
+concept of "pager link" vs. "facet/filter link" vs. "ordinary content
+link" — it follows every non-excluded link on the page. For a site that
+also enables listing-fingerprint dedup, this is usually harmless in
+practice: `LISTING_VIEW_LINK_EXTRACTOR`'s `restrict_css` scope typically
+also covers any facet controls rendered inside the same listing container,
+so they get pooled into `view_urls` and skipped by the ordinary loop the
+same as pager/item links — `obama_whitehouse.py`/`letsmove.py` have run
+this way in production without incident. But that pooling is *incidental*,
+not a general guarantee: it only fires when a container has a populated
+`LISTING_PAGER_SELECTOR` match, and it only covers facet controls that
+actually render inside `LISTING_VIEW_LINK_EXTRACTOR`'s scope.
+
+Confirmed live on `open.obamawhitehouse.archives.gov` (which has no
+listing-fingerprint dedup enabled at all): the site's Facet API
+exposed-filter widget renders in a sidebar panel structurally separate
+from the results+pager container, and one of its pages
+(`/group/data-catalog`) has no pager on it at all — so even scoping
+`LISTING_VIEW_LINK_EXTRACTOR` to cover both regions wouldn't have helped,
+since the pager-presence gate that triggers pooling never fires there.
+Each facet-filter combination is otherwise a distinct URL Scrapy's
+dupefilter has no reason to collapse, and following them all is a real
+combinatorial-blowup risk, not just noise.
+
+Current mitigation is `nav_deny`, not the fingerprint mechanism — see
+`exclusion_rules/open.obamawhitehouse.yml` for the two patterns needed
+(`/field_[a-z_]+/` for path-based facets, `f%5B\d+%5D=` for Drupal's
+Facet API query-string convention). When building a new no-sitemap site,
+check for a facet/filter UI during discovery (step 1 in HARVESTING.md)
+the same way you'd check for pagination, and don't assume dedup (if
+enabled) will incidentally cover it without confirming the facet controls
+actually render inside the pooled container scope.
+
+---
+
+## Non-HTML responses in `parse_nav`
+
+`parse_nav`, `_detect_listing_containers`, `_census_links`, and
+`_follow_ordinary_links` all call `response.css(...)` or a `LinkExtractor`'s
+`extract_links(response)` unconditionally, assuming an HTML document.
+`is_web_url`'s extension-based check (see below) can't fully guard this —
+it only inspects the URL, not what the server actually returns, so a URL
+with no extension hinting at its real content type (a JSON API endpoint,
+a raw data file served from an extension-less path) can still reach these
+calls.
+
+Two distinct failure shapes, both logged as `non_text_response` (the same
+reason `ArchiveSpiderMixin._is_excluded_response` already uses for content
+spiders) rather than crashing the response:
+
+- A plain binary `Response` has no `.css()`/`.selector` at all —
+  `isinstance(response, scrapy.http.TextResponse)` catches this.
+- A JSON response *is* a `TextResponse` (isinstance alone won't catch it),
+  but Scrapy's auto-selector gives it a dict root instead of an lxml tree
+  — confirmed live via `open.obamawhitehouse.archives.gov`'s DKAN JSON API
+  (`/api/3/action/package_show?id=...`, linked from every dataset page),
+  which crashed with `AttributeError: 'dict' object has no attribute
+  'iter'` before this guard existed. `response.selector.type == 'json'`
+  catches this one. XML and plain-text responses are fine either way —
+  parsel falls back to a working HTML-parsed root for both, so this check
+  is deliberately JSON-specific, not a blanket "must be real HTML" gate.
+
+Both checks live at the top of `parse_nav` and `_walk_listing_pagination`
+(nav_harvest.py) — the latter needs its own copy since it's registered as
+its own Scrapy callback for pagination-page requests, never routed through
+`parse_nav`. A site-specific `nav_deny` entry (e.g.
+`open.obamawhitehouse.yml`'s `/api/` and `/download` patterns) is still
+worth adding for a *known* non-HTML endpoint even with this guard in
+place — it saves the wasted request entirely rather than
+fetching-then-gracefully-excluding. This guard is the safety net for
+whatever a new site's own discovery pass doesn't happen to catch.
+
 ---
 
 ## URL exclusion rules (`archive_crawler/exclusion_rules.py`)
@@ -158,7 +232,8 @@ at different points and for different purposes:
 
 - `rules:` entries are checked by both the nav crawler
   (`NavHarvesterMixin._apply_nav_deny`) and the content spider
-  (`ArchiveSpiderMixin`/site-specific `start_requests`). A single `rules:`
+  (`UrlFileSpiderMixin.start_requests`, for the sitemap-based spiders that
+  read a `url_file`). A single `rules:`
   entry excludes a URL shape from the entire pipeline — nav crawl and
   content scrape alike — with one entry instead of a duplicate in each.
   Use this for URLs that are genuinely out of scope everywhere (a
