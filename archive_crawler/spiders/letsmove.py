@@ -79,14 +79,6 @@ class LetsMoveSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
 
     start_urls = [
         "https://letsmove.obamawhitehouse.archives.gov/",
-        # Pages confirmed beyond depth 4 from the homepage under the old,
-        # narrower DEPTH_LIMIT - ported unchanged, not re-verified against
-        # the new higher ceiling.
-        "https://letsmove.obamawhitehouse.archives.gov/Tweetup",
-        "https://letsmove.obamawhitehouse.archives.gov/get-email-updates",
-        "https://letsmove.obamawhitehouse.archives.gov/meetup",
-        "https://letsmove.obamawhitehouse.archives.gov/promote-affordable-accessible-food",
-        "https://letsmove.obamawhitehouse.archives.gov/share-your-story-lets-move-olympic-fun-day",
     ]
 
     rules = (

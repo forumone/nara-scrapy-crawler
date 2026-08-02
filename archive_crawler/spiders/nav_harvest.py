@@ -154,6 +154,25 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         # contract" above.
         self._seen_listing_fingerprints = set()
 
+    def start_requests(self):
+        """Same as Spider's own default, except dont_filter=False.
+
+        Spider.start_requests() hardcodes dont_filter=True on every
+        start_url - that bypasses the scheduler's dupefilter check *and*
+        skips recording the request's fingerprint as seen (Scheduler.
+        enqueue_request only calls self.df.request_seen(request), which
+        does both, when `not request.dont_filter`). For every site this
+        mixin serves, start_urls is that site's own homepage - almost
+        always linked from elsewhere on the site - so the unrecorded seed
+        request lets a later in-crawl link to the same URL slip past the
+        dupefilter and get scraped a second time, producing a byte-identical
+        duplicate row. None of these spiders use JOBDIR-based resume (the
+        usual reason dont_filter=True matters), so there's no downside to
+        recording the seed request normally.
+        """
+        for url in self.start_urls:
+            yield scrapy.Request(url, dont_filter=False)
+
     def _filter_web_urls(self, links):
         rules = self._get_exclusion_rules()
         return [lnk for lnk in links if _exclusion_rules_module.is_web_url(lnk.url, rules)]
