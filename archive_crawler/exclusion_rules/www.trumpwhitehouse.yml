@@ -1,0 +1,22 @@
+# URL exclusion rules for trumpwhitehouse.archives.gov (SOURCE_SITE = www.trumpwhitehouse).
+# No URL-pattern exclusions configured today. The site's per-issue facet
+# filters (e.g. /briefings-statements/?issue_filter=healthcare) are each a
+# genuinely distinct item subset, not a duplicate of the unfiltered listing,
+# so NavHarvesterMixin's listing-fingerprint dedup handles them without a
+# nav_deny/rules entry: each filtered listing is walked once (its own
+# fingerprint), and the individual articles it links to are only ever
+# scraped once regardless of how many filters surface them.
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules:
+  # Every article's "copy URL to clipboard" share button links back to
+  # itself with a tracking param appended - byte-identical duplicate content
+  # at a second URL. Confirmed live on /briefings-statements/ articles.
+  - match: regex
+    pattern: '\?utm_source='
+    reason: "duplicate_utm_tracking_param"
+
+nav_deny: []
