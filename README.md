@@ -113,9 +113,7 @@ crawl, two output files via `custom_settings['FEEDS']`. Every crawl starts
 fresh — there's no listing/dedup file to seed:
 
 ```bash
-scrapy crawl obama_whitehouse \
-  -s DOWNLOAD_DELAY=0.15 \
-  -s CONCURRENT_REQUESTS_PER_DOMAIN=8
+scrapy crawl obama_whitehouse
 ```
 
 No `-O`/`-o` needed (or wanted — either would override the two-feed `FEEDS`
@@ -130,7 +128,7 @@ fine here — this site's `DEPTH_LIMIT` is already tuned high enough that
 ordering doesn't matter for completeness. See HARVESTING.md's nav-harvester
 step 2 for when BFS actually matters vs. not.
 
-At the default `DOWNLOAD_DELAY=1`, a full crawl takes a long time — run it on
+Even at the default `DOWNLOAD_DELAY=0.25`, a full crawl takes a long time — run it on
 a remote server, not a local machine; see "Recommended run settings" below
 for throttling overrides. `_scrape_item` includes a `#video-info .caption`
 fallback selector specifically for `/photos-and-video/video/*` gallery pages,
@@ -258,12 +256,23 @@ Use `--depth 0` to report only the total count without path grouping.
 
 ### Recommended run settings
 
-Large archives (CW4–6, GWBush) are best run on a remote server. Override the default throttling with Scrapy's `-s` flag, not bare environment variables — `settings.py` doesn't read `DOWNLOAD_DELAY`/`CONCURRENT_REQUESTS*` from the environment (only `FEED_URI`, `CLOSESPIDER_PAGECOUNT`, and `DEPTH_LIMIT` are), so prefixing the command with `DOWNLOAD_DELAY=0.15 ...` silently has no effect and the crawl runs at the settings.py defaults (`CONCURRENT_REQUESTS_PER_DOMAIN=1`, `DOWNLOAD_DELAY=1`):
+Large archives (CW4–6, GWBush) are best run on a remote server. Override the default throttling with Scrapy's `-s` flag, not bare environment variables — `settings.py` doesn't read `DOWNLOAD_DELAY`/`CONCURRENT_REQUESTS*` from the environment (only `FEED_URI`, `CLOSESPIDER_PAGECOUNT`, and `DEPTH_LIMIT` are), so prefixing the command with `DOWNLOAD_DELAY=0.15 ...` silently has no effect and the crawl runs at the settings.py defaults (`CONCURRENT_REQUESTS_PER_DOMAIN=4`, `DOWNLOAD_DELAY=0.25`).
+
+The right override on the remote server depends on how many crawls are running there *concurrently*, since the shared constraint is combined outbound load, not any single crawl's own politeness:
+
+| concurrent crawls | `DOWNLOAD_DELAY` | `CONCURRENT_REQUESTS_PER_DOMAIN` |
+|---|---|---|
+| 1 | 0.12 | 10 |
+| 2 | 0.15 | 8 |
+| 3 | 0.2 | 6 |
+| 4–5 | 0.25 | 4 (matches the local default — no override needed) |
+| 6–7 | 0.5 | 2 |
+| 8+ | 1 | 1 |
 
 ```bash
 scrapy crawl georgewbush_whitehouse \
-  -s DOWNLOAD_DELAY=0.15 \
-  -s CONCURRENT_REQUESTS_PER_DOMAIN=8 \
+  -s DOWNLOAD_DELAY=0.12 \
+  -s CONCURRENT_REQUESTS_PER_DOMAIN=10 \
   -a url_file=data/www.georgewbush-whitehouse/georgewbush-whitehouse_harvest.csv
 ```
 
