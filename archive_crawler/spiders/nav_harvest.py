@@ -150,6 +150,20 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         for url in self.start_urls:
             yield scrapy.Request(url, dont_filter=False)
 
+    def _strip_query_noise(self, links):
+        """Mutate each link's .url in place, dropping utm_*-prefixed (and any
+        site-configured query_params_deny) params - see
+        exclusion_rules.strip_denied_query_params. Done first, before
+        _filter_web_urls/_apply_nav_deny/dedup, so a tracking-decorated URL
+        collapses onto its bare canonical form's own request/dupefilter
+        fingerprint rather than being rejected outright by a match_exclude
+        rule (which only works if the bare URL is independently reachable
+        some other way)."""
+        rules = self._get_exclusion_rules()
+        for lnk in links:
+            lnk.url = _exclusion_rules_module.strip_denied_query_params(lnk.url, rules)
+        return links
+
     def _filter_web_urls(self, links):
         rules = self._get_exclusion_rules()
         return [lnk for lnk in links if _exclusion_rules_module.is_web_url(lnk.url, rules)]
@@ -377,7 +391,8 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         only ever followed via _walk_new_listings' dedicated walk, never
         through this ordinary loop (see the mixin's docstring)."""
         for rule in self._rules:
-            links = self._apply_nav_deny(self._filter_web_urls(rule.link_extractor.extract_links(response)))
+            links = self._strip_query_noise(rule.link_extractor.extract_links(response))
+            links = self._apply_nav_deny(self._filter_web_urls(links))
             for link in links:
                 if link.url in view_urls:
                     continue
@@ -502,7 +517,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         container = self._select_container(response, container_index, view_id, display_id)
         rules = self._get_exclusion_rules()
         for href in self._listing_pagination_items(container):
-            url = response.urljoin(href)
+            url = _exclusion_rules_module.strip_denied_query_params(response.urljoin(href), rules)
             reason = _exclusion_rules_module.match_exclude(url, rules)
             if reason is not None:
                 self._log_exclusion(url, reason)

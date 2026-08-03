@@ -32,9 +32,16 @@ per domain, structured as:
 
     query_params_allow:        # generic_crawl_harvest: query-string keep-list
       - page
+
+    query_params_deny:         # NavHarvesterMixin/UrlFileSpiderMixin: extra
+      - fbclid                  # per-site junk query params to strip before a
+                                 # link is followed/requested (on top of the
+                                 # built-in utm_* prefix deny, see
+                                 # strip_denied_query_params below)
 """
 import os
 import re
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import yaml
 
@@ -45,17 +52,27 @@ _DEFAULT_EXTENSIONS = {
     'values': ['html', 'htm', 'php', 'asp', 'aspx', 'shtml', 'cfm', 'cgi'],
 }
 
+# Always-stripped query-param name prefixes, regardless of site config - GA/GTM
+# style campaign tags (utm_source/utm_medium/utm_campaign/utm_term/utm_content
+# and any future utm_* variant) are never meaningfully distinct content on any
+# site this crawler targets, so denying them globally is safe in a way an
+# allow-list covering every site's legitimate params (e.g. this same
+# mechanism's ?issue_filter= on trumpwhitehouse) would not be.
+_DEFAULT_QUERY_PARAM_DENY_PREFIXES = ('utm_',)
+
 
 class ExclusionRules:
     """Loaded, merged rule set for one domain. Immutable once constructed."""
 
     def __init__(self, extensions=None, rules=None, nav_deny=None,
-                 pagination=None, query_params_allow=None):
+                 pagination=None, query_params_allow=None,
+                 query_params_deny=None):
         self.extensions = extensions or dict(_DEFAULT_EXTENSIONS)
         self.rules = rules or []
         self.nav_deny = nav_deny or []
         self.pagination = pagination or []
         self.query_params_allow = query_params_allow or []
+        self.query_params_deny = query_params_deny or []
 
 
 def _rule_file_path(source_site):
@@ -83,6 +100,7 @@ def _rules_from_dict(data):
         nav_deny=list(data.get('nav_deny') or []),
         pagination=list(data.get('pagination') or []),
         query_params_allow=list(data.get('query_params_allow') or []),
+        query_params_deny=list(data.get('query_params_deny') or []),
     )
 
 
@@ -113,6 +131,7 @@ def load_rules(source_site, override_path=None, mode='append'):
             nav_deny=override.nav_deny or base.nav_deny,
             pagination=override.pagination or base.pagination,
             query_params_allow=override.query_params_allow or base.query_params_allow,
+            query_params_deny=override.query_params_deny or base.query_params_deny,
         )
     if mode == 'append':
         return ExclusionRules(
@@ -121,6 +140,7 @@ def load_rules(source_site, override_path=None, mode='append'):
             nav_deny=base.nav_deny + override.nav_deny,
             pagination=base.pagination + override.pagination,
             query_params_allow=base.query_params_allow + override.query_params_allow,
+            query_params_deny=base.query_params_deny + override.query_params_deny,
         )
     raise ValueError(f"mode must be 'append' or 'replace', got {mode!r}")
 
@@ -183,3 +203,27 @@ def pagination_patterns(rules):
 
 def allowed_query_params(rules):
     return set(rules.query_params_allow)
+
+
+def strip_denied_query_params(url, rules):
+    """Return url with any always-denied (utm_* prefix) or site-configured
+    query_params_deny param dropped, preserving every other param and its
+    original order.
+
+    Applied to a link's URL before it's followed/requested (NavHarvesterMixin,
+    UrlFileSpiderMixin) so a tracking-decorated URL and its bare canonical
+    form collapse to the same request/dupefilter fingerprint, instead of
+    relying on a match_exclude rule to reject the decorated variant after
+    the fact - which only works if the bare URL is independently reachable
+    some other way (it wasn't, for a handful of trumpwhitehouse pages only
+    ever linked from an email-campaign URL).
+    """
+    deny_names = set(rules.query_params_deny)
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    kept = [
+        (k, v) for k, v in parse_qsl(parts.query)
+        if k not in deny_names and not k.startswith(_DEFAULT_QUERY_PARAM_DENY_PREFIXES)
+    ]
+    return urlunsplit(parts._replace(query=urlencode(kept)))

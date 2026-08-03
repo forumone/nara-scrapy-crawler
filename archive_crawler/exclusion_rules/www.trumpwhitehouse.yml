@@ -11,12 +11,17 @@ extensions:
   mode: allow
   values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
 
-rules:
-  # Every article's "copy URL to clipboard" share button links back to
-  # itself with a tracking param appended - byte-identical duplicate content
-  # at a second URL. Confirmed live on /briefings-statements/ articles.
-  - match: regex
-    pattern: '\?utm_source='
-    reason: "duplicate_utm_tracking_param"
+# Every article's "copy URL to clipboard" share button links back to itself
+# with a utm_* tracking param appended (?utm_source=link, or
+# ?utm_source=ods&utm_medium=email&utm_campaign=... on email-distributed
+# links). Previously handled here as a `rules:` exclusion
+# (duplicate_utm_tracking_param), which rejected the decorated URL outright
+# and relied on its bare form being independently reachable some other way -
+# it wasn't, for 6 pages only ever linked from an email-campaign URL, so
+# those pages were silently missing from the scrape entirely. Now handled
+# generically by NavHarvesterMixin stripping any utm_*-prefixed query param
+# before a link is followed (exclusion_rules.strip_denied_query_params), so
+# the tracking-decorated URL collapses onto the same request as its bare
+# canonical form instead of being excluded - no rules: entry needed.
 
 nav_deny: []
