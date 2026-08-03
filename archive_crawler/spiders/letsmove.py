@@ -59,7 +59,7 @@ class LetsMoveSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         'DEPTH_LIMIT': 200,
         'CRAWLSPIDER_FOLLOW_LINKS': False,
         'FEEDS': {
-            'data/letsmove.obamawhitehouse/letsmove.obamawhitehouse_harvest-full.csv': {
+            'data/letsmove.obamawhitehouse/letsmove.obamawhitehouse_harvest.csv': {
                 'format': 'csv',
                 'overwrite': True,
                 'item_classes': [HarvestItem],

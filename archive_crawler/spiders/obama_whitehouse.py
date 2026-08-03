@@ -82,7 +82,7 @@ class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         'DEPTH_LIMIT': 1300,
         'CRAWLSPIDER_FOLLOW_LINKS': False,
         'FEEDS': {
-            'data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv': {
+            'data/www.obamawhitehouse/www.obamawhitehouse_harvest.csv': {
                 'format': 'csv',
                 'overwrite': True,
                 'item_classes': [HarvestItem],

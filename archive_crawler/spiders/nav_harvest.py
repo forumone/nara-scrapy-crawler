@@ -1,4 +1,3 @@
-import csv
 import hashlib
 import re
 
@@ -20,8 +19,8 @@ _VIEW_DISPLAY_ID_RE = re.compile(r'^view-display-id-(.+)$')
 class NavHarvesterMixin(ExclusionLoggingMixin):
     r"""Mixin for CrawlSpider-based nav harvesters.
 
-    Provides listing-file exclusion, web-page URL filtering, and a parse_nav
-    callback. Subclasses supply name, allowed_domains, start_urls, and rules.
+    Provides web-page URL filtering and a parse_nav callback. Subclasses
+    supply name, allowed_domains, start_urls, and rules.
 
     See HARVESTING.md for the full end-to-end process this mixin fits into,
     and ARCHITECTURE.md for the full listing-fingerprint mechanism design
@@ -29,16 +28,10 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     together), its known limitations, and the decision rule for whether to
     enable it on a given site.
 
-    listing_file is required
-    ------------------------
-    Every nav harvester must be given a dedup set of already-known content
-    URLs via -a listing_file=<path> (a CSV with a url column; an empty file -
-    header row only - is fine on a first run). A URL in that file is treated
-    as already-known good content, so the nav crawler must not re-fetch,
-    re-emit, or re-follow it.
-
-    If a site is simple enough that a listing_file is unnecessary, it does
-    not need this mixin at all — use generic_crawl_harvest instead.
+    Every crawl starts fresh - there is no dedup against a prior run's
+    output. A recrawl re-fetches, re-scrapes, and re-emits every URL the
+    site currently exposes; the new output CSV is treated as fully
+    superseding the old one, not merged with it.
 
     Subclass contract
     ------------------
@@ -63,14 +56,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
       pagination page's href, or None on the last page.
 
     Usage:
-        # listing_file is required even on a first run - point it at an
-        # empty CSV (header row only) when there's no prior harvest to seed
-        # it with:
-        #   echo "url" > data/mysite_empty-listing.csv
-        #
-        #   scrapy crawl mysite_harvest \
-        #       -a listing_file=data/mysite_empty-listing.csv \
-        #       -o data/mysite/mysite_harvest-full.csv
+        #   scrapy crawl mysite_harvest -o data/mysite/mysite_harvest.csv
 
         class MySiteHarvestSpider(NavHarvesterMixin, CrawlSpider):
             name = "mysite_harvest"
@@ -139,17 +125,8 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     # harvest-only.
     _scrape_item = None
 
-    def __init__(self, listing_file=None, *args, **kwargs):
-        if not listing_file:
-            raise ValueError(
-                "listing_file is required. On a first run, point it at an empty "
-                "CSV (header row only): -a listing_file=data/mysite_empty-listing.csv"
-            )
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._listing_urls = set()
-        with open(listing_file, newline='', encoding='utf-8-sig') as f:
-            for row in csv.DictReader(f):
-                self._listing_urls.add(row['url'])
         # In-memory only, built up over one crawl run - see "Subclass
         # contract" above.
         self._seen_listing_fingerprints = set()
@@ -203,11 +180,9 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         ExclusionLoggingMixin) so a shortfall in final harvest counts can be
         checked against what was deliberately excluded here, rather than
         left indistinguishable from a link the crawl simply never found.
-        Scoped to rules:/nav_deny matches only - not _is_already_known_url's
-        listing_file skip (a different mechanism entirely, not an
-        exclusion-rule match) and not _filter_web_urls' non-web-URL
-        filtering (mailto:/external links etc. - high volume, not useful
-        signal for this diagnostic).
+        Scoped to rules:/nav_deny matches only - not _filter_web_urls'
+        non-web-URL filtering (mailto:/external links etc. - high volume,
+        not useful signal for this diagnostic).
         """
         rules = self._get_exclusion_rules()
         patterns = _exclusion_rules_module.nav_deny_patterns(rules)
@@ -223,17 +198,6 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
                 continue
             kept.append(lnk)
         return kept
-
-    def _is_already_known_url(self, response):
-        """Return True if this URL should be skipped entirely because
-        listing_file already has it as known content.
-
-        Kept as an overridable hook in case a subclass ever needs a
-        genuinely different skip condition, but do not add CSS-based
-        listing detection here - use LISTING_VIEW_LINK_EXTRACTOR (flag,
-        don't exclude) instead. See "listing_file is required" above.
-        """
-        return response.url in self._listing_urls
 
     @staticmethod
     def _listing_fingerprint(view_urls):
@@ -275,11 +239,6 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
 
     def parse_nav(self, response):
         """Yield the URL and follow links if this is a nav content page.
-
-        Pages in listing_file (already known listing URLs) are dropped
-        entirely — no item yielded and no links followed. This prevents the
-        spider from fanning out into known listing sections and their
-        thousands of content URLs.
 
         Delegates to three phases, in order, each doing one part of what
         used to be a single ~70-line function - see ARCHITECTURE.md for the
@@ -326,8 +285,6 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         HTML-parsed root for both.
         """
         if not _exclusion_rules_module.is_web_url(response.url, self._get_exclusion_rules()):
-            return
-        if self._is_already_known_url(response):
             return
         if not isinstance(response, scrapy.http.TextResponse):
             self._log_exclusion(response.url, 'non_text_response')
@@ -444,10 +401,10 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
 
     # CrawlSpider routes each start_urls response through parse_start_url
     # instead of the Rule's callback, so without this override a listing
-    # page placed directly in start_urls would bypass _is_already_known_url
-    # and LISTING_VIEW_LINK_EXTRACTOR entirely on its first fetch - fanning
-    # out into its full item/pager range unfiltered. Delegating unifies the
-    # two entry points onto identical logic.
+    # page placed directly in start_urls would bypass LISTING_VIEW_LINK_EXTRACTOR
+    # entirely on its first fetch - fanning out into its full item/pager
+    # range unfiltered. Delegating unifies the two entry points onto
+    # identical logic.
     parse_start_url = parse_nav
 
     def _listing_pagination_items(self, container):

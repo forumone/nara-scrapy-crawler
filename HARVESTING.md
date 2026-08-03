@@ -33,7 +33,7 @@ writes a harvest CSV — one `url` column, one row per content page — without
 fetching any content pages itself. Used by all of Clinton (CW1–6), Biden, and GWBush.
 
 Output is automatic, derived from `source_site`: the harvest CSV goes to
-`data/example/example_harvest-full.csv`, and any dropped non-web-extension
+`data/example/example_harvest.csv`, and any dropped non-web-extension
 URLs go to `data/example/example_harvest-dropped.csv` (only written if at
 least one URL was actually dropped). This is the one spider in the project
 where `-O`/`-o` don't control output at all — pass `-a harvest_file=<path>`
@@ -175,7 +175,7 @@ class MySiteSpider(NavHarvesterMixin, CrawlSpider):
     # exists on the class.
     custom_settings = {
         'FEEDS': {
-            'data/mysite/mysite_harvest-full.csv': {
+            'data/mysite/mysite_harvest.csv': {
                 'format': 'csv',
                 'overwrite': True,
                 'item_classes': [HarvestItem],
@@ -224,15 +224,10 @@ mixin's dict entirely rather than merging with it — keep
 built-in link-following silently re-enables for that spider (see the comment
 on `NavHarvesterMixin.custom_settings` in `nav_harvest.py` for why).
 
-`listing_file` is still a required argument (`NavHarvesterMixin.__init__`
-raises without it) — on a first run there's no prior harvest to seed it
-with, so point it at an empty CSV (header row only):
+Every crawl starts fresh — there's no listing/dedup file to seed:
 
 ```
-echo "url" > data/mysite/mysite_empty-listing.csv
-
 scrapy crawl mysite \
-    -a listing_file=data/mysite/mysite_empty-listing.csv \
     -s DEPTH_LIMIT=10 \
     -s DEPTH_PRIORITY=1 \
     -s SCHEDULER_DISK_QUEUE=scrapy.squeues.PickleFifoDiskQueue \
@@ -329,7 +324,7 @@ class MySiteSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         # matching schema, since both a harvest row and a content row can
         # come from the same page.
         'FEEDS': {
-            'data/mysite/mysite_harvest-full.csv': {
+            'data/mysite/mysite_harvest.csv': {
                 'format': 'csv', 'overwrite': True,
                 'item_classes': [HarvestItem],
                 'fields': ['url', 'is_listing', 'depth'],
@@ -368,13 +363,12 @@ class MySiteSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         return item
 ```
 
-Run it — same `listing_file` invocation as step 2, no `-O` needed since
+Run it — same invocation as step 2, no `-O` needed since
 `custom_settings['FEEDS']` defines both output paths directly (a cmdline
 `-O`/`-o` would override that whole dict rather than adding to it):
 
 ```
-scrapy crawl mysite \
-    -a listing_file=data/mysite/mysite_empty-listing.csv
+scrapy crawl mysite
 ```
 
 A bare invocation like this always includes content extraction, once
@@ -449,7 +443,7 @@ with site-specific selectors, same as any other new site's scraper.
 | File | Spider name |
 |---|---|
 | `<site>.py` | `<site>` |
-| Output CSVs | `data/<site>/<site>_harvest-full.csv`, `data/<site>/<site>.csv` (two `FEEDS` from one run) |
+| Output CSVs | `data/<site>/<site>_harvest.csv`, `data/<site>/<site>.csv` (two `FEEDS` from one run) |
 
 One file, one class, one crawl (step 2's discovery-only version and step
 4's content-extracting version are the same file, not two).

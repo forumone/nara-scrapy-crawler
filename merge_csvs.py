@@ -16,7 +16,7 @@ only the row from the first file listing it is kept.
 
 Usage:
     python merge_csvs.py \\
-        -o data/www.obamawhitehouse/www.obamawhitehouse_harvest-full.csv \\
+        -o data/www.obamawhitehouse/www.obamawhitehouse_harvest.csv \\
         data/www.obamawhitehouse/www.obamawhitehouse_harvest-listing.csv \\
         data/www.obamawhitehouse/www.obamawhitehouse_harvest-nav.csv
 """

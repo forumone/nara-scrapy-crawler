@@ -47,7 +47,7 @@ if [ -z "$TARGET_URL" ] || [ -z "$SITE_ID" ]; then
     exit 1
 fi
 
-HARVEST_FILE="data/${SITE_ID}/${SITE_ID}_harvest-full.csv"
+HARVEST_FILE="data/${SITE_ID}/${SITE_ID}_harvest.csv"
 OUTPUT_FILE="data/${SITE_ID}/${SITE_ID}.csv"
 
 echo "Phase 1: Harvesting URLs from $TARGET_URL"

@@ -22,7 +22,7 @@ class SitemapHarvestSpider(scrapy.Spider):
             -a source_site=example
 
     Output is automatic, derived from source_site: harvest_file defaults to
-    data/<source_site>/<source_site>_harvest-full.csv, and dropped_file
+    data/<source_site>/<source_site>_harvest.csv, and dropped_file
     (non-web-extension URLs, only written if at least one was dropped)
     defaults to data/<source_site>/<source_site>_harvest-dropped.csv. Pass
     -a harvest_file=<path> and/or -a dropped_file=<path> to override either
@@ -80,13 +80,13 @@ class SitemapHarvestSpider(scrapy.Spider):
         self._seen = set()
         self._harvested = []
         self._harvest_file = harvest_file or (
-            os.path.join('data', source_site, f'{source_site}_harvest-full.csv')
+            os.path.join('data', source_site, f'{source_site}_harvest.csv')
             if source_site else None
         )
         if not self._harvest_file:
             raise ValueError(
                 "harvest_file is required when source_site is not given: "
-                "-a harvest_file=data/example/example_harvest-full.csv "
+                "-a harvest_file=data/example/example_harvest.csv "
                 "(or pass -a source_site=<name> to derive it automatically)"
             )
         self._dropped_file = dropped_file or (

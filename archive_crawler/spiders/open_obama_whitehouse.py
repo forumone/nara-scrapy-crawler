@@ -48,7 +48,7 @@ class OpenSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         'REDIRECT_ENABLED': True,
         'CRAWLSPIDER_FOLLOW_LINKS': False,
         'FEEDS': {
-            'data/open.obamawhitehouse/open.obamawhitehouse_harvest-full.csv': {
+            'data/open.obamawhitehouse/open.obamawhitehouse_harvest.csv': {
                 'format': 'csv',
                 'overwrite': True,
                 'item_classes': [HarvestItem],

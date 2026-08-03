@@ -6,7 +6,7 @@ count and groups by path prefix at a configurable depth.
 
 Usage:
     python audit_url_gaps.py \
-        --harvest data/www.georgewbush-whitehouse/georgewbush-whitehouse_harvest-full.csv \
+        --harvest data/www.georgewbush-whitehouse/georgewbush-whitehouse_harvest.csv \
         --output  data/www.georgewbush-whitehouse/www.georgewbush-whitehouse.csv \
         [--depth 3] [--top 30] [--source-site "GW Bush"]
 

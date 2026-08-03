@@ -506,7 +506,7 @@ class UrlFileSpiderMixin(ArchiveSpiderMixin):
         if not url_file:
             raise ValueError(
                 "url_file argument is required: "
-                f"-a url_file=data/{self.SOURCE_SITE}/{self.SOURCE_SITE}_harvest-full.csv"
+                f"-a url_file=data/{self.SOURCE_SITE}/{self.SOURCE_SITE}_harvest.csv"
             )
         rules = self._get_exclusion_rules()
         with open(url_file, newline='', encoding='utf-8-sig') as f:
