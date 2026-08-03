@@ -276,6 +276,20 @@ scrapy crawl georgewbush_whitehouse \
   -a url_file=data/www.georgewbush-whitehouse/georgewbush-whitehouse_harvest.csv
 ```
 
+To launch on the remote server itself, SSH in and background the crawl with `nohup`/`disown` so it survives disconnect, pointing `--logfile` at a path under that site's `data/{site}/` directory to monitor progress:
+
+```bash
+ssh user@example-remote-host \
+  "cd /home/scrapy/nara-scrapy-crawler && \
+   nohup scrapy crawl obama_whitehouse \
+     -s DOWNLOAD_DELAY=0.12 \
+     -s CONCURRENT_REQUESTS_PER_DOMAIN=10 \
+     --logfile=data/www.obamawhitehouse/obama_whitehouse-20261231.log \
+     > /dev/null 2>&1 & disown"
+```
+
+Launch only one crawl per SSH invocation — chaining several backgrounded launches together in a single call is unreliable and can silently drop some of them. The SSH command itself may hang past a client-side timeout until the entire remote process tree (including the disowned job) exits; that's expected, not a stuck connection, and its eventual return is a reliable signal the crawl actually finished.
+
 Before raising throttling further, check the target domain's `robots.txt` for a `Crawl-delay` directive — `ROBOTSTXT_OBEY = False` means Scrapy won't enforce it automatically, so it's easy to run faster than the site operator has asked for without noticing.
 
 `settings.py` also sets `MEMUSAGE_LIMIT_MB=8192` (matching `run_crawl.sh`'s default, on the assumption these run on a resource-rich remote server): if a crawl's memory footprint exceeds that (e.g. a crawler trap on a faceted-search or listing-heavy site generates unbounded unique URLs), Scrapy closes the spider gracefully and flushes the feed export, rather than the OS OOM-killing the process and losing all buffered output. Override with `-s MEMUSAGE_LIMIT_MB=N`, or via `run_crawl.sh --memory-limit=N`. `run_crawl_interactive.sh` — intended for local dev testing — prompts with half that default (4096).
