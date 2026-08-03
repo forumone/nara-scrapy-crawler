@@ -25,8 +25,8 @@ ROBOTSTXT_OBEY = False
 
 # Concurrency and throttling settings
 #CONCURRENT_REQUESTS = 16
-CONCURRENT_REQUESTS_PER_DOMAIN = 1
-DOWNLOAD_DELAY = 1
+CONCURRENT_REQUESTS_PER_DOMAIN = 4
+DOWNLOAD_DELAY = 0.25
 
 # Memory safety net: crawler traps (e.g. faceted-search sites generating
 # unbounded unique URLs) can grow the scheduler/dupefilter until the OS
