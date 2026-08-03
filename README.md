@@ -4,6 +4,8 @@ This project is a containerized **Scrapy** crawler designed to run on **AWS Batc
 
 It is designed to crawl static/archived websites, normalize the data into a strict schema, and output JSON files to **Amazon S3**. An S3 Event Trigger then handles ingestion into **AWS OpenSearch**.
 
+> New to this repo? See [QUICKSTART.md](QUICKSTART.md) to validate your local setup with two of the simplest crawlers before reading further.
+
 ## 🏗 Architecture
 
 **Drupal (Admin)** ➔ **AWS SQS** ➔ **AWS Batch (This Repo)** ➔ **S3 Bucket** ➔ **Lambda** ➔ **OpenSearch**
