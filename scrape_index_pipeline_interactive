@@ -8,6 +8,7 @@ the equivalent command before exec-ing the real script.
 import os
 import sys
 
+from archive_crawler import settings as archive_settings
 from archive_crawler.pipeline import registry
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -45,9 +46,9 @@ def prompt_path(label, default):
     return input(f"{label} [default: {default}]: ").strip() or None
 
 
-def prompt_float_range(label, lo, hi):
+def prompt_float_range(label, lo, hi, default):
     while True:
-        raw = input(f"{label} [{lo}-{hi}] (blank for default): ").strip()
+        raw = input(f"{label} [{lo}-{hi}, default: {default}]: ").strip()
         if not raw:
             return None
         try:
@@ -60,9 +61,9 @@ def prompt_float_range(label, lo, hi):
         print(f"  Must be between {lo} and {hi}.")
 
 
-def prompt_int_range(label, lo, hi):
+def prompt_int_range(label, lo, hi, default):
     while True:
-        raw = input(f"{label} [{lo}-{hi}] (blank for default): ").strip()
+        raw = input(f"{label} [{lo}-{hi}, default: {default}]: ").strip()
         if not raw:
             return None
         if raw.lstrip('-').isdigit() and lo <= int(raw) <= hi:
@@ -94,10 +95,14 @@ def main():
             cmd += ['--jsonl', jsonl_path]
 
     if mode in ('crawl', 'crawl-and-index'):
-        download_delay = prompt_float_range("Download delay (seconds)", 0.1, 2)
+        download_delay = prompt_float_range(
+            "Download delay (seconds)", 0.1, 2, archive_settings.DOWNLOAD_DELAY,
+        )
         if download_delay is not None:
             cmd += ['--download-delay', str(download_delay)]
-        concurrency = prompt_int_range("Concurrent requests per domain", 1, 20)
+        concurrency = prompt_int_range(
+            "Concurrent requests per domain", 1, 20, archive_settings.CONCURRENT_REQUESTS_PER_DOMAIN,
+        )
         if concurrency is not None:
             cmd += ['--concurrent-requests-per-domain', str(concurrency)]
 
