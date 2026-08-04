@@ -13,16 +13,15 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def prompt_site():
-    sites = registry.list_sites()
-    names = sorted(info.spider_name for info in sites.values())
-    print("Known sites:", ', '.join(names))
+    sites = sorted(registry.list_sites().values(), key=lambda info: info.spider_name)
+    print("Known sites:")
+    for i, info in enumerate(sites, start=1):
+        print(f"  {i}. {info.spider_name}")
     while True:
-        site = input("Site (spider name or source_site): ").strip()
-        try:
-            registry.resolve(site)
-            return site
-        except registry.UnknownSiteError as e:
-            print(f"  {e}")
+        choice = input(f"Select a site [1-{len(sites)}]: ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(sites):
+            return sites[int(choice) - 1].spider_name
+        print(f"  Enter a number between 1 and {len(sites)}.")
 
 
 def prompt_mode():
