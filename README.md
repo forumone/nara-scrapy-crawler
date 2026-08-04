@@ -448,6 +448,31 @@ wired up) an OpenSearch push. Three subcommands:
 (`data/8-03/`), re-invoking a crawl is the exception, not the default
 action. Run from the repo root — relative `data/` paths assume that `cwd`.
 
+### Overrides
+
+- `index --csv <path>` — read a different CSV than the site's own
+  `data/<site>/<site>.csv` (e.g. a test file, or an arbitrary location).
+  `index`-only: `crawl`/`crawl-and-index` never accept a CSV path
+  override, since that would mean passing `-O` to the spider, which
+  silently corrupts output on every one of these spiders (all 14 have a
+  two-entry `FEEDS`) — see ARCHITECTURE.md's "Never pass `-O`/`-o` to a
+  multi-`FEEDS`-entry spider". The crawl step always writes to its
+  default path; only the *converted JSONL* is redirectable afterward.
+- `index`/`crawl-and-index --jsonl <path>` — write the converted JSONL
+  somewhere other than alongside the CSV (default: same directory, same
+  basename, `.jsonl` extension). Pure file I/O on our own output, not a
+  Scrapy setting, so always safe to redirect.
+- `crawl`/`crawl-and-index --download-delay <seconds>` (0.1–2) and
+  `--concurrent-requests-per-domain <N>` (1–20) — override
+  `settings.py`'s defaults (0.25s / 4) for that one run, same as passing
+  `-s DOWNLOAD_DELAY=`/`-s CONCURRENT_REQUESTS_PER_DOMAIN=` directly to
+  `scrapy crawl`. See "Recommended run settings" above for what values
+  make sense at different concurrent-crawl counts.
+- `--csv`/`--jsonl` cannot be combined with `--all` — a single path can't
+  apply to 14 different sites in one invocation. `--download-delay`/
+  `--concurrent-requests-per-domain` *can* be combined with `--all` — the
+  same throttle value applies uniformly across every site in the loop.
+
 `scrape_index_pipeline_interactive` prompts for site and mode instead of
 requiring them as CLI args, then confirms and execs the equivalent
 `scrape_index_pipeline` command — same division of labor as the old

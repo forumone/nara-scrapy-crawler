@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Interactive wrapper around scrape_index_pipeline - prompts for site and
-mode instead of requiring them as CLI args, same division of labor as
-run_crawl_interactive.sh -> run_crawl.sh: no pipeline logic is duplicated
-here, this only builds, shows, and confirms the equivalent command before
-exec-ing the real script.
+"""Interactive wrapper around scrape_index_pipeline - prompts for site,
+mode, and any relevant overrides instead of requiring them as CLI args,
+same division of labor as run_crawl_interactive.sh -> run_crawl.sh: no
+pipeline logic is duplicated here, this only builds, shows, and confirms
+the equivalent command before exec-ing the real script.
 """
 import os
 
@@ -40,10 +40,57 @@ def prompt_mode():
         print("  Enter 1, 2, or 3.")
 
 
+def prompt_path(label):
+    return input(f"{label} (blank for default): ").strip() or None
+
+
+def prompt_float_range(label, lo, hi):
+    while True:
+        raw = input(f"{label} [{lo}-{hi}] (blank for default): ").strip()
+        if not raw:
+            return None
+        try:
+            value = float(raw)
+        except ValueError:
+            print(f"  Enter a number between {lo} and {hi}, or leave blank.")
+            continue
+        if lo <= value <= hi:
+            return value
+        print(f"  Must be between {lo} and {hi}.")
+
+
+def prompt_int_range(label, lo, hi):
+    while True:
+        raw = input(f"{label} [{lo}-{hi}] (blank for default): ").strip()
+        if not raw:
+            return None
+        if raw.lstrip('-').isdigit() and lo <= int(raw) <= hi:
+            return int(raw)
+        print(f"  Enter a whole number between {lo} and {hi}, or leave blank.")
+
+
 def main():
     site = prompt_site()
     mode = prompt_mode()
     cmd = [os.path.join(SCRIPT_DIR, 'scrape_index_pipeline'), mode, site]
+
+    if mode == 'index':
+        csv_path = prompt_path("CSV path to read")
+        if csv_path:
+            cmd += ['--csv', csv_path]
+
+    if mode in ('index', 'crawl-and-index'):
+        jsonl_path = prompt_path("JSONL output path")
+        if jsonl_path:
+            cmd += ['--jsonl', jsonl_path]
+
+    if mode in ('crawl', 'crawl-and-index'):
+        download_delay = prompt_float_range("Download delay (seconds)", 0.1, 2)
+        if download_delay is not None:
+            cmd += ['--download-delay', str(download_delay)]
+        concurrency = prompt_int_range("Concurrent requests per domain", 1, 20)
+        if concurrency is not None:
+            cmd += ['--concurrent-requests-per-domain', str(concurrency)]
 
     print(f"\nCommand: {' '.join(cmd)}\n")
     confirm = input("Proceed? [y/N]: ").strip().lower()

@@ -4,15 +4,22 @@ OpenSearch - see README.md's "Indexing pipeline" section and NAD2-756's
 pipeline plan for the full shape.
 
 Usage:
-    ./scrape_index_pipeline index <site>             # validate/filter/convert/push an existing CSV
-    ./scrape_index_pipeline index --all              # same, for every registered site
-    ./scrape_index_pipeline crawl <site>             # scrapy crawl <site>, nothing else
+    ./scrape_index_pipeline index <site> [--csv PATH] [--jsonl PATH]
+    ./scrape_index_pipeline index --all
+    ./scrape_index_pipeline crawl <site> [--download-delay N] [--concurrent-requests-per-domain N]
     ./scrape_index_pipeline crawl --all
-    ./scrape_index_pipeline crawl-and-index <site>   # crawl, then everything index does
+    ./scrape_index_pipeline crawl-and-index <site> [--jsonl PATH] [--download-delay N] [--concurrent-requests-per-domain N]
     ./scrape_index_pipeline crawl-and-index --all
 
 <site> is either a spider name (e.g. bidenwhitehouse) or a source_site
 (e.g. www.bidenwhitehouse) - see archive_crawler/pipeline/registry.py.
+
+--csv/--jsonl override where a file is read from/written to; neither can
+be combined with --all (one path can't apply to every site). --csv is
+index-only: crawl and crawl-and-index never accept a CSV path override,
+since that would mean passing -O to the spider, which silently corrupts
+output on every one of these spiders - see ARCHITECTURE.md's "Never pass
+-O/-o to a multi-FEEDS-entry spider".
 
 Run from the repo root, matching every other entry point in this project
 (scrapy crawl) - relative data/ paths assume that cwd.
@@ -28,6 +35,26 @@ from archive_crawler.pipeline import convert, filter_rows, reconcile, registry, 
 logger = logging.getLogger(__name__)
 
 
+def _download_delay_type(value):
+    try:
+        parsed = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a number")
+    if not (0.1 <= parsed <= 2):
+        raise argparse.ArgumentTypeError(f"must be between 0.1 and 2, got {parsed}")
+    return parsed
+
+
+def _concurrency_type(value):
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not an integer")
+    if not (1 <= parsed <= 20):
+        raise argparse.ArgumentTypeError(f"must be between 1 and 20, got {parsed}")
+    return parsed
+
+
 def _read_rows(csv_path):
     # A page's full_text can exceed Python's default 128KB per-field cap
     # (GWBush's largest pages are well past it) - raised globally, once,
@@ -37,11 +64,12 @@ def _read_rows(csv_path):
         return list(csv.DictReader(f))
 
 
-def _index(site_info):
+def _index(site_info, jsonl_path=None):
     rows = _read_rows(site_info.csv_path)
     validate.validate_rows(rows)
     kept, dropped = filter_rows.filter_rows(rows, site_info.source_site)
-    jsonl_path = site_info.csv_path.rsplit('.', 1)[0] + '.jsonl'
+    if jsonl_path is None:
+        jsonl_path = site_info.csv_path.rsplit('.', 1)[0] + '.jsonl'
     count = convert.rows_to_jsonl(kept, jsonl_path)
     logger.info(
         "%s: %d row(s) read, %d dropped by warnings filter, %d converted",
@@ -50,7 +78,7 @@ def _index(site_info):
     reconcile.push(site_info.source_site, jsonl_path, count)
 
 
-def _crawl(site_info):
+def _crawl(site_info, download_delay=None, concurrent_requests_per_domain=None):
     # No -O: every content spider already writes data/<site>/<site>.csv on
     # its own via custom_settings['FEEDS'] (see README's "CSV Naming
     # Convention"). Passing -O here would REPLACE that FEEDS setting
@@ -59,16 +87,35 @@ def _crawl(site_info):
     # trump_petitions/trumpwhitehouse) that setting has two entries
     # (HarvestItem + ArchiveItem, each with its own item_classes/fields
     # filter), and collapsing them loses the real content rows entirely.
+    # DOWNLOAD_DELAY/CONCURRENT_REQUESTS_PER_DOMAIN are ordinary scalar
+    # settings unrelated to FEEDS - safe to override via -s.
     logger.info("Crawling %s -> %s", site_info.spider_name, site_info.csv_path)
-    subprocess.run(['scrapy', 'crawl', site_info.spider_name], check=True)
+    cmd = ['scrapy', 'crawl', site_info.spider_name]
+    if download_delay is not None:
+        cmd += ['-s', f'DOWNLOAD_DELAY={download_delay}']
+    if concurrent_requests_per_domain is not None:
+        cmd += ['-s', f'CONCURRENT_REQUESTS_PER_DOMAIN={concurrent_requests_per_domain}']
+    subprocess.run(cmd, check=True)
 
 
-def _crawl_and_index(site_info):
-    _crawl(site_info)
-    _index(site_info)
+def _crawl_and_index(site_info, jsonl_path=None, download_delay=None, concurrent_requests_per_domain=None):
+    _crawl(site_info, download_delay=download_delay, concurrent_requests_per_domain=concurrent_requests_per_domain)
+    _index(site_info, jsonl_path=jsonl_path)
 
 
 _ACTIONS = {'index': _index, 'crawl': _crawl, 'crawl-and-index': _crawl_and_index}
+
+
+def _build_kwargs(args):
+    kwargs = {}
+    if args.mode in ('index', 'crawl-and-index') and getattr(args, 'jsonl', None):
+        kwargs['jsonl_path'] = args.jsonl
+    if args.mode in ('crawl', 'crawl-and-index'):
+        if args.download_delay is not None:
+            kwargs['download_delay'] = args.download_delay
+        if args.concurrent_requests_per_domain is not None:
+            kwargs['concurrent_requests_per_domain'] = args.concurrent_requests_per_domain
+    return kwargs
 
 
 def main():
@@ -83,14 +130,21 @@ def main():
     index_p = sub.add_parser('index', help='Run an existing CSV through validate/filter/convert/reconcile, no crawl')
     index_p.add_argument('site', nargs='?', help='Spider name or source_site (omit with --all)')
     index_p.add_argument('--all', action='store_true', help='Run against every registered site')
+    index_p.add_argument('--csv', metavar='PATH', help="Override which CSV to read (default: the site's own data/<site>/<site>.csv)")
+    index_p.add_argument('--jsonl', metavar='PATH', help='Override where the converted JSONL is written (default: alongside the CSV, same basename)')
 
     crawl_p = sub.add_parser('crawl', help='Run the spider - scrapy crawl <site>, nothing else')
     crawl_p.add_argument('site', nargs='?')
     crawl_p.add_argument('--all', action='store_true')
+    crawl_p.add_argument('--download-delay', type=_download_delay_type, metavar='SECONDS', help="Override DOWNLOAD_DELAY, 0.1-2 (default: settings.py's 0.25)")
+    crawl_p.add_argument('--concurrent-requests-per-domain', type=_concurrency_type, metavar='N', help="Override CONCURRENT_REQUESTS_PER_DOMAIN, 1-20 (default: settings.py's 4)")
 
     crawl_and_index_p = sub.add_parser('crawl-and-index', help='Run the spider, then do everything index does')
     crawl_and_index_p.add_argument('site', nargs='?')
     crawl_and_index_p.add_argument('--all', action='store_true')
+    crawl_and_index_p.add_argument('--jsonl', metavar='PATH', help='Override where the converted JSONL is written (default: alongside the CSV, same basename)')
+    crawl_and_index_p.add_argument('--download-delay', type=_download_delay_type, metavar='SECONDS', help="Override DOWNLOAD_DELAY, 0.1-2 (default: settings.py's 0.25)")
+    crawl_and_index_p.add_argument('--concurrent-requests-per-domain', type=_concurrency_type, metavar='N', help="Override CONCURRENT_REQUESTS_PER_DOMAIN, 1-20 (default: settings.py's 4)")
 
     args = parser.parse_args()
 
@@ -98,17 +152,23 @@ def main():
         parser.error('either a site argument or --all is required')
     if args.all and args.site:
         parser.error('pass either a site argument or --all, not both')
+    if args.all and (getattr(args, 'csv', None) or getattr(args, 'jsonl', None)):
+        parser.error('--csv/--jsonl cannot be combined with --all - one path cannot apply to every site')
 
     logging.basicConfig(level=logging.INFO, format='%(message)s')
 
     action = _ACTIONS[args.mode]
+    kwargs = _build_kwargs(args)
 
     try:
         if args.all:
             for site_info in registry.list_sites().values():
-                action(site_info)
+                action(site_info, **kwargs)
         else:
-            action(registry.resolve(args.site))
+            site_info = registry.resolve(args.site)
+            if getattr(args, 'csv', None):
+                site_info = site_info._replace(csv_path=args.csv)
+            action(site_info, **kwargs)
     except (registry.UnknownSiteError, validate.ValidationError, filter_rows.UnknownSiteFilterError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
