@@ -160,14 +160,21 @@ class TrumpWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     # on its own site's markup (e.g. .nara-disclaimer never appears on the
     # main WordPress site), so sharing the list is harmless rather than
     # gating it per-hostname.
-    # .editor__module: main site's share-links sidebar + "All News" back-link.
+    # .editor__module--left: main site's share-links sidebar + "All News"
+    #   back-link modules (editor__module-share/editor__module-all, both
+    #   also carry --left). Deliberately NOT the blanket .editor__module -
+    #   the site's photo-gallery template (e.g. any /briefings-statements/
+    #   photo-*/photos-* page) wraps its own real captions in
+    #   .editor__module.editor__module--content, which a blanket strip here
+    #   would wipe out along with the sidebar, producing a false no_body
+    #   (confirmed live 2026-08-03 on the Cabinet Meeting photos page).
     # .visually-hidden: screen-reader-only labels, confirmed live on both the
     #   main site's microsites (a "heading" reading "Introduction") and
     #   crisisnextdoor (duplicate "WhiteHouse.gov" logo labels).
     # .nara-disclaimer / header nav / footer: coronavirus's NARA archival
     #   banner and site-chrome nav/footer links, not real content.
     EXTRA_STRIP_SELECTORS = (
-        '.editor__module', '.visually-hidden',
+        '.editor__module--left', '.visually-hidden',
         '.nara-disclaimer', 'header nav', 'footer',
     )
 
