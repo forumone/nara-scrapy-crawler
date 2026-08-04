@@ -8,6 +8,17 @@ the equivalent command before exec-ing the real script.
 import os
 import sys
 
+try:
+    # Unused directly - importing it is what hooks GNU readline into every
+    # input() call below, enabling arrow-key/Home/End/Ctrl+Left/Right line
+    # editing. Without this, a script's input() (unlike the interactive
+    # interpreter, which imports readline itself via site.py) prints raw
+    # escape sequences instead of moving the cursor. Not available on
+    # Windows without pyreadline3 - degrades to plain input() there.
+    import readline  # noqa: F401
+except ImportError:
+    pass
+
 from archive_crawler import settings as archive_settings
 from archive_crawler.pipeline import registry
 
