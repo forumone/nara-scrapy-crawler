@@ -33,7 +33,7 @@ per domain, structured as:
     query_params_allow:        # generic_crawl_harvest: query-string keep-list
       - page
 
-    query_params_deny:         # NavHarvesterMixin/UrlFileSpiderMixin: extra
+    query_params_deny:         # NavHarvesterMixin: extra
       - fbclid                  # per-site junk query params to strip before a
                                  # link is followed/requested (on top of the
                                  # built-in utm_* prefix deny, see
@@ -209,8 +209,8 @@ def strip_denied_query_params(url, rules):
     query_params_deny param dropped, preserving every other param and its
     original order.
 
-    Applied to a link's URL before it's followed/requested (NavHarvesterMixin,
-    UrlFileSpiderMixin) so a tracking-decorated URL and its bare canonical
+    Applied to a link's URL before it's followed/requested (NavHarvesterMixin)
+    so a tracking-decorated URL and its bare canonical
     form collapse to the same request/dupefilter fingerprint, instead of
     relying on a match_exclude rule to reject the decorated variant - which
     only works if the bare URL is also independently reachable some other

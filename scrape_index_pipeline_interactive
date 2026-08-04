@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Interactive wrapper around scrape_index_pipeline - prompts for site and
+mode instead of requiring them as CLI args, same division of labor as
+run_crawl_interactive.sh -> run_crawl.sh: no pipeline logic is duplicated
+here, this only builds, shows, and confirms the equivalent command before
+exec-ing the real script.
+"""
+import os
+
+from archive_crawler.pipeline import registry
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def prompt_site():
+    sites = registry.list_sites()
+    names = sorted(info.spider_name for info in sites.values())
+    print("Known sites:", ', '.join(names))
+    while True:
+        site = input("Site (spider name or source_site): ").strip()
+        try:
+            registry.resolve(site)
+            return site
+        except registry.UnknownSiteError as e:
+            print(f"  {e}")
+
+
+def prompt_mode():
+    while True:
+        mode = input("Mode [reindex/recrawl] (default: reindex): ").strip() or 'reindex'
+        if mode in ('reindex', 'recrawl'):
+            return mode
+        print("  Must be 'reindex' or 'recrawl'.")
+
+
+def main():
+    site = prompt_site()
+    mode = prompt_mode()
+    cmd = [os.path.join(SCRIPT_DIR, 'scrape_index_pipeline'), mode, site]
+
+    print(f"\nCommand: {' '.join(cmd)}\n")
+    confirm = input("Proceed? [y/N]: ").strip().lower()
+    if confirm != 'y':
+        print("Cancelled.")
+        return
+
+    os.execv(cmd[0], cmd)
+
+
+if __name__ == '__main__':
+    main()

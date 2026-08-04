@@ -23,15 +23,11 @@ Writes `data/open.obamawhitehouse/open.obamawhitehouse_harvest.csv` and
 
 ## clintonwhitehouse1
 
-Sitemap-based, two phases.
+Sitemap-based, one command — fetches the sitemap and scrapes every page in
+the same run.
 
 ```bash
-scrapy crawl sitemap_harvest \
-  -a sitemap_url=https://clintonwhitehouse1.archives.gov/sitemap.xml \
-  -a source_site=clintonwhitehouse1
-
-scrapy crawl clintonwhitehouse1 \
-  -a url_file=data/clintonwhitehouse1/clintonwhitehouse1_harvest.csv
+scrapy crawl clintonwhitehouse1
 ```
 
 Writes `data/clintonwhitehouse1/clintonwhitehouse1_harvest.csv` and

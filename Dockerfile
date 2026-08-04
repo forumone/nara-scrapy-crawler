@@ -14,9 +14,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the Scrapy project
 COPY . .
 
-# Make the launcher script executable
-RUN chmod +x run_crawl.sh
+# Make the pipeline entry point executable
+RUN chmod +x scrape_index_pipeline
 
 # Set the Entrypoint
-# When AWS Batch starts this container, it will run this script
-ENTRYPOINT ["./run_crawl.sh"]
+# When AWS Batch starts this container, it will run this script - the job
+# definition's command args supply the subcommand and site, e.g.
+# ["reindex", "clintonwhitehouse1"] or ["recrawl", "--all"].
+ENTRYPOINT ["./scrape_index_pipeline"]

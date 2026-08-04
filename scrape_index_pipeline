@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Validate, filter, convert, and reconcile a site's content CSV against
+OpenSearch - see README.md's "Indexing pipeline" section and NAD2-756's
+pipeline plan for the full shape.
+
+Usage:
+    ./scrape_index_pipeline reindex <site>   # validate/filter/convert/push an existing CSV
+    ./scrape_index_pipeline reindex --all    # same, for every registered site
+    ./scrape_index_pipeline recrawl <site>   # scrapy crawl <site>, then reindex
+    ./scrape_index_pipeline recrawl --all
+
+<site> is either a spider name (e.g. bidenwhitehouse) or a source_site
+(e.g. www.bidenwhitehouse) - see archive_crawler/pipeline/registry.py.
+
+Run from the repo root, matching every other entry point in this project
+(scrapy crawl) - relative data/ paths assume that cwd.
+"""
+import argparse
+import csv
+import logging
+import subprocess
+import sys
+
+from archive_crawler.pipeline import convert, filter_rows, reconcile, registry, validate
+
+logger = logging.getLogger(__name__)
+
+
+def _read_rows(csv_path):
+    # A page's full_text can exceed Python's default 128KB per-field cap
+    # (GWBush's largest pages are well past it) - raised globally, once,
+    # rather than per-call.
+    csv.field_size_limit(sys.maxsize)
+    with open(csv_path, newline='', encoding='utf-8-sig') as f:
+        return list(csv.DictReader(f))
+
+
+def _reindex(site_info):
+    rows = _read_rows(site_info.csv_path)
+    validate.validate_rows(rows)
+    kept, dropped = filter_rows.filter_rows(rows, site_info.source_site)
+    jsonl_path = site_info.csv_path.rsplit('.', 1)[0] + '.jsonl'
+    count = convert.rows_to_jsonl(kept, jsonl_path)
+    logger.info(
+        "%s: %d row(s) read, %d dropped by warnings filter, %d converted",
+        site_info.source_site, len(rows), len(dropped), count,
+    )
+    reconcile.push(site_info.source_site, jsonl_path, count)
+
+
+def _recrawl(site_info):
+    # No -O: every content spider already writes data/<site>/<site>.csv on
+    # its own via custom_settings['FEEDS'] (see README's "CSV Naming
+    # Convention"). Passing -O here would REPLACE that FEEDS setting
+    # wholesale with one undifferentiated feed - for every fused spider
+    # (all 8 sitemap-based sites, plus obama_whitehouse/letsmove/
+    # trump_petitions/trumpwhitehouse) that setting has two entries
+    # (HarvestItem + ArchiveItem, each with its own item_classes/fields
+    # filter), and collapsing them loses the real content rows entirely.
+    logger.info("Crawling %s -> %s", site_info.spider_name, site_info.csv_path)
+    subprocess.run(['scrapy', 'crawl', site_info.spider_name], check=True)
+    _reindex(site_info)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest='mode', required=True)
+
+    reindex_p = sub.add_parser('reindex', help='Run an existing CSV through validate/filter/convert/reconcile, no crawl')
+    reindex_p.add_argument('site', nargs='?', help='Spider name or source_site (omit with --all)')
+    reindex_p.add_argument('--all', action='store_true', help='Run against every registered site')
+
+    recrawl_p = sub.add_parser('recrawl', help='Run the spider first, then reindex')
+    recrawl_p.add_argument('site', nargs='?')
+    recrawl_p.add_argument('--all', action='store_true')
+
+    args = parser.parse_args()
+
+    if not args.all and not args.site:
+        parser.error('either a site argument or --all is required')
+    if args.all and args.site:
+        parser.error('pass either a site argument or --all, not both')
+
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+
+    action = _reindex if args.mode == 'reindex' else _recrawl
+
+    try:
+        if args.all:
+            for site_info in registry.list_sites().values():
+                action(site_info)
+        else:
+            action(registry.resolve(args.site))
+    except (registry.UnknownSiteError, validate.ValidationError, filter_rows.UnknownSiteFilterError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError as e:
+        print(f"Error: {e.filename} not found - has this site been crawled yet?", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

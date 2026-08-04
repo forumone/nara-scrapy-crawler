@@ -232,8 +232,8 @@ at different points and for different purposes:
 
 - `rules:` entries are checked by both the nav crawler
   (`NavHarvesterMixin._apply_nav_deny`) and the content spider
-  (`UrlFileSpiderMixin.start_requests`, for the sitemap-based spiders that
-  read a `url_file`). A single `rules:`
+  (`SitemapUrlSpiderMixin._parse_sitemap`, for the sitemap-based spiders).
+  A single `rules:`
   entry excludes a URL shape from the entire pipeline — nav crawl and
   content scrape alike — with one entry instead of a duplicate in each.
   Use this for URLs that are genuinely out of scope everywhere (a
@@ -255,3 +255,37 @@ rules, since that spider targets an unbounded variety of unknown sites) is
 more permissive — only listed binary/data formats are blocked, everything
 else passes. A URL with no extension, or a suffix too long to plausibly be
 a real extension, always passes regardless of mode.
+
+---
+
+## Never pass `-O`/`-o` to a multi-`FEEDS`-entry spider
+
+Every fused spider (all 8 sitemap-based sites, plus
+`obama_whitehouse`/`letsmove`/`trump_petitions`/`obama_petitions`/
+`trumpwhitehouse`) declares `custom_settings['FEEDS']` with **two**
+entries — a harvest feed (`item_classes: [HarvestItem]`, `fields:
+['url']` or `['url', 'is_listing', 'depth']`) and a content feed
+(`item_classes: [ArchiveItem]`, the full field list) — so that one
+`scrapy crawl <name>` run produces both CSVs from the one item stream,
+each filtered to its own item type.
+
+Scrapy's `-O`/`-o` CLI flags don't add a feed alongside that setting —
+they **replace `FEEDS` wholesale** with a single generic feed that has no
+`item_classes` filter and no explicit `fields` list. Every item type the
+spider yields (both `HarvestItem` and `ArchiveItem`) lands in that one
+file, and since a `HarvestItem` is yielded before the `Request` for its
+matching content page even completes, the CSV writer's field shape locks
+onto `HarvestItem`'s own fields (`depth`, `is_listing`, `url`) — the real
+scraped content is either silently absent or shows up with blank
+`title`/`full_text`/`source_site`/etc., not as an error. Confirmed
+directly: `scrape_index_pipeline recrawl`'s first implementation invoked
+`scrapy crawl <name> -O <path>` and produced a `clintonwhitehouse1.csv`
+where all 2,611 rows had an empty `source_site` — every real content row
+had been discarded.
+
+The fix, and the general rule: never pass `-O`/`-o` to a spider that
+already has its own automatic output paths (every content spider in this
+project, per "CSV Naming Convention" — the whole point of that
+convention is that no run ever needs `-O` for correctness). Only pass it
+when you deliberately want to redirect output to a path the spider's own
+`custom_settings['FEEDS']` doesn't already cover.

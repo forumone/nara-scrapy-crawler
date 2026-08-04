@@ -42,7 +42,7 @@ pip install -r requirements.txt
 
 `generic_crawl` is a two-phase spider pair, not a single spider — run both to test locally without spinning up Docker.
 
-It's starter/example tooling, not a production-ready scraper for an arbitrary new site: phase 2's selectors are tuned to the site templates already seen in this repo, not universal. Expect to get zero or few items on a genuinely new site's first run — that means the template needs its own selectors added (or a subclass, see `generic_crawl.py`'s docstring), not that the crawl failed. `run_crawl.sh` / `run_crawl_interactive.sh` wrap this same pair for convenience; the same caveat applies to their output.
+It's starter/example tooling, not a production-ready scraper for an arbitrary new site: phase 2's selectors are tuned to the site templates already seen in this repo, not universal. Expect to get zero or few items on a genuinely new site's first run — that means the template needs its own selectors added (or a subclass, see `generic_crawl.py`'s docstring), not that the crawl failed.
 
 **Phase 1** (`generic_crawl_harvest`, a `CrawlSpider`) discovers URLs by following links from a seed URL:
 
@@ -277,7 +277,7 @@ Launch only one crawl per SSH invocation — chaining several backgrounded launc
 
 Before raising throttling further, check the target domain's `robots.txt` for a `Crawl-delay` directive — `ROBOTSTXT_OBEY = False` means Scrapy won't enforce it automatically, so it's easy to run faster than the site operator has asked for without noticing.
 
-`settings.py` also sets `MEMUSAGE_LIMIT_MB=8192` (matching `run_crawl.sh`'s default, on the assumption these run on a resource-rich remote server): if a crawl's memory footprint exceeds that (e.g. a crawler trap on a faceted-search or listing-heavy site generates unbounded unique URLs), Scrapy closes the spider gracefully and flushes the feed export, rather than the OS OOM-killing the process and losing all buffered output. Override with `-s MEMUSAGE_LIMIT_MB=N`, or via `run_crawl.sh --memory-limit=N`. `run_crawl_interactive.sh` — intended for local dev testing — prompts with half that default (4096).
+`settings.py` also sets `MEMUSAGE_LIMIT_MB=8192` (on the assumption these run on a resource-rich remote server): if a crawl's memory footprint exceeds that (e.g. a crawler trap on a faceted-search or listing-heavy site generates unbounded unique URLs), Scrapy closes the spider gracefully and flushes the feed export, rather than the OS OOM-killing the process and losing all buffered output. Override per-run with `-s MEMUSAGE_LIMIT_MB=N` (e.g. a lower value for local dev testing).
 
 ---
 
@@ -422,6 +422,68 @@ python audit_url_gaps.py \
 
 ---
 
+## 🔎 Indexing Pipeline
+
+`scrape_index_pipeline` takes a site's content CSV through validation,
+per-site warning-based row filtering, CSV→JSONL conversion, and (once
+wired up) an OpenSearch push. Two subcommands:
+
+```bash
+# Validate/filter/convert/push an existing CSV, no crawl
+./scrape_index_pipeline reindex clintonwhitehouse1
+./scrape_index_pipeline reindex --all
+
+# Crawl the site first, then do the same
+./scrape_index_pipeline recrawl clintonwhitehouse1
+./scrape_index_pipeline recrawl --all
+```
+
+`<site>` is either a spider name (`bidenwhitehouse`) or a `source_site`
+(`www.bidenwhitehouse`) — see `archive_crawler/pipeline/registry.py`.
+`reindex` is the primary path: per "CSVs are frozen source of truth"
+(`data/8-03/`), re-invoking a crawl is the exception, not the default
+action. Run from the repo root — relative `data/` paths assume that `cwd`.
+
+`scrape_index_pipeline_interactive` prompts for site and mode instead of
+requiring them as CLI args, then confirms and execs the equivalent
+`scrape_index_pipeline` command — same division of labor as the old
+`run_crawl_interactive.sh` → `run_crawl.sh` pattern this replaces.
+
+### Pipeline stages (`archive_crawler/pipeline/`)
+
+- **`registry.py`** — `list_sites()` enumerates every content spider via
+  `scrapy.spiderloader.SpiderLoader`, keyed by `source_site` (excludes
+  `generic_crawl`/`generic_crawl_harvest`/`sitemap_harvest`, which have no
+  fixed site identity). `resolve(site_arg)` looks a site up by either
+  spider name or `source_site`.
+- **`validate.py`** — every `source_site` value present must be a known
+  site, and `full_text`/`teaser_text` are checked against a bare-URL regex
+  to catch a column swap. Raises `ValidationError` listing every problem
+  found, not just the first. Narrower than
+  `~/git/nara/scripts/validate-opensearch-csv.py` (invisible-unicode,
+  HTML-tag, HTML-entity, missing-space, "Continue reading" checks) — that
+  script audits CSVs already pulled back out of the live index; this one
+  only gates whether a row is indexed at all.
+- **`filter_rows.py`** — a per-`source_site` table of which `warnings`
+  labels (see "Warnings column" above) drop a row before conversion. A row
+  is dropped only when its warning set is a *superset* of the site's
+  configured filter set (a two-label entry requires both labels present,
+  not either). A `source_site` missing from the table raises rather than
+  silently defaulting either way.
+- **`convert.py`** — CSV row → `archive_content_v2` document field mapping
+  (`source_type` → `source_type_id` is the one renamed field; `warnings`
+  is dropped, not on the live mapping). `id`/`document_type`/`source`/
+  `changed` aren't populated — no document from any of the 14 archive
+  sites exists in the live index yet to reference their shape.
+- **`reconcile.py`** — **stub.** Logs a dry-run summary (row count,
+  `source_site`, destination) and makes no AWS/network call. Blocked on:
+  whether `nara-opensearch-lambda` supports delete-then-upsert/reconcile
+  or only blind bulk-upsert; where it watches in S3; what AWS access this
+  utility needs; and what should populate `id`/`document_type`/`source`/
+  `changed`. None of the other stages depend on these answers.
+
+---
+
 ## 📂 Project Structure
 
 `spiders/generic_crawl_harvest.py`: Phase 1 of the generic two-phase spider pair. Uses CrawlSpider and LinkExtractors to walk the site from a seed URL and write a URL-per-row CSV. Dynamically accepts `url`, `source_site`, `rules_file`, and `rules_mode`.
@@ -440,13 +502,15 @@ python audit_url_gaps.py \
 
 `exclusion_rules/`: One committed YAML file per domain (see `exclusion_rules.py` above). New sites should get one even if empty, so `-a rules_file`/`-a rules_mode` always has a base to overlay onto.
 
-`items.py`: `ArchiveItem` — the strict content schema (URL, Title, Full Text, Teaser, Source Site, Source Type, Warnings). `HarvestItem` — the URL/is_listing/depth schema yielded by every `NavHarvesterMixin` spider's discovery pass.
+`items.py`: `ArchiveItem` — the strict content schema (URL, Title, Full Text, Teaser, Source Site, Source Type, Warnings). `HarvestItem` — the URL/is_listing/depth schema yielded by every `NavHarvesterMixin` spider's discovery pass and every `SitemapUrlSpiderMixin` spider's sitemap-parse pass (only `url` is populated/exported for the latter — `is_listing`/`depth` are nav-crawl-specific).
 
 `extensions/error_log.py`: `ErrorFileLogger` — mirrors Scrapy ERROR-level log output to a per-run file alongside the output CSV.
 
 `audit_url_gaps.py`: Post-hoc URL gap analysis tool.
 
-`run_crawl.sh`: Entrypoint script used by the Docker container. Accepts CLI args and translates them into Scrapy commands.
+`pipeline/`: `scrape_index_pipeline`'s modules — see "Indexing pipeline" below.
+
+`scrape_index_pipeline` / `scrape_index_pipeline_interactive`: Entrypoints used by the Docker container (`scrape_index_pipeline` is the `ENTRYPOINT`; the job definition's command args supply the subcommand and site). See "Indexing pipeline" below.
 
 `Dockerfile`: Python 3.9 Slim image configuration.
 
