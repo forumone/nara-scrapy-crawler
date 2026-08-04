@@ -186,7 +186,7 @@ scrapy crawl clintonwhitehouse2
 
 All spiders inherit from `SitemapUrlSpiderMixin` (see `archive_crawler/spiders/base.py`), which extends `ArchiveSpiderMixin` with a `start_requests` that fetches the spider's own `SITEMAP_URL` class attribute, recurses `sitemapindex` entries the same way `sitemap_harvest` does, applies the site's exclusion rules once per URL, and yields a `parse_item` request for every surviving URL — plus shared extraction logic, exclusion tracking, and HTTP error handling from `ArchiveSpiderMixin`.
 
-Output is automatic — this writes `data/clintonwhitehouse2/clintonwhitehouse2.csv` (the scraped content) and `data/clintonwhitehouse2/clintonwhitehouse2_harvest.csv` (one `url` column, every URL the sitemap yielded that wasn't excluded before being requested), both derived from the spider's own `SOURCE_SITE` (`custom_settings['FEEDS']`, same two-entry shape `obama_whitehouse.py`/`trump_petitions.py` use). Pass `-O <path>` to override the content CSV.
+Output is automatic — this writes `data/clintonwhitehouse2/clintonwhitehouse2.csv` (the scraped content) and `data/clintonwhitehouse2/clintonwhitehouse2_harvest.csv` (one `url` column, every URL the sitemap yielded that wasn't excluded before being requested), both derived from the spider's own `SOURCE_SITE` (`custom_settings['FEEDS']`, same two-entry shape `obama_whitehouse.py`/`trump_petitions.py` use). Don't pass `-O`/`-o` here — it replaces that two-entry `FEEDS` wholesale rather than adding to it, silently losing the harvest CSV and corrupting the content CSV's own shape (see ARCHITECTURE.md's "Never pass `-O`/`-o` to a multi-`FEEDS`-entry spider").
 
 Replace `clintonwhitehouse2` with any of: `clintonwhitehouse1`, `clintonwhitehouse3`, `clintonwhitehouse4`, `clintonwhitehouse5`, `clintonwhitehouse6`, `bidenwhitehouse`, `georgewbush_whitehouse`.
 
@@ -283,7 +283,7 @@ Before raising throttling further, check the target domain's `robots.txt` for a 
 
 ## 🗂 CSV Naming Convention
 
-All harvester and content output files follow a consistent naming scheme. Every spider except `generic_crawl`/`generic_crawl_harvest` (one-off exploratory tools with no fixed site identity, see "Running Locally" above) writes to its own path automatically — no `-O`/`-o` needed to run a normal crawl. Each path below can still be overridden explicitly: `-O <path>` for a spider's main scrape/harvest feed (Scrapy's CLI setting replaces `custom_settings['FEEDS']` wholesale, rather than adding to it), `-a exclusions_file=<path>` for the exclusions CSV, and — for `sitemap_harvest` specifically, the one spider where `-O` doesn't apply at all — `-a harvest_file=<path>`/`-a dropped_file=<path>`.
+All harvester and content output files follow a consistent naming scheme. Every spider except `generic_crawl`/`generic_crawl_harvest` (one-off exploratory tools with no fixed site identity, see "Running Locally" above — the only two spiders that still require `-O`/`-o` for any output at all) writes to its own path automatically. Don't pass `-O <path>` to any of the 14 in-scope content spiders to redirect their output — every one of them has a two-entry `custom_settings['FEEDS']` (harvest + content), and Scrapy's CLI setting replaces that dict wholesale rather than adding to it, silently dropping the harvest CSV and corrupting the content CSV's own shape (see ARCHITECTURE.md). Use `-a exclusions_file=<path>` for the exclusions CSV, and — for `sitemap_harvest` specifically, where `-O` doesn't apply at all — `-a harvest_file=<path>`/`-a dropped_file=<path>`.
 
 | File | Contents |
 |---|---|
