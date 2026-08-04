@@ -6,6 +6,7 @@ pipeline logic is duplicated here, this only builds, shows, and confirms
 the equivalent command before exec-ing the real script.
 """
 import os
+import sys
 
 from archive_crawler.pipeline import registry
 
@@ -110,4 +111,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(130)
