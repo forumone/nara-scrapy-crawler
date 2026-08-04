@@ -2,16 +2,38 @@ import re
 
 import scrapy
 
-from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import UrlFileSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS, omb_paygo_title
+from archive_crawler.items import ArchiveItem, HarvestItem
+from archive_crawler.spiders.base import SitemapUrlSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS, omb_paygo_title
 
 
-class ClintonWhiteHouse5Spider(UrlFileSpiderMixin, scrapy.Spider):
+class ClintonWhiteHouse5Spider(SitemapUrlSpiderMixin, scrapy.Spider):
     name = "clintonwhitehouse5"
     allowed_domains = ["clintonwhitehouse5.archives.gov"]
 
     SOURCE_SITE = 'clintonwhitehouse5'
     SOURCE_TYPE = 'Archived White House Websites'
+
+    SITEMAP_URL = 'https://clintonwhitehouse5.archives.gov/sitemap.xml'
+
+    custom_settings = {
+        'FEEDS': {
+            'data/clintonwhitehouse5/clintonwhitehouse5_harvest.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [HarvestItem],
+                'fields': ['url'],
+            },
+            'data/clintonwhitehouse5/clintonwhitehouse5.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
 
     # This template prepends a letter-spaced "T H E W H I T E H O U S E"
     # banner plus the page title and nav links to the body text on ~90% of

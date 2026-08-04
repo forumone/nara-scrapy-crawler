@@ -1,14 +1,15 @@
-import csv
 import html
 import re
 from urllib.parse import parse_qs, urlparse
 
 import scrapy
 from scrapy.selector import Selector
+from scrapy.utils.gz import gunzip
+from scrapy.utils.sitemap import Sitemap
 from w3lib.html import remove_tags, remove_tags_with_content
 
 from archive_crawler import exclusion_rules as _exclusion_rules_module
-from archive_crawler.items import ArchiveItem
+from archive_crawler.items import ArchiveItem, HarvestItem
 from archive_crawler.spiders.exclusion_logging import ExclusionLoggingMixin
 
 # Invisible Unicode format characters that appear in archived source HTML.
@@ -307,6 +308,11 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
                 break
         return re.sub(r'[-_]+', ' ', segment).strip()
 
+    def _make_request(self, url, **kwargs):
+        kwargs.setdefault('callback', self.parse_item)
+        kwargs.setdefault('errback', self._log_http_error)
+        return scrapy.Request(url, **kwargs)
+
     def _log_http_error(self, failure):
         from scrapy.spidermiddlewares.httperror import HttpError
         if failure.check(HttpError):
@@ -490,38 +496,85 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         return text
 
 
-class UrlFileSpiderMixin(ArchiveSpiderMixin):
-    """For a content spider whose only input is a url_file CSV (one 'url'
-    column) - the sitemap-based spiders (clintonwhitehouse1-6,
-    bidenwhitehouse, georgewbush_whitehouse). Deliberately NOT part of
-    plain ArchiveSpiderMixin: a NavHarvesterMixin-composed spider (which
-    also extends ArchiveSpiderMixin, for its content-extraction helpers)
-    crawls from start_urls instead and must fall through to CrawlSpider/
-    Spider's own start_requests - putting url_file-reading here instead of
-    on ArchiveSpiderMixin means that fallthrough needs no special-casing
-    anywhere, in either direction."""
+class SitemapUrlSpiderMixin(ArchiveSpiderMixin):
+    """For a content spider that discovers its own URLs directly from a
+    sitemap (SITEMAP_URL class attribute) - the fused sitemap+scrape
+    pattern for clintonwhitehouse1-6, bidenwhitehouse,
+    georgewbush_whitehouse. Folds SitemapHarvestSpider's
+    sitemap/sitemapindex-recursion into one start_requests that yields a
+    parse_item request for every surviving leaf URL directly, rather than
+    writing a harvest CSV for a separate content-spider run to read back.
+
+    Deliberately NOT part of plain ArchiveSpiderMixin: a
+    NavHarvesterMixin-composed spider (which also extends
+    ArchiveSpiderMixin, for its content-extraction helpers) crawls from
+    start_urls instead and must fall through to CrawlSpider/Spider's own
+    start_requests - putting sitemap-fetching here instead of on
+    ArchiveSpiderMixin means that fallthrough needs no special-casing
+    anywhere, in either direction.
+
+    REDIRECT_ENABLED stays False project-wide for both the sitemap-fetch
+    and content-fetch requests this mixin issues - none of the committed
+    SITEMAP_URLs redirect, and a sub-sitemap that ever did would only log a
+    warning (_log_sitemap_fetch_error) rather than need redirect-following
+    logic built for it.
+    """
 
     def start_requests(self):
-        url_file = getattr(self, 'url_file', None)
-        if not url_file:
-            raise ValueError(
-                "url_file argument is required: "
-                f"-a url_file=data/{self.SOURCE_SITE}/{self.SOURCE_SITE}_harvest.csv"
-            )
-        rules = self._get_exclusion_rules()
-        with open(url_file, newline='', encoding='utf-8-sig') as f:
-            for row in csv.DictReader(f):
-                url = row['url']
-                reason = _exclusion_rules_module.match_exclude(url, rules)
-                if reason:
-                    self._log_exclusion(url, reason)
-                else:
-                    yield self._make_request(url)
+        sitemap_url = getattr(self, 'SITEMAP_URL', None)
+        if not sitemap_url:
+            raise ValueError(f"{type(self).__name__} must set SITEMAP_URL")
+        self._seen_sitemap_urls = set()
+        yield scrapy.Request(
+            sitemap_url, callback=self._parse_sitemap, errback=self._log_sitemap_fetch_error,
+        )
 
-    def _make_request(self, url, **kwargs):
-        kwargs.setdefault('callback', self.parse_item)
-        kwargs.setdefault('errback', self._log_http_error)
-        return scrapy.Request(url, **kwargs)
+    def _parse_sitemap(self, response):
+        body = response.body
+        if body[:3] == b'\x1f\x8b\x08' or response.url.endswith('.gz'):
+            body = gunzip(body)
+        sitemap = Sitemap(body)
+
+        if sitemap.type == 'sitemapindex':
+            for entry in sitemap:
+                loc = entry.get('loc', '')
+                if loc:
+                    yield scrapy.Request(
+                        loc, callback=self._parse_sitemap, errback=self._log_sitemap_fetch_error,
+                    )
+            return
+
+        rules = self._get_exclusion_rules()
+        for entry in sitemap:
+            url = entry.get('loc', '')
+            if not url:
+                continue
+            key = url.lower()
+            if key in self._seen_sitemap_urls:
+                continue
+            self._seen_sitemap_urls.add(key)
+            if not _exclusion_rules_module.is_web_url(url, rules):
+                ext = _exclusion_rules_module.url_extension(url)
+                self._log_exclusion(url, f'extension:{ext}')
+                continue
+            reason = _exclusion_rules_module.match_exclude(url, rules)
+            if reason:
+                self._log_exclusion(url, reason)
+                continue
+            yield HarvestItem(url=url)
+            yield self._make_request(url)
+
+    def _log_sitemap_fetch_error(self, failure):
+        from scrapy.spidermiddlewares.httperror import HttpError
+        if failure.check(HttpError):
+            status = failure.value.response.status
+            if status < 400:
+                self.logger.warning(
+                    "Sub-sitemap request redirected (status %d), not followed: %s",
+                    status, failure.value.response.url,
+                )
+                return
+        self.logger.warning("Sitemap fetch failed: %s", failure.getErrorMessage())
 
 
 class PetitionsSpiderMixin(ArchiveSpiderMixin):

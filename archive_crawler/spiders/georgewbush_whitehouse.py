@@ -2,16 +2,41 @@ import re
 
 import scrapy
 
-from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import UrlFileSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
+from archive_crawler.items import ArchiveItem, HarvestItem
+from archive_crawler.spiders.base import SitemapUrlSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
 
-class GeorgeWBushWhiteHouseSpider(UrlFileSpiderMixin, scrapy.Spider):
+class GeorgeWBushWhiteHouseSpider(SitemapUrlSpiderMixin, scrapy.Spider):
     name = "georgewbush_whitehouse"
     allowed_domains = ["georgewbush-whitehouse.archives.gov"]
 
     SOURCE_SITE = 'www.georgewbush-whitehouse'
     SOURCE_TYPE = 'Archived White House Websites'
+
+    # An index recursing into 229 sub-sitemaps (sitemap1.xml-sitemap226.xml
+    # plus a few extras), handled by SitemapUrlSpiderMixin's sitemapindex
+    # recursion.
+    SITEMAP_URL = 'https://georgewbush-whitehouse.archives.gov/sitemap.xml'
+
+    custom_settings = {
+        'FEEDS': {
+            'data/www.georgewbush-whitehouse/www.georgewbush-whitehouse_harvest.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [HarvestItem],
+                'fields': ['url'],
+            },
+            'data/www.georgewbush-whitehouse/www.georgewbush-whitehouse.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
 
     # /911/ pages use <center><img src="/911/images/star.gif"></center> as a
     # decorative separator between nav links (including the literal text

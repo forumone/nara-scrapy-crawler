@@ -178,38 +178,23 @@ This is the one spider in the project where `-O`/`-o` do **not** control output.
 
 ## 🏛️ Sitemap-Based Archive Spiders
 
-The Clinton (CW1–6), Biden, and GWBush whitehouse spiders all follow the same two-step pattern: harvest URLs from the sitemap, then scrape content from each URL.
-
-All spiders inherit from `UrlFileSpiderMixin` (see `archive_crawler/spiders/base.py`), which extends `ArchiveSpiderMixin` with `url_file`-reading `start_requests` and provides shared extraction logic, exclusion tracking, and HTTP error handling.
-
-### Step 1: Harvest
-
-Run `sitemap_harvest` once per site to collect all content URLs. `source_site` is what derives the output path automatically (see "Sitemap Harvester" above):
+The Clinton (CW1–6), Biden, and GWBush whitehouse spiders discover their own URLs directly from each site's committed sitemap and scrape content in the same run — one command, no harvest CSV to hand off between steps:
 
 ```bash
-scrapy crawl sitemap_harvest \
-  -a sitemap_url=https://clintonwhitehouse2.archives.gov/sitemap.xml \
-  -a source_site=clintonwhitehouse2
+scrapy crawl clintonwhitehouse2
 ```
 
-This writes `data/clintonwhitehouse2/clintonwhitehouse2_harvest.csv`.
+All spiders inherit from `SitemapUrlSpiderMixin` (see `archive_crawler/spiders/base.py`), which extends `ArchiveSpiderMixin` with a `start_requests` that fetches the spider's own `SITEMAP_URL` class attribute, recurses `sitemapindex` entries the same way `sitemap_harvest` does, applies the site's exclusion rules once per URL, and yields a `parse_item` request for every surviving URL — plus shared extraction logic, exclusion tracking, and HTTP error handling from `ArchiveSpiderMixin`.
 
-### Step 2: Scrape content
-
-Pass the harvest CSV to the content spider:
-
-```bash
-scrapy crawl clintonwhitehouse2 \
-  -a url_file=data/clintonwhitehouse2/clintonwhitehouse2_harvest.csv
-```
-
-Output is automatic — this writes `data/clintonwhitehouse2/clintonwhitehouse2.csv`, derived from the spider's own `SOURCE_SITE` (`custom_settings['FEEDS']`, same as every content spider in this project). Pass `-O <path>` to override.
+Output is automatic — this writes `data/clintonwhitehouse2/clintonwhitehouse2.csv` (the scraped content) and `data/clintonwhitehouse2/clintonwhitehouse2_harvest.csv` (one `url` column, every URL the sitemap yielded that wasn't excluded before being requested), both derived from the spider's own `SOURCE_SITE` (`custom_settings['FEEDS']`, same two-entry shape `obama_whitehouse.py`/`trump_petitions.py` use). Pass `-O <path>` to override the content CSV.
 
 Replace `clintonwhitehouse2` with any of: `clintonwhitehouse1`, `clintonwhitehouse3`, `clintonwhitehouse4`, `clintonwhitehouse5`, `clintonwhitehouse6`, `bidenwhitehouse`, `georgewbush_whitehouse`.
 
-### Pre-filtering large harvests
+`sitemap_harvest` (see "Sitemap Harvester" above) is not part of running any of these 8 sites — it remains only for exploring a *new* sitemap-based site's URL shape before writing that site's spider (see "Adding a New Site" below).
 
-Some archives contain large directories of non-content URLs (print-friendly variants, image gallery wrappers, etc.). Each spider's `start_requests` filters these out at request-generation time (per `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`) and records them in the exclusions CSV. No manual pre-filtering of the harvest file is required.
+### Pre-filtering large sitemaps
+
+Some archives' sitemaps list large numbers of non-content URLs (print-friendly variants, image gallery wrappers, etc.). Each spider's `start_requests` filters these out at request-generation time (per `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`) and records them in the exclusions CSV.
 
 ### Warnings column
 
@@ -231,6 +216,7 @@ Each scrape spider automatically writes a `{source_site}_exclusions.csv` alongsi
 | Reason | Description |
 |---|---|
 | `url_pattern:/foo/` | URL matched a known non-content path prefix |
+| `extension:<ext>` | Sitemap-based spiders (CW1–6, Biden, GWBush) only: URL failed the site's extension allowlist (e.g. a PDF or image listed in the sitemap) - dropped before it's ever added to the harvest CSV, at the same `_parse_sitemap` pass that applies `rules:`/`nav_deny`, unlike `sitemap_harvest`'s standalone `_harvest-dropped.csv` (a separate file, not used by these 8 sites) |
 | `frameset` | Page is a frameset with no extractable content |
 | `non_text_response` | Response body isn't text (e.g. a binary file served from an extension-less URL a link-following crawl swept up) |
 | `http_404` | HTTP 404 response |
@@ -272,8 +258,7 @@ The right override on the remote server depends on how many crawls are running t
 ```bash
 scrapy crawl georgewbush_whitehouse \
   -s DOWNLOAD_DELAY=0.12 \
-  -s CONCURRENT_REQUESTS_PER_DOMAIN=10 \
-  -a url_file=data/www.georgewbush-whitehouse/georgewbush-whitehouse_harvest.csv
+  -s CONCURRENT_REQUESTS_PER_DOMAIN=10
 ```
 
 To launch on the remote server itself, SSH in and background the crawl with `nohup`/`disown` so it survives disconnect, pointing `--logfile` at a path under that site's `data/{site}/` directory to monitor progress:
@@ -302,7 +287,7 @@ All harvester and content output files follow a consistent naming scheme. Every 
 
 | File | Contents |
 |---|---|
-| `data/{source_site}/{source_site}_harvest.csv` | Content-spider input for sitemap-based spiders (CW1–6, Biden, GWBush); one of two automatic `FEEDS` outputs from the same run for `NavHarvesterMixin` sites that also extract content (e.g. `obama_whitehouse.py`, `letsmove.py`) |
+| `data/{source_site}/{source_site}_harvest.csv` | One of two automatic `FEEDS` outputs from the same run — the surviving URL list, for both sitemap-based spiders (CW1–6, Biden, GWBush) and `NavHarvesterMixin` sites that also extract content (e.g. `obama_whitehouse.py`, `letsmove.py`) |
 | `data/{source_site}/{source_site}.csv` | Final content output (includes a `warnings` column — see "Warnings column" above) |
 | `data/{source_site}/{source_site}_exclusions.csv` | Skipped URLs with typed reasons (written on spider close) |
 | `data/{source_site}/{source_site}-errors-{timestamp}.log` | Scrapy ERROR-level log (written by `ErrorFileLogger` extension) |
@@ -369,14 +354,24 @@ depending on whether the site has a real listing-fan-out risk:
 
 ### Creating a sitemap-based content spider
 
+First confirm the sitemap URL and shape with `sitemap_harvest` (see
+"Sitemap Harvester" above) — this is exploratory only, to find the
+resolved sitemap target (watch for a redirect, e.g. a WordPress/Yoast
+site's `/sitemap.xml` 301ing to `/sitemap_index.xml` — `SITEMAP_URL` needs
+the resolved target, since `REDIRECT_ENABLED` stays `False` project-wide)
+and sanity-check the URL count; its own harvest CSV output isn't used by
+the spider you're about to write.
+
 Copy an existing sitemap spider (e.g., `archive_crawler/spiders/clintonwhitehouse2.py`) and update:
 - `name`, `allowed_domains`, `SOURCE_SITE`, `SOURCE_TYPE`
-- `custom_settings['FEEDS']` — one entry, keyed by the new site's own
-  `data/<SOURCE_SITE>/<SOURCE_SITE>.csv` path, `item_classes: [ArchiveItem]`,
-  and the same `fields` list as every other content spider (copy the exact
-  shape from any existing sitemap-based spider). This is what makes the new
+- `SITEMAP_URL` — the resolved sitemap/sitemap-index URL found above
+- `custom_settings['FEEDS']` — two entries, the harvest CSV
+  (`data/<SOURCE_SITE>/<SOURCE_SITE>_harvest.csv`, `item_classes:
+  [HarvestItem]`, `fields: ['url']`) and the content CSV
+  (`data/<SOURCE_SITE>/<SOURCE_SITE>.csv`, `item_classes: [ArchiveItem]`,
+  the same `fields` list as every other content spider) — copy the exact
+  shape from any existing sitemap-based spider. This is what makes the new
   spider's output automatic — no `-O` needed to run it.
-- The `url_file` error message (for operator clarity)
 - Create `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml` for any
   URL-pattern exclusions `start_requests` needs (`rules: [{match, pattern,
   reason}, ...]`) — see `www.georgewbush-whitehouse.yml` for an example.
@@ -384,14 +379,17 @@ Copy an existing sitemap spider (e.g., `archive_crawler/spiders/clintonwhitehous
   `exclusion_rules.match_exclude(url, rules)`; no per-site Python needed.
 - CSS selectors in `parse_item` to match the new site's content structure
 
-All sitemap-based spiders inherit from `UrlFileSpiderMixin` (which itself
-extends `ArchiveSpiderMixin`, for its content-extraction helpers - kept
-separate specifically so a `NavHarvesterMixin`-composed spider, which also
-extends `ArchiveSpiderMixin`, never inherits url_file-reading behavior it
-doesn't use). Between the two, this gives every sitemap-based spider:
-- `start_requests()` / `_make_request(url)` (`UrlFileSpiderMixin`) — reads
-  `url_file`, drops whatever this site's exclusion rules match, requests
-  the rest with the standard callback and HTTP error errback
+All sitemap-based spiders inherit from `SitemapUrlSpiderMixin` (which
+itself extends `ArchiveSpiderMixin`, for its content-extraction helpers -
+kept separate specifically so a `NavHarvesterMixin`-composed spider, which
+also extends `ArchiveSpiderMixin`, never inherits sitemap-fetching behavior
+it doesn't use). Between the two, this gives every sitemap-based spider:
+- `start_requests()` / `_parse_sitemap(response)` (`SitemapUrlSpiderMixin`)
+  — fetches `SITEMAP_URL`, recurses `sitemapindex` entries, drops whatever
+  this site's exclusion rules match (logging each), and requests the rest
+  with the standard callback and HTTP error errback
+- `_make_request(url)` (`ArchiveSpiderMixin`) — builds a `parse_item`
+  request with the standard HTTP error errback
 - `_extract_title(response)` — h1 → h2 → `<title>` with HTML entity decoding and normalisation
 - `_extract_text(response, selector)` — strips NARA banners, nav boilerplate, and invisible Unicode before returning plain text
 - `_log_exclusion(url, reason)` — records a skipped URL; written to `_exclusions.csv` on spider close
@@ -430,7 +428,7 @@ python audit_url_gaps.py \
 
 `spiders/generic_crawl.py`: Phase 2 (spider name `generic_crawl`). Reads the phase-1 harvest CSV and extracts title/body/teaser from each URL. Dynamically accepts `url_file`, `site_id`, and `source_type`.
 
-`spiders/base.py`: `ArchiveSpiderMixin` — shared extraction and boilerplate stripping for all archive content spiders. Every subclass that doesn't set its own `custom_settings` gets an automatic `FEEDS` entry derived from `SOURCE_SITE`. `UrlFileSpiderMixin` (extends `ArchiveSpiderMixin`) adds `start_requests` for the sitemap-based spiders (CW1-6, Biden, GWBush) that read a `url_file` CSV - kept off `ArchiveSpiderMixin` itself so a NavHarvesterMixin-composed spider (which also extends `ArchiveSpiderMixin`, for its content-extraction helpers) falls through to `CrawlSpider`/`Spider`'s own `start_requests` without any MRO override needed. `PetitionsSpiderMixin` (the obama_petitions/trump_petitions template) and `omb_paygo_title` also live here.
+`spiders/base.py`: `ArchiveSpiderMixin` — shared extraction and boilerplate stripping for all archive content spiders. Every subclass that doesn't set its own `custom_settings` gets an automatic `FEEDS` entry derived from `SOURCE_SITE`. `SitemapUrlSpiderMixin` (extends `ArchiveSpiderMixin`) adds `start_requests` for the sitemap-based spiders (CW1-6, Biden, GWBush): fetches the spider's own `SITEMAP_URL`, recurses `sitemapindex` entries, and yields a `parse_item` request for every surviving URL directly - no separate harvest-then-scrape pass. Kept off `ArchiveSpiderMixin` itself so a NavHarvesterMixin-composed spider (which also extends `ArchiveSpiderMixin`, for its content-extraction helpers) falls through to `CrawlSpider`/`Spider`'s own `start_requests` without any MRO override needed. `PetitionsSpiderMixin` (the obama_petitions/trump_petitions template) and `omb_paygo_title` also live here.
 
 `spiders/nav_harvest.py`: `NavHarvesterMixin` — shared nav link-following and listing-fingerprint pagination-walking; when a class composes both this and `ArchiveSpiderMixin` and defines `_scrape_item`, `_maybe_scrape_item` also extracts content on that same fetched response, with no second fetch.
 

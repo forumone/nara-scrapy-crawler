@@ -1,15 +1,37 @@
 import scrapy
 
-from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import UrlFileSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
+from archive_crawler.items import ArchiveItem, HarvestItem
+from archive_crawler.spiders.base import SitemapUrlSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
 
-class ClintonWhiteHouse2Spider(UrlFileSpiderMixin, scrapy.Spider):
+class ClintonWhiteHouse2Spider(SitemapUrlSpiderMixin, scrapy.Spider):
     name = "clintonwhitehouse2"
     allowed_domains = ["clintonwhitehouse2.archives.gov"]
 
     SOURCE_SITE = 'clintonwhitehouse2'
     SOURCE_TYPE = 'Archived White House Websites'
+
+    SITEMAP_URL = 'https://clintonwhitehouse2.archives.gov/sitemap.xml'
+
+    custom_settings = {
+        'FEEDS': {
+            'data/clintonwhitehouse2/clintonwhitehouse2_harvest.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [HarvestItem],
+                'fields': ['url'],
+            },
+            'data/clintonwhitehouse2/clintonwhitehouse2.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
 
     LEADING_TEXT_STRIP_PATTERNS = TEXT_VERSION_TOGGLE_PATTERNS
 

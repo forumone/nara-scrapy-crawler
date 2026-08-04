@@ -1,12 +1,13 @@
 # Harvesting a New Site
 
 This document describes the end-to-end process for adding a new site to the crawl
-pipeline. Some patterns below split URL discovery and content extraction into two
-separate spiders (sitemap-based sites, `generic_crawl_harvest`/`generic_crawl`);
-the `NavHarvesterMixin` pattern uses one spider for both, with content extraction
-added once selectors are ready. Either way, discovering the full URL list before
-writing (or before running) any content-extraction code makes coverage gaps and
-unexpected pages visible early, rather than after they've become data problems.
+pipeline. `generic_crawl_harvest`/`generic_crawl` split URL discovery and content
+extraction into two separate spiders; the sitemap-based (`SitemapUrlSpiderMixin`)
+and `NavHarvesterMixin` patterns each use one spider for both, with content
+extraction added once selectors are ready. Either way, discovering the full URL
+list before writing (or before running) any content-extraction code makes coverage
+gaps and unexpected pages visible early, rather than after they've become data
+problems.
 
 Check for a sitemap first (`/sitemap.xml`, `/sitemap_index.xml`, or a `Sitemap:`
 directive in `robots.txt`) — if one exists, skip everything else in this document
@@ -30,7 +31,7 @@ scrapy crawl sitemap_harvest \
 It fetches the sitemap (or sitemap index, recursing into all sub-sitemaps),
 deduplicates URLs case-insensitively, drops non-web assets (PDFs, images, etc.), and
 writes a harvest CSV — one `url` column, one row per content page — without
-fetching any content pages itself. Used by all of Clinton (CW1–6), Biden, and GWBush.
+fetching any content pages itself.
 
 Output is automatic, derived from `source_site`: the harvest CSV goes to
 `data/example/example_harvest.csv`, and any dropped non-web-extension
@@ -40,14 +41,18 @@ where `-O`/`-o` don't control output at all — pass `-a harvest_file=<path>`
 and/or `-a dropped_file=<path>` to override either default explicitly.
 Without `source_site`, `harvest_file` becomes required.
 
-Since `sitemap_harvest` never fetches a content page itself, there's no
-response here to extract content from inline. Write a separate content
-spider (plain `scrapy.Spider` + `UrlFileSpiderMixin`, reading the harvest
-CSV as `url_file`) to scrape from it, same as every sitemap-based spider
-(CW1–6, Biden, GWBush) does. See README's "Sitemap-Based Archive Spiders"
-section for a worked example, and its "Warnings column" section for the
-`parse_item` shape (`no_body`/`no_title`/`short_body` flag rather than
-exclude).
+Use this spider only to explore a *new* sitemap-based site's URL shape and
+resolved sitemap target before writing that site's spider (watch for a
+redirect, e.g. a WordPress/Yoast site's `/sitemap.xml` 301ing to
+`/sitemap_index.xml`) — its own harvest CSV output isn't consumed by
+anything downstream. The 8 already-onboarded sitemap-based sites (Clinton
+CW1–6, Biden, GWBush) don't run this spider at all: each has its own
+`SITEMAP_URL` hardcoded and fetches + scrapes in one `scrapy crawl
+<name>` run via `SitemapUrlSpiderMixin` (`archive_crawler/spiders/base.py`),
+no separate content-spider file needed. See README's "Sitemap-Based
+Archive Spiders" section for a worked example, and its "Warnings column"
+section for the `parse_item` shape (`no_body`/`no_title`/`short_body` flag
+rather than exclude).
 
 ---
 
@@ -288,9 +293,11 @@ Add `ArchiveSpiderMixin` to the **same class** from step 2, and give it a
 `_scrape_item(self, response)` method — same role as a standalone spider's
 `parse_item`, but called by `_maybe_scrape_item` (in `nav_harvest.py`) on the
 response `parse_nav` already fetched for discovery, not a second request.
-This pattern has no `url_file` and no separate content-spider file — that's
-a different pattern, used by the sitemap-based spiders (see "Sitemap
-harvester" above), not by `NavHarvesterMixin` sites.
+This is one of two ways this repo fuses discovery and content-extraction
+into a single spider — the other being `SitemapUrlSpiderMixin` for
+sitemap-based sites (see "Sitemap harvester" above); the two aren't
+interchangeable (one discovers via nav link-following, the other via a
+sitemap), but neither needs a separate harvest-then-scrape pass.
 
 `_scrape_item` follows the same accumulate-and-continue shape as every
 other content spider in this repo: `no_body`/`no_title` don't drop the row

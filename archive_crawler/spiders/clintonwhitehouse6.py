@@ -3,8 +3,8 @@ from urllib.parse import urlparse
 
 import scrapy
 
-from archive_crawler.items import ArchiveItem
-from archive_crawler.spiders.base import UrlFileSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
+from archive_crawler.items import ArchiveItem, HarvestItem
+from archive_crawler.spiders.base import SitemapUrlSpiderMixin, TEXT_VERSION_TOGGLE_PATTERNS
 
 
 def _title_from_slug(url):
@@ -18,12 +18,34 @@ def _title_from_slug(url):
     return stem.replace('-', ' ').title() if stem else ''
 
 
-class ClintonWhiteHouse6Spider(UrlFileSpiderMixin, scrapy.Spider):
+class ClintonWhiteHouse6Spider(SitemapUrlSpiderMixin, scrapy.Spider):
     name = "clintonwhitehouse6"
     allowed_domains = ["clintonwhitehouse6.archives.gov"]
 
     SOURCE_SITE = 'clintonwhitehouse6'
     SOURCE_TYPE = 'Archived White House Websites'
+
+    SITEMAP_URL = 'https://clintonwhitehouse6.archives.gov/sitemap.xml'
+
+    custom_settings = {
+        'FEEDS': {
+            'data/clintonwhitehouse6/clintonwhitehouse6_harvest.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [HarvestItem],
+                'fields': ['url'],
+            },
+            'data/clintonwhitehouse6/clintonwhitehouse6.csv': {
+                'format': 'csv',
+                'overwrite': True,
+                'item_classes': [ArchiveItem],
+                'fields': [
+                    'url', 'title', 'teaser_text', 'full_text',
+                    'source_site', 'source_type', 'warnings',
+                ],
+            },
+        },
+    }
 
     # Each CW6 page has a "View Header" link pointing to its companion .header.html
     # file. Strip it so the link text doesn't appear at the start of every full_text.
