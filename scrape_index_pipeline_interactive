@@ -40,8 +40,8 @@ def prompt_mode():
         print("  Enter 1, 2, or 3.")
 
 
-def prompt_path(label):
-    return input(f"{label} (blank for default): ").strip() or None
+def prompt_path(label, default):
+    return input(f"{label} [default: {default}]: ").strip() or None
 
 
 def prompt_float_range(label, lo, hi):
@@ -71,16 +71,24 @@ def prompt_int_range(label, lo, hi):
 
 def main():
     site = prompt_site()
+    site_info = registry.resolve(site)
     mode = prompt_mode()
     cmd = [os.path.join(SCRIPT_DIR, 'scrape_index_pipeline'), mode, site]
 
+    csv_path = site_info.csv_path
     if mode == 'index':
-        csv_path = prompt_path("CSV path to read")
-        if csv_path:
-            cmd += ['--csv', csv_path]
+        override = prompt_path("CSV path to read", csv_path)
+        if override:
+            cmd += ['--csv', override]
+            csv_path = override
 
     if mode in ('index', 'crawl-and-index'):
-        jsonl_path = prompt_path("JSONL output path")
+        # Same derivation _index() itself uses when --jsonl isn't passed -
+        # based on whichever CSV path will actually be read (the override
+        # above, if given), so the shown default matches reality even when
+        # --csv changed it.
+        default_jsonl = csv_path.rsplit('.', 1)[0] + '.jsonl'
+        jsonl_path = prompt_path("JSONL output path", default_jsonl)
         if jsonl_path:
             cmd += ['--jsonl', jsonl_path]
 
