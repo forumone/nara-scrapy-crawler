@@ -63,6 +63,11 @@ def _recrawl(site_info):
 
 
 def main():
+    if len(sys.argv) == 1:
+        print("No arguments given. Did you mean to run ./scrape_index_pipeline_interactive instead?", file=sys.stderr)
+        print("(Or pass a subcommand directly: reindex/recrawl <site>, or --all. See -h.)", file=sys.stderr)
+        sys.exit(1)
+
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='mode', required=True)
 
