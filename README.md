@@ -475,7 +475,13 @@ action. Run from the repo root — relative `data/` paths assume that `cwd`.
   terminal, same as running `scrapy crawl` directly. Either way,
   `ErrorFileLogger` keeps writing ERROR-level messages to
   `data/<site>/<site>-errors-<timestamp>.log` — that's a second,
-  independent handler this doesn't touch.
+  independent handler this doesn't touch. When `--logfile` is given and
+  stdout is a real terminal, a spinner (`-\|/`) plus an elapsed-seconds
+  counter fills the gap the diverted log would otherwise leave blank —
+  ticks on its own thread, independent of the crawl subprocess, so
+  nothing the crawl does can stall or slow it down. Silently skipped
+  (falls back to a plain wait) when stdout isn't a terminal — a Docker/
+  automated invocation's logs never fill up with carriage-return noise.
 - `--csv`/`--jsonl`/`--logfile` cannot be combined with `--all` — a
   single path can't apply to 14 different sites in one invocation.
   `--download-delay`/`--concurrent-requests-per-domain` *can* be
