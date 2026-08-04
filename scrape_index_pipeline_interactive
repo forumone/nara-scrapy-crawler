@@ -25,11 +25,16 @@ def prompt_site():
 
 
 def prompt_mode():
+    print("Mode:")
+    print("  1. reindex           - index the existing CSV only, no crawl")
+    print("  2. crawl-and-reindex - crawl the site fresh, then do everything reindex does")
     while True:
-        mode = input("Mode [reindex/recrawl] (default: reindex): ").strip() or 'reindex'
-        if mode in ('reindex', 'recrawl'):
-            return mode
-        print("  Must be 'reindex' or 'recrawl'.")
+        choice = input("Select a mode [1-2] (default: 1): ").strip() or '1'
+        if choice == '1':
+            return 'reindex'
+        if choice == '2':
+            return 'crawl-and-reindex'
+        print("  Enter 1 or 2.")
 
 
 def main():

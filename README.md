@@ -433,9 +433,9 @@ wired up) an OpenSearch push. Two subcommands:
 ./scrape_index_pipeline reindex clintonwhitehouse1
 ./scrape_index_pipeline reindex --all
 
-# Crawl the site first, then do the same
-./scrape_index_pipeline recrawl clintonwhitehouse1
-./scrape_index_pipeline recrawl --all
+# Crawl the site first, then do everything reindex does
+./scrape_index_pipeline crawl-and-reindex clintonwhitehouse1
+./scrape_index_pipeline crawl-and-reindex --all
 ```
 
 `<site>` is either a spider name (`bidenwhitehouse`) or a `source_site`

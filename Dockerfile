@@ -20,5 +20,5 @@ RUN chmod +x scrape_index_pipeline
 # Set the Entrypoint
 # When AWS Batch starts this container, it will run this script - the job
 # definition's command args supply the subcommand and site, e.g.
-# ["reindex", "clintonwhitehouse1"] or ["recrawl", "--all"].
+# ["reindex", "clintonwhitehouse1"] or ["crawl-and-reindex", "--all"].
 ENTRYPOINT ["./scrape_index_pipeline"]
