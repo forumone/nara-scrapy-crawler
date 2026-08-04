@@ -57,6 +57,19 @@ def prompt_path(label, default):
     return input(f"{label} [default: {default}]: ").strip() or None
 
 
+def prompt_confirm():
+    # No blank-Enter default to either answer - muscle memory assumes
+    # Enter means yes, so a bare Enter re-prompts instead of silently
+    # cancelling (or silently proceeding).
+    while True:
+        choice = input("Proceed? [y/n]: ").strip().lower()
+        if choice in ('y', 'yes'):
+            return True
+        if choice in ('n', 'no'):
+            return False
+        print("  Enter y or n.")
+
+
 def prompt_float_range(label, lo, hi, default):
     while True:
         raw = input(f"{label} [{lo}-{hi}, default: {default}]: ").strip()
@@ -118,8 +131,7 @@ def main():
             cmd += ['--concurrent-requests-per-domain', str(concurrency)]
 
     print(f"\nCommand: {' '.join(cmd)}\n")
-    confirm = input("Proceed? [y/N]: ").strip().lower()
-    if confirm != 'y':
+    if not prompt_confirm():
         print("Cancelled.")
         return
 
