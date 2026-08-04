@@ -468,10 +468,19 @@ action. Run from the repo root — relative `data/` paths assume that `cwd`.
   `-s DOWNLOAD_DELAY=`/`-s CONCURRENT_REQUESTS_PER_DOMAIN=` directly to
   `scrapy crawl`. See "Recommended run settings" above for what values
   make sense at different concurrent-crawl counts.
-- `--csv`/`--jsonl` cannot be combined with `--all` — a single path can't
-  apply to 14 different sites in one invocation. `--download-delay`/
-  `--concurrent-requests-per-domain` *can* be combined with `--all` — the
-  same throttle value applies uniformly across every site in the loop.
+- `crawl`/`crawl-and-index --logfile <path>` — write the *entire* crawl
+  log there instead of stdout/stderr (Scrapy's own `_get_handler()`
+  picks a file handler or a console handler, never both, so this is an
+  either/or). Default (no `--logfile`): the full log prints live to the
+  terminal, same as running `scrapy crawl` directly. Either way,
+  `ErrorFileLogger` keeps writing ERROR-level messages to
+  `data/<site>/<site>-errors-<timestamp>.log` — that's a second,
+  independent handler this doesn't touch.
+- `--csv`/`--jsonl`/`--logfile` cannot be combined with `--all` — a
+  single path can't apply to 14 different sites in one invocation.
+  `--download-delay`/`--concurrent-requests-per-domain` *can* be
+  combined with `--all` — the same throttle value applies uniformly
+  across every site in the loop.
 
 `scrape_index_pipeline_interactive` prompts for site and mode instead of
 requiring them as CLI args, then confirms and execs the equivalent

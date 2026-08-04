@@ -129,6 +129,14 @@ def main():
         )
         if concurrency is not None:
             cmd += ['--concurrent-requests-per-domain', str(concurrency)]
+        # Scrapy writes the full crawl log to either the logfile or the
+        # terminal, never both - leaving this blank keeps today's behavior
+        # (log prints live to the terminal). ERROR-level messages persist
+        # to data/<site>/<site>-errors-<timestamp>.log either way, via
+        # ErrorFileLogger - that's a separate, always-on mechanism.
+        logfile_path = prompt_path("Log file path (blank to print to the terminal instead)", "none")
+        if logfile_path:
+            cmd += ['--logfile', logfile_path]
 
     print(f"\nCommand: {' '.join(cmd)}\n")
     if not prompt_confirm():
