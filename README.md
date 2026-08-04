@@ -426,21 +426,25 @@ python audit_url_gaps.py \
 
 `scrape_index_pipeline` takes a site's content CSV through validation,
 per-site warning-based row filtering, CSV→JSONL conversion, and (once
-wired up) an OpenSearch push. Two subcommands:
+wired up) an OpenSearch push. Three subcommands:
 
 ```bash
 # Validate/filter/convert/push an existing CSV, no crawl
-./scrape_index_pipeline reindex clintonwhitehouse1
-./scrape_index_pipeline reindex --all
+./scrape_index_pipeline index clintonwhitehouse1
+./scrape_index_pipeline index --all
 
-# Crawl the site first, then do everything reindex does
-./scrape_index_pipeline crawl-and-reindex clintonwhitehouse1
-./scrape_index_pipeline crawl-and-reindex --all
+# Run the spider only - scrapy crawl <site>, nothing else
+./scrape_index_pipeline crawl clintonwhitehouse1
+./scrape_index_pipeline crawl --all
+
+# Crawl the site first, then do everything index does
+./scrape_index_pipeline crawl-and-index clintonwhitehouse1
+./scrape_index_pipeline crawl-and-index --all
 ```
 
 `<site>` is either a spider name (`bidenwhitehouse`) or a `source_site`
 (`www.bidenwhitehouse`) — see `archive_crawler/pipeline/registry.py`.
-`reindex` is the primary path: per "CSVs are frozen source of truth"
+`index` is the primary path: per "CSVs are frozen source of truth"
 (`data/8-03/`), re-invoking a crawl is the exception, not the default
 action. Run from the repo root — relative `data/` paths assume that `cwd`.
 

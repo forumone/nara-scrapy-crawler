@@ -4,10 +4,12 @@ OpenSearch - see README.md's "Indexing pipeline" section and NAD2-756's
 pipeline plan for the full shape.
 
 Usage:
-    ./scrape_index_pipeline reindex <site>             # validate/filter/convert/push an existing CSV
-    ./scrape_index_pipeline reindex --all              # same, for every registered site
-    ./scrape_index_pipeline crawl-and-reindex <site>   # scrapy crawl <site>, then everything reindex does
-    ./scrape_index_pipeline crawl-and-reindex --all
+    ./scrape_index_pipeline index <site>             # validate/filter/convert/push an existing CSV
+    ./scrape_index_pipeline index --all              # same, for every registered site
+    ./scrape_index_pipeline crawl <site>             # scrapy crawl <site>, nothing else
+    ./scrape_index_pipeline crawl --all
+    ./scrape_index_pipeline crawl-and-index <site>   # crawl, then everything index does
+    ./scrape_index_pipeline crawl-and-index --all
 
 <site> is either a spider name (e.g. bidenwhitehouse) or a source_site
 (e.g. www.bidenwhitehouse) - see archive_crawler/pipeline/registry.py.
@@ -35,7 +37,7 @@ def _read_rows(csv_path):
         return list(csv.DictReader(f))
 
 
-def _reindex(site_info):
+def _index(site_info):
     rows = _read_rows(site_info.csv_path)
     validate.validate_rows(rows)
     kept, dropped = filter_rows.filter_rows(rows, site_info.source_site)
@@ -48,7 +50,7 @@ def _reindex(site_info):
     reconcile.push(site_info.source_site, jsonl_path, count)
 
 
-def _crawl_and_reindex(site_info):
+def _crawl(site_info):
     # No -O: every content spider already writes data/<site>/<site>.csv on
     # its own via custom_settings['FEEDS'] (see README's "CSV Naming
     # Convention"). Passing -O here would REPLACE that FEEDS setting
@@ -59,28 +61,36 @@ def _crawl_and_reindex(site_info):
     # filter), and collapsing them loses the real content rows entirely.
     logger.info("Crawling %s -> %s", site_info.spider_name, site_info.csv_path)
     subprocess.run(['scrapy', 'crawl', site_info.spider_name], check=True)
-    _reindex(site_info)  # crawl-and-reindex = crawl, then everything reindex does
+
+
+def _crawl_and_index(site_info):
+    _crawl(site_info)
+    _index(site_info)
+
+
+_ACTIONS = {'index': _index, 'crawl': _crawl, 'crawl-and-index': _crawl_and_index}
 
 
 def main():
     if len(sys.argv) == 1:
         print("No arguments given. Did you mean to run ./scrape_index_pipeline_interactive instead?", file=sys.stderr)
-        print("(Or pass a subcommand directly: reindex/crawl-and-reindex <site>, or --all. See -h.)", file=sys.stderr)
+        print("(Or pass a subcommand directly: index/crawl/crawl-and-index <site>, or --all. See -h.)", file=sys.stderr)
         sys.exit(1)
 
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='mode', required=True)
 
-    reindex_p = sub.add_parser('reindex', help='Run an existing CSV through validate/filter/convert/reconcile, no crawl')
-    reindex_p.add_argument('site', nargs='?', help='Spider name or source_site (omit with --all)')
-    reindex_p.add_argument('--all', action='store_true', help='Run against every registered site')
+    index_p = sub.add_parser('index', help='Run an existing CSV through validate/filter/convert/reconcile, no crawl')
+    index_p.add_argument('site', nargs='?', help='Spider name or source_site (omit with --all)')
+    index_p.add_argument('--all', action='store_true', help='Run against every registered site')
 
-    crawl_and_reindex_p = sub.add_parser(
-        'crawl-and-reindex',
-        help='Run the spider first, then do everything reindex does',
-    )
-    crawl_and_reindex_p.add_argument('site', nargs='?')
-    crawl_and_reindex_p.add_argument('--all', action='store_true')
+    crawl_p = sub.add_parser('crawl', help='Run the spider - scrapy crawl <site>, nothing else')
+    crawl_p.add_argument('site', nargs='?')
+    crawl_p.add_argument('--all', action='store_true')
+
+    crawl_and_index_p = sub.add_parser('crawl-and-index', help='Run the spider, then do everything index does')
+    crawl_and_index_p.add_argument('site', nargs='?')
+    crawl_and_index_p.add_argument('--all', action='store_true')
 
     args = parser.parse_args()
 
@@ -91,7 +101,7 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format='%(message)s')
 
-    action = _reindex if args.mode == 'reindex' else _crawl_and_reindex
+    action = _ACTIONS[args.mode]
 
     try:
         if args.all:

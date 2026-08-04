@@ -278,7 +278,7 @@ matching content page even completes, the CSV writer's field shape locks
 onto `HarvestItem`'s own fields (`depth`, `is_listing`, `url`) — the real
 scraped content is either silently absent or shows up with blank
 `title`/`full_text`/`source_site`/etc., not as an error. Confirmed
-directly: `scrape_index_pipeline`'s `crawl-and-reindex` mode's first
+directly: `scrape_index_pipeline`'s `crawl-and-index` mode's first
 implementation invoked `scrapy crawl <name> -O <path>` and produced a
 `clintonwhitehouse1.csv` where all 2,611 rows had an empty `source_site`
 — every real content row had been discarded.
