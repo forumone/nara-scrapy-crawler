@@ -156,9 +156,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         exclusion_rules.strip_denied_query_params. Done first, before
         _filter_web_urls/_apply_nav_deny/dedup, so a tracking-decorated URL
         collapses onto its bare canonical form's own request/dupefilter
-        fingerprint rather than being rejected outright by a match_exclude
-        rule (which only works if the bare URL is independently reachable
-        some other way)."""
+        fingerprint instead of needing a separate match_exclude rule."""
         rules = self._get_exclusion_rules()
         for lnk in links:
             lnk.url = _exclusion_rules_module.strip_denied_query_params(lnk.url, rules)

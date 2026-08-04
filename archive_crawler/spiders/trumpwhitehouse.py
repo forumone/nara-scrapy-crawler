@@ -163,11 +163,9 @@ class TrumpWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     # .editor__module--left: main site's share-links sidebar + "All News"
     #   back-link modules (editor__module-share/editor__module-all, both
     #   also carry --left). Deliberately NOT the blanket .editor__module -
-    #   the site's photo-gallery template (e.g. any /briefings-statements/
-    #   photo-*/photos-* page) wraps its own real captions in
-    #   .editor__module.editor__module--content, which a blanket strip here
-    #   would wipe out along with the sidebar, producing a false no_body
-    #   (confirmed live 2026-08-03 on the Cabinet Meeting photos page).
+    #   the photo-gallery template (/briefings-statements/photo-*/photos-*)
+    #   wraps its own real captions in .editor__module.editor__module--content,
+    #   which a blanket strip here would wipe out along with the sidebar.
     # .visually-hidden: screen-reader-only labels, confirmed live on both the
     #   main site's microsites (a "heading" reading "Introduction") and
     #   crisisnextdoor (duplicate "WhiteHouse.gov" logo labels).

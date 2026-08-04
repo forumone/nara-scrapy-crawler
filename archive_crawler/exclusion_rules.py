@@ -52,12 +52,11 @@ _DEFAULT_EXTENSIONS = {
     'values': ['html', 'htm', 'php', 'asp', 'aspx', 'shtml', 'cfm', 'cgi'],
 }
 
-# Always-stripped query-param name prefixes, regardless of site config - GA/GTM
-# style campaign tags (utm_source/utm_medium/utm_campaign/utm_term/utm_content
-# and any future utm_* variant) are never meaningfully distinct content on any
-# site this crawler targets, so denying them globally is safe in a way an
-# allow-list covering every site's legitimate params (e.g. this same
-# mechanism's ?issue_filter= on trumpwhitehouse) would not be.
+# Always-stripped query-param name prefixes, regardless of site config -
+# campaign-tracking params (utm_source/utm_medium/utm_campaign/utm_term/
+# utm_content and any future utm_* variant) never carry meaningfully distinct
+# content on any site this crawler targets, so denying them globally is safe
+# in a way an allow-list covering every site's legitimate params would not be.
 _DEFAULT_QUERY_PARAM_DENY_PREFIXES = ('utm_',)
 
 
@@ -213,10 +212,9 @@ def strip_denied_query_params(url, rules):
     Applied to a link's URL before it's followed/requested (NavHarvesterMixin,
     UrlFileSpiderMixin) so a tracking-decorated URL and its bare canonical
     form collapse to the same request/dupefilter fingerprint, instead of
-    relying on a match_exclude rule to reject the decorated variant after
-    the fact - which only works if the bare URL is independently reachable
-    some other way (it wasn't, for a handful of trumpwhitehouse pages only
-    ever linked from an email-campaign URL).
+    relying on a match_exclude rule to reject the decorated variant - which
+    only works if the bare URL is also independently reachable some other
+    way.
     """
     deny_names = set(rules.query_params_deny)
     parts = urlsplit(url)
