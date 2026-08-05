@@ -4,26 +4,31 @@ OpenSearch - see README.md's "Indexing pipeline" section and NAD2-756's
 pipeline plan for the full shape.
 
 Usage:
-    ./scrape_index_pipeline index <site> [--csv PATH] [--jsonl PATH]
+    ./scrape_index_pipeline index <site> [--csv PATH] [--jsonl PATH] [--filter-rules-file PATH] [--filter-rules-mode append|replace]
     ./scrape_index_pipeline index --all
     ./scrape_index_pipeline crawl <site> [--download-delay N] [--concurrent-requests-per-domain N] [--logfile PATH]
     ./scrape_index_pipeline crawl --all
-    ./scrape_index_pipeline crawl-and-index <site> [--jsonl PATH] [--download-delay N] [--concurrent-requests-per-domain N] [--logfile PATH]
+    ./scrape_index_pipeline crawl-and-index <site> [--jsonl PATH] [--download-delay N] [--concurrent-requests-per-domain N] [--logfile PATH] [--filter-rules-file PATH] [--filter-rules-mode append|replace]
     ./scrape_index_pipeline crawl-and-index --all
 
 <site> is either a spider name (e.g. bidenwhitehouse) or a source_site
 (e.g. www.bidenwhitehouse) - see archive_crawler/pipeline/registry.py.
 
---csv/--jsonl/--logfile override where a file is read from/written to;
-none can be combined with --all (one path can't apply to every site).
---csv is index-only: crawl and crawl-and-index never accept a CSV path
-override, since that would mean passing -O to the spider, which silently
-corrupts output on every one of these spiders - see ARCHITECTURE.md's
-"Never pass -O/-o to a multi-FEEDS-entry spider". --logfile diverts the
-*entire* crawl log there instead of stdout/stderr (Scrapy writes to one
-or the other, never both) - the ErrorFileLogger extension's own
-data/<site>/<site>-errors-<timestamp>.log keeps recording ERROR-level
-messages regardless, since that's an independent handler.
+--csv/--jsonl/--logfile/--filter-rules-file override where a file is
+read from/written to; none can be combined with --all (one path can't
+apply to every site). --csv is index-only: crawl and crawl-and-index
+never accept a CSV path override, since that would mean passing -O to
+the spider, which silently corrupts output on every one of these
+spiders - see ARCHITECTURE.md's "Never pass -O/-o to a multi-FEEDS-entry
+spider". --logfile diverts the *entire* crawl log there instead of
+stdout/stderr (Scrapy writes to one or the other, never both) - the
+ErrorFileLogger extension's own data/<site>/<site>-errors-<timestamp>.log
+keeps recording ERROR-level messages regardless, since that's an
+independent handler. --filter-rules-file overlays a one-off warning-
+filter override on top of the committed
+archive_crawler/filter_rules/<site>.yml (see
+archive_crawler/pipeline/filter_rows.py for the append/replace overlay
+semantics, mirroring exclusion_rules.py's own).
 
 Run from the repo root, matching every other entry point in this project
 (scrapy crawl) - relative data/ paths assume that cwd.
@@ -110,10 +115,12 @@ def _read_rows(csv_path):
         return list(csv.DictReader(f))
 
 
-def _index(site_info, jsonl_path=None):
+def _index(site_info, jsonl_path=None, filter_rules_file=None, filter_rules_mode='append'):
     rows = _read_rows(site_info.csv_path)
     validate.validate_rows(rows)
-    kept, dropped = filter_rows.filter_rows(rows, site_info.source_site)
+    kept, dropped = filter_rows.filter_rows(
+        rows, site_info.source_site, override_path=filter_rules_file, mode=filter_rules_mode,
+    )
     if jsonl_path is None:
         jsonl_path = site_info.csv_path.rsplit('.', 1)[0] + '.jsonl'
     count = convert.rows_to_jsonl(kept, jsonl_path)
@@ -156,12 +163,15 @@ def _crawl(site_info, download_delay=None, concurrent_requests_per_domain=None, 
     subprocess.run(cmd, check=True)
 
 
-def _crawl_and_index(site_info, jsonl_path=None, download_delay=None, concurrent_requests_per_domain=None, logfile=None):
+def _crawl_and_index(
+    site_info, jsonl_path=None, download_delay=None, concurrent_requests_per_domain=None,
+    logfile=None, filter_rules_file=None, filter_rules_mode='append',
+):
     _crawl(
         site_info, download_delay=download_delay,
         concurrent_requests_per_domain=concurrent_requests_per_domain, logfile=logfile,
     )
-    _index(site_info, jsonl_path=jsonl_path)
+    _index(site_info, jsonl_path=jsonl_path, filter_rules_file=filter_rules_file, filter_rules_mode=filter_rules_mode)
 
 
 _ACTIONS = {'index': _index, 'crawl': _crawl, 'crawl-and-index': _crawl_and_index}
@@ -169,8 +179,12 @@ _ACTIONS = {'index': _index, 'crawl': _crawl, 'crawl-and-index': _crawl_and_inde
 
 def _build_kwargs(args):
     kwargs = {}
-    if args.mode in ('index', 'crawl-and-index') and getattr(args, 'jsonl', None):
-        kwargs['jsonl_path'] = args.jsonl
+    if args.mode in ('index', 'crawl-and-index'):
+        if getattr(args, 'jsonl', None):
+            kwargs['jsonl_path'] = args.jsonl
+        if getattr(args, 'filter_rules_file', None):
+            kwargs['filter_rules_file'] = args.filter_rules_file
+            kwargs['filter_rules_mode'] = args.filter_rules_mode
     if args.mode in ('crawl', 'crawl-and-index'):
         if args.download_delay is not None:
             kwargs['download_delay'] = args.download_delay
@@ -195,6 +209,8 @@ def main():
     index_p.add_argument('--all', action='store_true', help='Run against every registered site')
     index_p.add_argument('--csv', metavar='PATH', help="Override which CSV to read (default: the site's own data/<site>/<site>.csv)")
     index_p.add_argument('--jsonl', metavar='PATH', help='Override where the converted JSONL is written (default: alongside the CSV, same basename)')
+    index_p.add_argument('--filter-rules-file', metavar='PATH', help='Overlay a one-off warning-filter override on top of the committed archive_crawler/filter_rules/<site>.yml')
+    index_p.add_argument('--filter-rules-mode', choices=('append', 'replace'), default='append', help="'append' (default) unions with the committed file; 'replace' uses the override's own drop_if_all_present if it defines one")
 
     crawl_p = sub.add_parser('crawl', help='Run the spider - scrapy crawl <site>, nothing else')
     crawl_p.add_argument('site', nargs='?')
@@ -207,6 +223,8 @@ def main():
     crawl_and_index_p.add_argument('site', nargs='?')
     crawl_and_index_p.add_argument('--all', action='store_true')
     crawl_and_index_p.add_argument('--jsonl', metavar='PATH', help='Override where the converted JSONL is written (default: alongside the CSV, same basename)')
+    crawl_and_index_p.add_argument('--filter-rules-file', metavar='PATH', help='Overlay a one-off warning-filter override on top of the committed archive_crawler/filter_rules/<site>.yml')
+    crawl_and_index_p.add_argument('--filter-rules-mode', choices=('append', 'replace'), default='append', help="'append' (default) unions with the committed file; 'replace' uses the override's own drop_if_all_present if it defines one")
     crawl_and_index_p.add_argument('--download-delay', type=_download_delay_type, metavar='SECONDS', help="Override DOWNLOAD_DELAY, 0.1-2 (default: settings.py's 0.25)")
     crawl_and_index_p.add_argument('--concurrent-requests-per-domain', type=_concurrency_type, metavar='N', help="Override CONCURRENT_REQUESTS_PER_DOMAIN, 1-20 (default: settings.py's 4)")
     crawl_and_index_p.add_argument('--logfile', metavar='PATH', help='Write the full crawl log here instead of stdout/stderr (default: none - only ERROR-level messages persist, via ErrorFileLogger)')
@@ -217,8 +235,11 @@ def main():
         parser.error('either a site argument or --all is required')
     if args.all and args.site:
         parser.error('pass either a site argument or --all, not both')
-    if args.all and (getattr(args, 'csv', None) or getattr(args, 'jsonl', None) or getattr(args, 'logfile', None)):
-        parser.error('--csv/--jsonl/--logfile cannot be combined with --all - one path cannot apply to every site')
+    if args.all and (
+        getattr(args, 'csv', None) or getattr(args, 'jsonl', None)
+        or getattr(args, 'logfile', None) or getattr(args, 'filter_rules_file', None)
+    ):
+        parser.error('--csv/--jsonl/--logfile/--filter-rules-file cannot be combined with --all - one path cannot apply to every site')
 
     logging.basicConfig(level=logging.INFO, format='%(message)s')
 

@@ -1,0 +1,5 @@
+# Warning-based row filter for clintonwhitehouse6, applied at index time
+# (scrape_index_pipeline), not at crawl time. Drop a row only when
+# no_body is present - a title-only page still gets indexed.
+
+drop_if_all_present: [no_body]

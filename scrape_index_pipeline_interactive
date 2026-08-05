@@ -118,6 +118,20 @@ def main():
         if jsonl_path:
             cmd += ['--jsonl', jsonl_path]
 
+        # Blank keeps the committed archive_crawler/filter_rules/<site>.yml
+        # as the sole source of truth - this is only a one-off overlay on
+        # top of it (see filter_rows.py's append/replace semantics).
+        filter_rules_file = prompt_path("Warning-filter rules override file", "none")
+        if filter_rules_file:
+            cmd += ['--filter-rules-file', filter_rules_file]
+            while True:
+                mode_choice = input("Filter rules mode [append/replace] (default: append): ").strip().lower() or 'append'
+                if mode_choice in ('append', 'replace'):
+                    break
+                print("  Enter 'append' or 'replace'.")
+            if mode_choice != 'append':
+                cmd += ['--filter-rules-mode', mode_choice]
+
     if mode in ('crawl', 'crawl-and-index'):
         download_delay = prompt_float_range(
             "Download delay (seconds)", 0.1, 2, archive_settings.DOWNLOAD_DELAY,

@@ -482,11 +482,17 @@ action. Run from the repo root — relative `data/` paths assume that `cwd`.
   nothing the crawl does can stall or slow it down. Silently skipped
   (falls back to a plain wait) when stdout isn't a terminal — a Docker/
   automated invocation's logs never fill up with carriage-return noise.
-- `--csv`/`--jsonl`/`--logfile` cannot be combined with `--all` — a
-  single path can't apply to 14 different sites in one invocation.
-  `--download-delay`/`--concurrent-requests-per-domain` *can* be
-  combined with `--all` — the same throttle value applies uniformly
-  across every site in the loop.
+- `index`/`crawl-and-index --filter-rules-file <path>` (optionally
+  `--filter-rules-mode append|replace`, default `append`) — overlay a
+  one-off override on top of the site's committed
+  `archive_crawler/filter_rules/<site>.yml`, same shape as
+  `exclusion_rules.py`'s own `-a rules_file=`/`-a rules_mode=` for
+  spiders. See "Pipeline stages" below for what that file controls.
+- `--csv`/`--jsonl`/`--logfile`/`--filter-rules-file` cannot be combined
+  with `--all` — a single path can't apply to 14 different sites in one
+  invocation. `--download-delay`/`--concurrent-requests-per-domain`
+  *can* be combined with `--all` — the same throttle value applies
+  uniformly across every site in the loop.
 
 `scrape_index_pipeline_interactive` prompts for site and mode instead of
 requiring them as CLI args, then confirms and execs the equivalent
@@ -508,12 +514,16 @@ requiring them as CLI args, then confirms and execs the equivalent
   HTML-tag, HTML-entity, missing-space, "Continue reading" checks) — that
   script audits CSVs already pulled back out of the live index; this one
   only gates whether a row is indexed at all.
-- **`filter_rows.py`** — a per-`source_site` table of which `warnings`
-  labels (see "Warnings column" above) drop a row before conversion. A row
-  is dropped only when its warning set is a *superset* of the site's
-  configured filter set (a two-label entry requires both labels present,
-  not either). A `source_site` missing from the table raises rather than
-  silently defaulting either way.
+- **`filter_rows.py`** — reads `archive_crawler/filter_rules/<source_site>.yml`
+  (`drop_if_all_present: [no_body]`, or `[]` for "never drop") to decide
+  which `warnings` labels (see "Warnings column" above) drop a row before
+  conversion. A row is dropped only when its warning set is a *superset*
+  of that list (a two-label entry requires both labels present, not
+  either). A `source_site` with no committed file raises rather than
+  silently defaulting either way. `--filter-rules-file`/
+  `--filter-rules-mode` (see "Overrides" above) overlay a per-run
+  override on the committed file without editing it, same shape as
+  `exclusion_rules.py`'s own overlay for spiders.
 - **`convert.py`** — CSV row → `archive_content_v2` document field mapping
   (`source_type` → `source_type_id` is the one renamed field; `warnings`
   is dropped, not on the live mapping). `id`/`document_type`/`source`/
@@ -545,6 +555,8 @@ requiring them as CLI args, then confirms and execs the equivalent
 `exclusion_rules.py`: Loads per-domain URL exclusion rules from `exclusion_rules/<SOURCE_SITE>.yml` (extension allow/deny list, `contains`/`regex` URL-pattern rules, nav-crawl deny patterns, generic-crawl pagination/query-param config). Every harvest-capable spider accepts `-a rules_file=<path>` and `-a rules_mode=append|replace` to overlay a per-run override on the committed file without editing it.
 
 `exclusion_rules/`: One committed YAML file per domain (see `exclusion_rules.py` above). New sites should get one even if empty, so `-a rules_file`/`-a rules_mode` always has a base to overlay onto.
+
+`filter_rules/`: One committed YAML file per `source_site` (`drop_if_all_present: [...]`, see `pipeline/filter_rows.py` under "Indexing Pipeline" above) — the index-time counterpart to `exclusion_rules/`, kept in its own directory since it's a different concern (warning-based row filtering) consumed by a different tool (`scrape_index_pipeline`, not the spiders).
 
 `items.py`: `ArchiveItem` — the strict content schema (URL, Title, Full Text, Teaser, Source Site, Source Type, Warnings). `HarvestItem` — the URL/is_listing/depth schema yielded by every `NavHarvesterMixin` spider's discovery pass and every `SitemapUrlSpiderMixin` spider's sitemap-parse pass (only `url` is populated/exported for the latter — `is_listing`/`depth` are nav-crawl-specific).
 

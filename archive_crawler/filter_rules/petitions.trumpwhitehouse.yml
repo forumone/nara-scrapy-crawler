@@ -1,0 +1,5 @@
+# Warning-based row filter for petitions.trumpwhitehouse, applied at
+# index time (scrape_index_pipeline), not at crawl time. Never drop - a
+# real page fetched with a warning still gets indexed, flagged.
+
+drop_if_all_present: []

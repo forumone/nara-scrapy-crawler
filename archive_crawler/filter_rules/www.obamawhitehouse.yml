@@ -1,0 +1,6 @@
+# Warning-based row filter for www.obamawhitehouse, applied at index time
+# (scrape_index_pipeline), not at crawl time. Drop a row only when BOTH
+# no_body and no_title are present together - either alone still gets
+# indexed.
+
+drop_if_all_present: [no_body, no_title]
