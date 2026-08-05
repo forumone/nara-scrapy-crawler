@@ -386,21 +386,6 @@ that already has `_scrape_item` defined, comment it out (or drop
 
 ---
 
-## List-first split harvester (considered and rejected)
-
-Not used by any current site in this repo, and not a legitimate fallback
-despite earlier framing here as one: it depends on a manually-curated,
-up-front list of every listing page, and there's no way to confirm that list
-is complete short of ongoing monitoring of crawl output for
-suspiciously-repeated content — exactly what the unified pattern's
-listing-fingerprint dedup (`NavHarvesterMixin`, above) exists to avoid
-needing. If a site's listing container + pager selector genuinely can't be
-made reliable enough for the unified pattern, treat that as a sign the site
-needs closer per-page discovery work (step 1 above), not a reason to fall
-back to a curated listing list.
-
----
-
 ## Step-by-step: generic harvester
 
 For simple sites, skip to a single harvest phase:

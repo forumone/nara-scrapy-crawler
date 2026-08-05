@@ -348,9 +348,6 @@ depending on whether the site has a real listing-fan-out risk:
   `exclusion_rules/open.obamawhitehouse.yml` has a worked example of the
   nav_deny patterns this needed (both a path-based and a query-string-based
   facet convention).
-- **List-first (two spiders)** — considered and rejected, not a supported
-  fallback. See `HARVESTING.md`'s "List-first split harvester" section for
-  why.
 
 ### Creating a sitemap-based content spider
 
