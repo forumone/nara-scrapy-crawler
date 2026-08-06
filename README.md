@@ -1,20 +1,14 @@
 # AWS Serverless Web Crawler for Archived Sites
 
-This project is a containerized **Scrapy** crawler designed to run on **AWS Batch**. It serves as the data collection engine for an aggregated search system.
-
-It is designed to crawl static/archived websites, normalize the data into a strict schema, and output JSON files to **Amazon S3**. An S3 Event Trigger then handles ingestion into **AWS OpenSearch**.
+This project is a containerized **Scrapy** crawler, deployable via **AWS Batch**. It serves as the data collection engine for an aggregated search system.
 
 > New to this repo? See [QUICKSTART.md](QUICKSTART.md) to validate your local setup with two of the simplest crawlers before reading further.
 
 ## 🏗 Architecture
 
-**Drupal (Admin)** ➔ **AWS SQS** ➔ **AWS Batch (This Repo)** ➔ **S3 Bucket** ➔ **Lambda** ➔ **OpenSearch**
+This repo crawls static/archived websites and pushes each site's converted JSONL to an S3 bucket (see "Push Pipeline" below). A downstream Lambda, outside this repo, watches that bucket and indexes into OpenSearch. The eventual search front-end queries OpenSearch directly (via Drupal's `search_api`) - Drupal has no role in triggering or controlling this repo's crawling or pushing.
 
-1.  **Trigger:** Drupal sends a message to SQS with a URL and Site ID.
-2.  **Compute:** AWS Batch spins up a Docker container (this project).
-3.  **Crawl:** Scrapy crawls the site using the `generic_crawl` spider.
-4.  **Storage:** JSON results are streamed directly to S3.
-5.  **Ingest:** A separate Lambda function detects the new file and pushes it to OpenSearch.
+What triggers a crawl - manual invocation, `crontab.example`'s schedule, or some other interface - is undecided and out of scope for this repo.
 
 ## 🚀 Setup & Installation
 
