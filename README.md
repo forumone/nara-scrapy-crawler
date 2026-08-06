@@ -491,25 +491,13 @@ action. Run from the repo root — relative `data/` paths assume that `cwd`.
   *can* be combined with `--all` — the same throttle value applies
   uniformly across every site in the loop.
 
-`scrape_index_pipeline_interactive` prompts for site and mode instead of
-requiring them as CLI args, then confirms and execs the equivalent
+`scrape_index_pipeline_interactive` prompts for site, mode, and any
+relevant overrides instead of requiring them as CLI args, previews every
+file the run will touch, and confirms before exec-ing the equivalent
 `scrape_index_pipeline` command — same division of labor as the old
-`run_crawl_interactive.sh` → `run_crawl.sh` pattern this replaces.
-Deliberately simpler than the bare CLI: no `--csv`/`--jsonl` path prompts
-for the JSONL, and no `--logfile` prompt — the JSONL always goes to its
-default location, and `crawl`/`crawl-and-index` always get an
-auto-generated `--logfile` (same directory as the site's own CSV,
-`{source_site}_{mode}-{timestamp}.log`, e.g.
-`open.obamawhitehouse_crawl-and-index-20260804-155211.log`) rather than
-asking. Finer control over either path is what the bare
-`scrape_index_pipeline` CLI is for. Before the final confirm prompt, it
-lists every file the invocation will create or overwrite (marking
-existing files as such) — the content CSV, harvest CSV, the auto-named
-crawl log, and, for `index`/`crawl-and-index`, the JSONL are exact;
-the exclusions CSV (only written if the crawl actually excludes a URL)
-and `ErrorFileLogger`'s error log (always written, but Scrapy stamps its
-own timestamp at crawl-start) are listed with a caveat rather than a
-definite new/overwritten tag.
+`run_crawl_interactive.sh` → `run_crawl.sh` pattern this replaces. Simpler
+than the bare CLI by design (no `--jsonl`/`--logfile` path prompts); use
+`scrape_index_pipeline` directly for finer control.
 
 ### Pipeline stages (`archive_crawler/pipeline/`)
 
