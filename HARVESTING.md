@@ -54,6 +54,72 @@ Archive Spiders" section for a worked example, and its "Warnings column"
 section for the `parse_item` shape (`no_body`/`no_title`/`short_body` flag
 rather than exclude).
 
+### Creating a new sitemap-based site's spider
+
+Copy an existing sitemap spider (e.g., `archive_crawler/spiders/clintonwhitehouse2.py`) and update:
+- `name`, `allowed_domains`, `SOURCE_SITE`, `SOURCE_TYPE`
+- `SITEMAP_URL` — the resolved sitemap/sitemap-index URL found above
+- `custom_settings['FEEDS']` — two entries, the harvest CSV
+  (`data/<SOURCE_SITE>/<SOURCE_SITE>_harvest.csv`, `item_classes:
+  [HarvestItem]`, `fields: ['url']`) and the content CSV
+  (`data/<SOURCE_SITE>/<SOURCE_SITE>.csv`, `item_classes: [ArchiveItem]`,
+  the same `fields` list as every other content spider) — copy the exact
+  shape from any existing sitemap-based spider. This is what makes the new
+  spider's output automatic — no `-O` needed to run it.
+- Create `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml` for any
+  URL-pattern exclusions `start_requests` needs (`rules: [{match, pattern,
+  reason}, ...]`) — see `www.georgewbush-whitehouse.yml` for an example.
+  `start_requests` itself just calls `self._get_exclusion_rules()` and
+  `exclusion_rules.match_exclude(url, rules)`; no per-site Python needed.
+- Create `archive_crawler/filter_rules/<SOURCE_SITE>.yml` for
+  `scrape_index_pipeline`'s warning-based row filter (`drop_if_all_present:
+  [no_body]`, or `[]` for "never drop") — see README's "Warnings Column"
+  for what `no_body`/`no_title`/`short_body` mean.
+- CSS selectors in `parse_item` to match the new site's content structure
+
+All sitemap-based spiders inherit from `SitemapUrlSpiderMixin` (which
+itself extends `ArchiveSpiderMixin`, for its content-extraction helpers -
+kept separate specifically so a `NavHarvesterMixin`-composed spider, which
+also extends `ArchiveSpiderMixin`, never inherits sitemap-fetching behavior
+it doesn't use). Between the two, this gives every sitemap-based spider:
+- `start_requests()` / `_parse_sitemap(response)` (`SitemapUrlSpiderMixin`)
+  — fetches `SITEMAP_URL`, recurses `sitemapindex` entries, drops whatever
+  this site's exclusion rules match (logging each), and requests the rest
+  with the standard callback and HTTP error errback
+- `_make_request(url)` (`ArchiveSpiderMixin`) — builds a `parse_item`
+  request with the standard HTTP error errback
+- `_extract_title(response)` — h1 → h2 → `<title>` with HTML entity decoding and normalisation
+- `_extract_text(response, selector)` — strips NARA banners, nav boilerplate, and invisible Unicode before returning plain text
+- `_log_exclusion(url, reason)` — records a skipped URL; written to `_exclusions.csv` on spider close
+- `_get_exclusion_rules()` — loads `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`, overlaid with `-a rules_file=<path>` `-a rules_mode=append|replace` if given
+- `_get_short_body_threshold()` / `_slug_title(url)` — the `warnings` column's `short_body` threshold (default 30 chars) and `no_title` fallback title
+- `EXTRA_STRIP_SELECTORS` / `EXTRA_STRIP_XPATH` — per-spider hooks for site-specific boilerplate
+
+### Validating output
+
+```bash
+# Row count
+wc -l data/{source_site}/{source_site}.csv
+
+# Check for empty titles or full_text (should return 0)
+python -c "
+import csv
+with open('data/{source_site}/{source_site}.csv') as f:
+    rows = list(csv.DictReader(f))
+print('empty title:', sum(1 for r in rows if not r.get('title')))
+print('empty full_text:', sum(1 for r in rows if not r.get('full_text')))
+print('teaser >200:', sum(1 for r in rows if len(r.get('teaser_text','')) > 200))
+"
+
+# URL gap report (harvest vs. output)
+python audit_url_gaps.py \
+  --harvest data/{source_site}/{source_site}_harvest.csv \
+  --output  data/{source_site}/{source_site}.csv \
+  --depth 3 --source-site {source_site}
+```
+
+This validation applies equally to a `NavHarvesterMixin` site's output.
+
 ---
 
 ## Choosing a harvester pattern

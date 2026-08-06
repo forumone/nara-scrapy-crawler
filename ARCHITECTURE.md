@@ -289,3 +289,45 @@ project, per "CSV Naming Convention" — the whole point of that
 convention is that no run ever needs `-O` for correctness). Only pass it
 when you deliberately want to redirect output to a path the spider's own
 `custom_settings['FEEDS']` doesn't already cover.
+
+---
+
+## Indexing pipeline stages (`archive_crawler/pipeline/`)
+
+`scrape_index_pipeline` (see README's "Indexing Pipeline" section for
+usage) is a thin CLI over these modules:
+
+- **`registry.py`** — `list_sites()` enumerates every content spider via
+  `scrapy.spiderloader.SpiderLoader`, keyed by `source_site` (excludes
+  `generic_crawl`/`generic_crawl_harvest`/`sitemap_harvest`, which have no
+  fixed site identity). `resolve(site_arg)` looks a site up by either
+  spider name or `source_site`.
+- **`validate.py`** — every `source_site` value present must be a known
+  site, and `full_text`/`teaser_text` are checked against a bare-URL regex
+  to catch a column swap. Raises `ValidationError` listing every problem
+  found, not just the first. Narrower than
+  `~/git/nara/scripts/validate-opensearch-csv.py` (invisible-unicode,
+  HTML-tag, HTML-entity, missing-space, "Continue reading" checks) — that
+  script audits CSVs already pulled back out of the live index; this one
+  only gates whether a row is indexed at all.
+- **`filter_rows.py`** — reads `archive_crawler/filter_rules/<source_site>.yml`
+  (`drop_if_all_present: [no_body]`, or `[]` for "never drop") to decide
+  which `warnings` labels (see README's "Warnings Column") drop a row
+  before conversion. A row is dropped only when its warning set is a
+  *superset* of that list (a two-label entry requires both labels
+  present, not either). A `source_site` with no committed file raises
+  rather than silently defaulting either way. `--filter-rules-file`/
+  `--filter-rules-mode` overlay a per-run override on the committed file
+  without editing it, same shape as `exclusion_rules.py`'s own overlay
+  for spiders.
+- **`convert.py`** — CSV row → `archive_content_v2` document field mapping
+  (`source_type` → `source_type_id` is the one renamed field; `warnings`
+  is dropped, not on the live mapping). `id`/`document_type`/`source`/
+  `changed` aren't populated — no document from any of the 14 archive
+  sites exists in the live index yet to reference their shape.
+- **`reconcile.py`** — **stub.** Logs a dry-run summary (row count,
+  `source_site`, destination) and makes no AWS/network call. Blocked on:
+  whether `nara-opensearch-lambda` supports delete-then-upsert/reconcile
+  or only blind bulk-upsert; where it watches in S3; what AWS access this
+  utility needs; and what should populate `id`/`document_type`/`source`/
+  `changed`. None of the other stages depend on these answers.
