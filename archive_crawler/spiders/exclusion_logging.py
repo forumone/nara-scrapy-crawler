@@ -45,14 +45,25 @@ class ExclusionLoggingMixin:
     harvester can each compose this one mixin instead of each defining
     their own identical `_get_exclusion_rules`/`_log_exclusion`/`closed()`.
 
-    EXCLUSIONS_FILE_SUFFIX defaults to 'exclusions' (ArchiveSpiderMixin's
-    existing filename, unchanged) - override per mixin/spider so a nav
-    harvester, a listing harvester, and a content spider sharing the same
-    SOURCE_SITE don't overwrite each other's exclusion log when run back to
-    back (e.g. NavHarvesterMixin sets 'nav-exclusions').
+    Two separate logs, kept in separate files so `scrape + exclude =
+    harvest` holds exactly for a NavHarvesterMixin-based spider's harvest
+    CSV:
+
+    - `_log_exclusion`/`*_exclusions.csv`: a URL that was (or would have
+      been) a real harvest-candidate - extracted by the site's own Rule/
+      listing-pagination logic - excluded before or after fetching it.
+      Every row here corresponds to a URL that would otherwise have added
+      one row to the harvest CSV.
+    - `_log_dropped`/`*_dropped.csv`: `_census_links`'s own output only
+      (see its docstring) - links found via a separate, wider sweep of
+      every same-domain href on a page, built to audit total sitewide
+      hyperlink volume, not to decide what the crawl follows. A URL logged
+      here was never a harvest-candidate in the first place, so it isn't
+      expected to reconcile against the harvest CSV at all.
     """
 
     EXCLUSIONS_FILE_SUFFIX = 'exclusions'
+    DROPPED_FILE_SUFFIX = 'dropped'
 
     def _get_exclusion_rules(self):
         return _spider_exclusion_rules(self)
@@ -73,19 +84,27 @@ class ExclusionLoggingMixin:
         self._logged_exclusion_urls.add(url)
         self._exclusions.append({'url': url, 'reason': reason})
 
-    def closed(self, reason):
-        exclusions = getattr(self, '_exclusions', [])
-        if not exclusions:
+    def _log_dropped(self, url, reason):
+        if not hasattr(self, '_dropped'):
+            self._dropped = []
+            self._logged_dropped_urls = set()
+        if url in self._logged_dropped_urls:
             return
-        # -a exclusions_file=<path> overrides the derived default - no
-        # explicit __init__ parameter needed for this, since plain
-        # scrapy.Spider.__init__ already assigns any unrecognized -a kwarg
-        # as an instance attribute.
-        out_path = getattr(self, 'exclusions_file', None)
+        self._logged_dropped_urls.add(url)
+        self._dropped.append({'url': url, 'reason': reason})
+
+    def _write_log(self, rows, file_attr, suffix):
+        if not rows:
+            return
+        # -a exclusions_file=<path>/-a dropped_file=<path> overrides the
+        # derived default - no explicit __init__ parameter needed for
+        # this, since plain scrapy.Spider.__init__ already assigns any
+        # unrecognized -a kwarg as an instance attribute.
+        out_path = getattr(self, file_attr, None)
         if not out_path:
             out_dir = os.path.join('data', self.SOURCE_SITE)
             os.makedirs(out_dir, exist_ok=True)
-            out_path = os.path.join(out_dir, f'{self.SOURCE_SITE}_{self.EXCLUSIONS_FILE_SUFFIX}.csv')
+            out_path = os.path.join(out_dir, f'{self.SOURCE_SITE}_{suffix}.csv')
         else:
             out_dir = os.path.dirname(out_path)
             if out_dir:
@@ -93,7 +112,11 @@ class ExclusionLoggingMixin:
         with open(out_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=['url', 'reason'])
             writer.writeheader()
-            writer.writerows(exclusions)
+            writer.writerows(rows)
+
+    def closed(self, reason):
+        self._write_log(getattr(self, '_exclusions', []), 'exclusions_file', self.EXCLUSIONS_FILE_SUFFIX)
+        self._write_log(getattr(self, '_dropped', []), 'dropped_file', self.DROPPED_FILE_SUFFIX)
 
     def _census_links(self, response):
         """Extract every <a>/<area> href on the page via a wide-open
@@ -113,7 +136,10 @@ class ExclusionLoggingMixin:
 
         Built to make total site-wide hyperlink volume auditable against a
         client's page-count claim by reason - not to expand what gets
-        crawled. Never schedules a Request for anything found here; this is
+        crawled. Logs every reason via _log_dropped, not _log_exclusion -
+        none of these URLs were ever real harvest-candidates (see class
+        docstring), so they belong in *_dropped.csv, not *_exclusions.csv.
+        Never schedules a Request for anything found here; this is
         extraction + classification only.
 
         Returns the URLs that don't fall into any of those buckets (real,
@@ -135,11 +161,11 @@ class ExclusionLoggingMixin:
                 continue
             reason = _exclusion_rules_module.match_exclude(url, rules)
             if reason is not None:
-                self._log_exclusion(url, reason)
+                self._log_dropped(url, reason)
                 continue
             if not _exclusion_rules_module.is_web_url(url, rules):
                 ext = _exclusion_rules_module.url_extension(url)
-                self._log_exclusion(url, f'extension:{ext}')
+                self._log_dropped(url, f'extension:{ext}')
                 continue
             kept.append(url)
         return kept

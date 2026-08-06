@@ -101,20 +101,48 @@ being dropped:
 
 ## 🚫 Exclusion Output
 
-Each scrape spider automatically writes a `{source_site}_exclusions.csv` alongside the output CSV when the spider closes, no `-O`/`-a` needed — pass `-a exclusions_file=<path>` to override the derived default. Each row contains the skipped URL and a typed reason. Unlike the warnings above, these rows never appear in the main output CSV at all — most reasons mean there was no successfully-fetched, parseable page behind them; a few (like `search_listing_page` below) mean the page fetched fine but was judged non-content at scrape time, and are logged explicitly for the same reason: harvest CSV rows should always be accounted for by either the content CSV or the exclusions CSV, never neither.
+Each scrape spider automatically writes a `{source_site}_exclusions.csv` alongside the output CSV when the spider closes, no `-O`/`-a` needed — pass `-a exclusions_file=<path>` to override the derived default. Each row contains the skipped URL and a typed reason. Unlike the warnings above, these rows never appear in the main output CSV at all — most reasons mean there was no successfully-fetched, parseable page behind them; a few (like `search_listing_page` below) mean the page fetched fine but was judged non-content at scrape time, and are logged explicitly for the same reason: harvest CSV rows are always accounted for by either the content CSV or the exclusions CSV, never neither.
 
 | Reason | Description |
 |---|---|
 | `url_pattern:/foo/` | URL matched a known non-content path prefix |
-| `extension:<ext>` | Sitemap-based spiders (CW1–6, Biden, GWBush) only: URL failed the site's extension allowlist (e.g. a PDF or image listed in the sitemap) - dropped before it's ever added to the harvest CSV, at the same `_parse_sitemap` pass that applies `rules:`/`nav_deny`, unlike `sitemap_harvest`'s standalone `_harvest-dropped.csv` (a separate file, not used by these 8 sites) |
+| `extension:<ext>` | Sitemap-based spiders (CW1–6, Biden, GWBush) only: URL failed the site's extension allowlist (e.g. a PDF or image listed in the sitemap) |
 | `frameset` | Page is a frameset with no extractable content |
 | `non_text_response` | Response body isn't text (e.g. a binary file served from an extension-less URL a link-following crawl swept up) |
 | `http_404` | HTTP 404 response |
 | `http_3xx` | Redirect not followed (redirects are disabled globally) |
 | `http_5xx` | Server error |
 | `network_error:<type>` | Connection-level failure |
-| `search_listing_page` | `open_obama_whitehouse.py`-specific: a `/search`/`/search/type/*` pagination page - fetched and followed for dataset-link discovery, but not a content page itself |
-| `pagination_listing_page` | `PetitionsSpiderMixin`-specific (`obama_petitions.py`/`trump_petitions.py`): a root or `/responses` pagination page (`?page=N`) - fetched and followed for petition-link discovery, but not a content page itself |
+| `search_listing_page` | `open_obama_whitehouse.py`-specific: a `/search`/`/search/type/*` pagination page, followed for dataset-link discovery only |
+| `pagination_listing_page` | `PetitionsSpiderMixin`-specific: a root or `/responses` pagination page (`?page=N`), followed for petition-link discovery only |
+| `listing_page` | `NavHarvesterMixin`-specific (all 6 no-sitemap spiders): page has a detected listing container (see ARCHITECTURE.md), so its own content isn't scraped |
+
+### Dropped vs. Excluded
+
+Some spiders/tools also write a `*_dropped.csv` (`-a dropped_file=<path>`
+to override), a second, separate log from `*_exclusions.csv`. The
+distinction is about what kind of URL population each file describes, not
+which reason string is used - the same reason (e.g. `extension:pdf`) can
+appear in either file depending on where the URL came from:
+
+- **Excluded** (`*_exclusions.csv`): a URL the spider's own crawl logic
+  actually found as a real candidate to harvest, and decided not to,
+  either before or after fetching it. Every excluded URL is accounted
+  for as a "would-be harvest row" - see the invariant above.
+- **Dropped** (`*_dropped.csv`): a URL that was never a harvest-candidate
+  the crawl logic considered at all - found only via a separate, broader
+  audit sweep of URL/link volume, not deciding what gets crawled. Never
+  expected to reconcile against the harvest CSV.
+
+Two spider/tool families produce a dropped file, for different reasons:
+`NavHarvesterMixin`-based spiders (all 6 no-sitemap spiders) write
+`{source_site}_dropped.csv` for links found only via a page-wide
+same-domain link sweep, not the crawler's own follow logic; the standalone
+`sitemap_harvest.py` exploration tool writes `{source_site}_harvest-dropped.csv`
+for sitemap-listed URLs that failed its extension check. The 8 fused
+sitemap-based spiders (CW1–6, Biden, GWBush) never write a dropped file -
+every excluded URL for these sites, extension-based or not, is in
+`_exclusions.csv`.
 
 ---
 

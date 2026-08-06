@@ -112,12 +112,6 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     # ARCHITECTURE.md.
     LISTING_MAX_PAGES = 2000
 
-    # Distinct from ArchiveSpiderMixin's default 'exclusions' - a nav
-    # harvester and its companion content spider share the same SOURCE_SITE,
-    # so writing to the same filename would have one overwrite the other's
-    # log whenever both run against the same site.
-    EXCLUSIONS_FILE_SUFFIX = 'nav-exclusions'
-
     # Extension point: a subclass that also composes ArchiveSpiderMixin and
     # defines its own _scrape_item(self, response) gets content extraction
     # inline on the same response fetched for nav discovery (see
@@ -311,7 +305,14 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         )
         self._census_links(response)
         yield from self._walk_new_listings(response, listing_containers)
-        if not listing_containers:
+        if listing_containers:
+            # A listing page's own content isn't scraped (see
+            # _maybe_scrape_item's docstring); logging it here rather than
+            # leaving it silent means this harvest row is still accounted
+            # for - scrape + exclude = harvest holds for every row this
+            # method yields a HarvestItem for.
+            self._log_exclusion(response.url, 'listing_page')
+        else:
             yield from self._maybe_scrape_item(response)
         yield from self._follow_ordinary_links(response, view_urls)
 
