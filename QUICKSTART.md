@@ -41,9 +41,9 @@ full picture.
 
 Once a site has a `.csv`, try the interactive wrapper around the
 validate/filter/convert/reconcile pipeline — prompts for site, mode
-(`index`/`crawl`/`crawl-and-index`), and any overrides (CSV/JSONL paths,
-crawl throttle, log file), then shows and confirms the command before
-running it:
+(`index`/`crawl`/`crawl-and-index`), and any overrides (CSV path,
+warning-filter rules, crawl throttle), lists every file it will create
+or overwrite, then confirms before running:
 
 ```bash
 ./scrape_index_pipeline_interactive

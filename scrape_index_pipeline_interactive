@@ -4,9 +4,17 @@ mode, and any relevant overrides instead of requiring them as CLI args,
 same division of labor as run_crawl_interactive.sh -> run_crawl.sh: no
 pipeline logic is duplicated here, this only builds, shows, and confirms
 the equivalent command before exec-ing the real script.
+
+Deliberately simpler than the bare scrape_index_pipeline CLI: no --jsonl/
+--logfile path prompts. The JSONL always goes to its default location,
+and crawl/crawl-and-index always get an auto-named --logfile (same
+directory as the site's own CSV, source_site + mode + timestamp) rather
+than asking - finer control over either path is what the bare CLI is
+for.
 """
 import os
 import sys
+from datetime import datetime
 
 try:
     # Unused directly - importing it is what hooks GNU readline into every
@@ -95,6 +103,48 @@ def prompt_int_range(label, lo, hi, default):
         print(f"  Enter a whole number between {lo} and {hi}, or leave blank.")
 
 
+def _describe_file(path):
+    tag = 'exists - will be overwritten' if os.path.exists(path) else 'new'
+    return f"  {path}\n      ({tag})"
+
+
+def _jsonl_path(csv_path):
+    return csv_path.rsplit('.', 1)[0] + '.jsonl'
+
+
+def preview_files(site_info, mode, csv_path, logfile_path):
+    """Return display lines for every file this invocation will create or
+    overwrite. Two entries (exclusions CSV, ErrorFileLogger's error log)
+    can't be pinned down exactly ahead of time - the former depends on
+    what the crawl actually finds, the latter on a timestamp Scrapy
+    stamps at its own crawl-start - so those two are listed with a caveat
+    rather than a definite new/overwritten tag."""
+    lines = ["Files that will be created or overwritten:"]
+
+    if mode == 'index':
+        lines.append(_describe_file(_jsonl_path(csv_path)))
+        return lines
+
+    data_dir = os.path.dirname(csv_path)
+    source_site = site_info.source_site
+    lines.append(_describe_file(csv_path))
+    lines.append(_describe_file(os.path.join(data_dir, f'{source_site}_harvest.csv')))
+    lines.append(
+        f"  {os.path.join(data_dir, f'{source_site}_exclusions.csv')}\n"
+        f"      (only if any URLs are excluded)"
+    )
+    lines.append(
+        f"  {os.path.join(data_dir, f'{site_info.spider_name}-errors-<timestamp>.log')}\n"
+        f"      (always written, timestamped by Scrapy at crawl start)"
+    )
+    lines.append(_describe_file(logfile_path))
+
+    if mode == 'crawl-and-index':
+        lines.append(_describe_file(_jsonl_path(csv_path)))
+
+    return lines
+
+
 def main():
     site = prompt_site()
     site_info = registry.resolve(site)
@@ -109,15 +159,6 @@ def main():
             csv_path = override
 
     if mode in ('index', 'crawl-and-index'):
-        # Same derivation _index() itself uses when --jsonl isn't passed -
-        # based on whichever CSV path will actually be read (the override
-        # above, if given), so the shown default matches reality even when
-        # --csv changed it.
-        default_jsonl = csv_path.rsplit('.', 1)[0] + '.jsonl'
-        jsonl_path = prompt_path("JSONL output path", default_jsonl)
-        if jsonl_path:
-            cmd += ['--jsonl', jsonl_path]
-
         # Blank keeps the committed archive_crawler/filter_rules/<site>.yml
         # as the sole source of truth - this is only a one-off overlay on
         # top of it (see filter_rows.py's append/replace semantics).
@@ -132,6 +173,7 @@ def main():
             if mode_choice != 'append':
                 cmd += ['--filter-rules-mode', mode_choice]
 
+    logfile_path = None
     if mode in ('crawl', 'crawl-and-index'):
         download_delay = prompt_float_range(
             "Download delay (seconds)", 0.1, 2, archive_settings.DOWNLOAD_DELAY,
@@ -143,14 +185,20 @@ def main():
         )
         if concurrency is not None:
             cmd += ['--concurrent-requests-per-domain', str(concurrency)]
-        # Scrapy writes the full crawl log to either the logfile or the
-        # terminal, never both - leaving this blank keeps today's behavior
-        # (log prints live to the terminal). ERROR-level messages persist
-        # to data/<site>/<site>-errors-<timestamp>.log either way, via
-        # ErrorFileLogger - that's a separate, always-on mechanism.
-        logfile_path = prompt_path("Log file path (blank to print to the terminal instead)", "none")
-        if logfile_path:
-            cmd += ['--logfile', logfile_path]
+
+        # Always on, auto-named - no prompt. Finer control (a custom path,
+        # or no logfile at all / print to the terminal instead) is what
+        # the bare scrape_index_pipeline CLI is for; this wrapper stays
+        # simple and opinionated.
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        logfile_path = os.path.join(
+            os.path.dirname(csv_path), f'{site_info.source_site}_{mode}-{timestamp}.log',
+        )
+        cmd += ['--logfile', logfile_path]
+
+    print()
+    for line in preview_files(site_info, mode, csv_path, logfile_path):
+        print(line)
 
     print(f"\nCommand: {' '.join(cmd)}\n")
     if not prompt_confirm():
