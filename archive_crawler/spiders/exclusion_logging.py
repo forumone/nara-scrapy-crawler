@@ -41,12 +41,9 @@ class ExclusionLoggingMixin:
     SOURCE_SITE, regardless of whether it's a content spider, a nav
     harvester, or a listing harvester.
 
-    Previously duplicated: ArchiveSpiderMixin and NavHarvesterMixin each
-    defined their own identical _get_exclusion_rules, and only
-    ArchiveSpiderMixin had _log_exclusion/closed() at all - meaning nav and
-    listing harvesters had no way to log what they chose not to
-    follow/yield. Factored out here so all three compose it instead of
-    tripling that duplication.
+    Factored out so a content spider, a nav harvester, and a listing
+    harvester can each compose this one mixin instead of each defining
+    their own identical `_get_exclusion_rules`/`_log_exclusion`/`closed()`.
 
     EXCLUSIONS_FILE_SUFFIX defaults to 'exclusions' (ArchiveSpiderMixin's
     existing filename, unchanged) - override per mixin/spider so a nav

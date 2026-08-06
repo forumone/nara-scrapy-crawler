@@ -252,8 +252,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     def parse_nav(self, response):
         """Yield the URL and follow links if this is a nav content page.
 
-        Delegates to three phases, in order, each doing one part of what
-        used to be a single ~70-line function - see ARCHITECTURE.md for the
+        Delegates to three phases, in order - see ARCHITECTURE.md for the
         full listing-fingerprint mechanism these phases implement:
 
         1. _detect_listing_containers - find every LISTING_CONTAINER_SELECTOR

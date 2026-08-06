@@ -42,8 +42,8 @@ class ClintonWhiteHouse5Spider(SitemapUrlSpiderMixin, scrapy.Spider):
     # presence of "Text Only" both vary. Strip through whichever form
     # appears, keeping only what follows it - this is nav chrome, stripped
     # regardless of the letterhead-content policy below. The remaining pages
-    # use the plain press-release letterhead instead - no longer stripped,
-    # see TEXT_VERSION_TOGGLE_PATTERNS.
+    # use the plain press-release letterhead instead, left in place - see
+    # TEXT_VERSION_TOGGLE_PATTERNS.
     LEADING_TEXT_STRIP_PATTERNS = (
         re.compile(
             r'^\s*T\s*H\s*E\s+W\s*H\s*I\s*T\s*E\s+H\s*O\s*U\s*S\s*E\b'

@@ -75,9 +75,9 @@ class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     # against video/photogallery fan-out is a separate, content-based
     # mechanism independent of DEPTH_LIMIT.
     #
-    # FEEDS replaces the old two-spider -O invocation with two named feeds
-    # from this one run, item_classes-filtered to the matching schema - the
-    # exact fields each of today's separately-produced CSVs already has.
+    # FEEDS produces both harvest and content CSVs from this one run, via
+    # two named feeds each item_classes-filtered to the matching schema -
+    # the exact fields each CSV needs.
     custom_settings = {
         'DEPTH_LIMIT': 1300,
         'CRAWLSPIDER_FOLLOW_LINKS': False,

@@ -41,8 +41,8 @@ class OpenSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     # (see exclusion_rules/open.obamawhitehouse.yml) rather than relying on
     # offsite filtering, which doesn't apply to an in-flight redirect.
     #
-    # FEEDS replaces the old two-spider invocation with two named feeds from
-    # this one run, item_classes-filtered to the matching schema.
+    # FEEDS produces both harvest and content CSVs from this one run, via
+    # two named feeds each item_classes-filtered to the matching schema.
     custom_settings = {
         'DEPTH_LIMIT': 30,
         'REDIRECT_ENABLED': True,

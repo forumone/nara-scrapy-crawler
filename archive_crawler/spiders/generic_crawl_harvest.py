@@ -49,8 +49,7 @@ rules_file   Optional. Path to a YAML file overlaid on whichever of the above
              gets loaded - -a rules_mode=append (default) unions its rules/
              nav_deny/pagination/query_params_allow with the base file's, or
              'replace' to use rules_file's instead. Neither the base file nor
-             rules_file is written to; this is a runtime-only override,
-             replacing the old comma-separated urls_to_skip argument.
+             rules_file is written to; this is a runtime-only override.
 
 Customising for a new site
 --------------------------
