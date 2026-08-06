@@ -280,6 +280,7 @@ Each file's own docstring/comments have the full detail; this is just a map.
 | `audit_url_gaps.py` | Post-hoc URL gap analysis tool (see "URL Gap Analysis" above) |
 | `pipeline/`, `scrape_index_pipeline`, `scrape_index_pipeline_interactive` | Indexing pipeline (see "Indexing Pipeline" above); `scrape_index_pipeline` is the Docker `ENTRYPOINT` |
 | `Dockerfile` | Python 3.9 Slim image configuration |
+| `crontab.example` | Example weekly re-crawl schedule for all 14 sites, 2-parallel-max |
 
 
 ## 🛠 Deployment to AWS
