@@ -7,7 +7,7 @@
 # Design
 # ------
 # At most 2 crawls run at once (leaves headroom for a manual `crawl`/
-# `crawl-and-index` on top of the schedule). Each weekday below fires two
+# `crawl-and-push` on top of the schedule). Each weekday below fires two
 # buckets in parallel; sites *within* one bucket run sequentially, one
 # after another. The two largest, most memory-hungry sites
 # (georgewbush_whitehouse, obama_whitehouse) run alongside much smaller
@@ -36,11 +36,11 @@
 # run's traceback is somewhere durable instead of vanishing into cron's
 # own mail handling.
 #
-# reconcile.py is a dry-run-only stub as of this writing (see
-# archive_crawler/pipeline/reconcile.py) - `crawl-and-index` below
-# validates/filters/converts every site on schedule but doesn't push
-# anywhere real yet. Switch to plain `crawl` instead if even the dry-run
-# logging is unwanted until reconcile.py is wired up for real.
+# push.py is a dry-run-only stub as of this writing (see
+# archive_crawler/pipeline/push.py) - `crawl-and-push` below
+# validates/filters/converts every site on schedule but doesn't upload
+# to S3 yet. Switch to plain `crawl` instead if even the dry-run logging
+# is unwanted until push.py is wired up for real.
 #
 # Every job invokes the venv's own python3 directly (rather than relying
 # on PATH or scrape_index_pipeline's #!/usr/bin/env python3 shebang) -
@@ -56,23 +56,23 @@ SHELL=/bin/sh
 # --- Sunday ---------------------------------------------------------------
 
 # Bucket A: georgewbush_whitehouse (alone - largest/most memory-hungry site)
-0 0 * * 0 cd "$REPO_DIR" && ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index georgewbush_whitehouse --download-delay 2 --concurrent-requests-per-domain 1 >> "$REPO_DIR/data/cron-sun-a-georgewbush.log" 2>&1
+0 0 * * 0 cd "$REPO_DIR" && ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push georgewbush_whitehouse --download-delay 2 --concurrent-requests-per-domain 1 >> "$REPO_DIR/data/cron-sun-a-georgewbush.log" 2>&1
 
 # Bucket B: the four smallest sites, sequential
-0 0 * * 0 cd "$REPO_DIR" && ( ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index open_obama_whitehouse --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index obama_petitions --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index trump_petitions --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index letsmove --download-delay 2 --concurrent-requests-per-domain 1 ) >> "$REPO_DIR/data/cron-sun-b-small-sites.log" 2>&1
+0 0 * * 0 cd "$REPO_DIR" && ( ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push open_obama_whitehouse --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push obama_petitions --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push trump_petitions --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push letsmove --download-delay 2 --concurrent-requests-per-domain 1 ) >> "$REPO_DIR/data/cron-sun-b-small-sites.log" 2>&1
 
 # --- Wednesday --------------------------------------------------------------
 
 # Bucket A: obama_whitehouse (alone - second-largest/memory-hungry site)
-0 0 * * 3 cd "$REPO_DIR" && ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index obama_whitehouse --download-delay 2 --concurrent-requests-per-domain 1 >> "$REPO_DIR/data/cron-wed-a-obamawhitehouse.log" 2>&1
+0 0 * * 3 cd "$REPO_DIR" && ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push obama_whitehouse --download-delay 2 --concurrent-requests-per-domain 1 >> "$REPO_DIR/data/cron-wed-a-obamawhitehouse.log" 2>&1
 
 # Bucket B: trumpwhitehouse, bidenwhitehouse, sequential
-0 0 * * 3 cd "$REPO_DIR" && ( ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index trumpwhitehouse --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index bidenwhitehouse --download-delay 2 --concurrent-requests-per-domain 1 ) >> "$REPO_DIR/data/cron-wed-b-trump-biden.log" 2>&1
+0 0 * * 3 cd "$REPO_DIR" && ( ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push trumpwhitehouse --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push bidenwhitehouse --download-delay 2 --concurrent-requests-per-domain 1 ) >> "$REPO_DIR/data/cron-wed-b-trump-biden.log" 2>&1
 
 # --- Friday -----------------------------------------------------------------
 
 # Bucket A: all six Clinton sites, sequential
-0 0 * * 5 cd "$REPO_DIR" && ( ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index clintonwhitehouse1 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index clintonwhitehouse2 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index clintonwhitehouse3 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index clintonwhitehouse4 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index clintonwhitehouse5 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index clintonwhitehouse6 --download-delay 2 --concurrent-requests-per-domain 1 ) >> "$REPO_DIR/data/cron-fri-a-clinton-sites.log" 2>&1
+0 0 * * 5 cd "$REPO_DIR" && ( ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse1 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse2 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse3 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse4 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse5 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse6 --download-delay 2 --concurrent-requests-per-domain 1 ) >> "$REPO_DIR/data/cron-fri-a-clinton-sites.log" 2>&1
 
 # Bucket B: placeholder for a future site - uncomment and fill in once one exists
-# 0 0 * * 5 cd "$REPO_DIR" && ./venv/bin/python3 ./scrape_index_pipeline crawl-and-index NEW_SITE_NAME --download-delay 2 --concurrent-requests-per-domain 1 >> "$REPO_DIR/data/cron-fri-b-placeholder.log" 2>&1
+# 0 0 * * 5 cd "$REPO_DIR" && ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push NEW_SITE_NAME --download-delay 2 --concurrent-requests-per-domain 1 >> "$REPO_DIR/data/cron-fri-b-placeholder.log" 2>&1

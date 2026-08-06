@@ -3,7 +3,7 @@
 id/document_type/source/changed aren't populated here - no document from
 any of the 14 archive sites currently exists in the live index to
 reference their shape (see the pipeline plan's open questions). Those
-fields are left for reconcile.py once that's answered, not faked here.
+fields are left for push.py once that's answered, not faked here.
 """
 import json
 import os

@@ -37,11 +37,11 @@ If both produce a non-empty `.csv` with real title/body content, the
 environment is set up correctly. See README.md and HARVESTING.md for the
 full picture.
 
-## Indexing pipeline
+## Push pipeline
 
 Once a site has a `.csv`, try the interactive wrapper around the
-validate/filter/convert/reconcile pipeline — prompts for site, mode
-(`index`/`crawl`/`crawl-and-index`), and any overrides (CSV path,
+validate/filter/convert/push pipeline — prompts for site, mode
+(`push`/`crawl`/`crawl-and-push`), and any overrides (CSV path,
 warning-filter rules, crawl throttle), lists every file it will create
 or overwrite, then confirms before running:
 
@@ -49,5 +49,5 @@ or overwrite, then confirms before running:
 ./scrape_index_pipeline_interactive
 ```
 
-See README.md's "Indexing Pipeline" section for the non-interactive
+See README.md's "Push Pipeline" section for the non-interactive
 `scrape_index_pipeline` CLI and what each mode/flag does.

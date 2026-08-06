@@ -7,7 +7,7 @@ the equivalent command before exec-ing the real script.
 
 Deliberately simpler than the bare scrape_index_pipeline CLI: no --jsonl/
 --logfile path prompts. The JSONL always goes to its default location,
-and crawl/crawl-and-index always get an auto-named --logfile (same
+and crawl/crawl-and-push always get an auto-named --logfile (same
 directory as the site's own CSV, source_site + mode + timestamp) rather
 than asking - finer control over either path is what the bare CLI is
 for.
@@ -47,17 +47,17 @@ def prompt_site():
 
 def prompt_mode():
     print("Mode:")
-    print("  1. index            - index the existing CSV only, no crawl")
-    print("  2. crawl            - run the spider only, no indexing")
-    print("  3. crawl-and-index  - crawl the site fresh, then do everything index does")
+    print("  1. push            - push the existing CSV only, no crawl")
+    print("  2. crawl           - run the spider only, no pushing")
+    print("  3. crawl-and-push  - crawl the site fresh, then do everything push does")
     while True:
         choice = input("Select a mode [1-3] (default: 1): ").strip() or '1'
         if choice == '1':
-            return 'index'
+            return 'push'
         if choice == '2':
             return 'crawl'
         if choice == '3':
-            return 'crawl-and-index'
+            return 'crawl-and-push'
         print("  Enter 1, 2, or 3.")
 
 
@@ -121,7 +121,7 @@ def preview_files(site_info, mode, csv_path, logfile_path):
     rather than a definite new/overwritten tag."""
     lines = ["Files that will be created or overwritten:"]
 
-    if mode == 'index':
+    if mode == 'push':
         lines.append(_describe_file(_jsonl_path(csv_path)))
         return lines
 
@@ -139,7 +139,7 @@ def preview_files(site_info, mode, csv_path, logfile_path):
     )
     lines.append(_describe_file(logfile_path))
 
-    if mode == 'crawl-and-index':
+    if mode == 'crawl-and-push':
         lines.append(_describe_file(_jsonl_path(csv_path)))
 
     return lines
@@ -152,13 +152,13 @@ def main():
     cmd = [os.path.join(SCRIPT_DIR, 'scrape_index_pipeline'), mode, site]
 
     csv_path = site_info.csv_path
-    if mode == 'index':
+    if mode == 'push':
         override = prompt_path("CSV path to read", csv_path)
         if override:
             cmd += ['--csv', override]
             csv_path = override
 
-    if mode in ('index', 'crawl-and-index'):
+    if mode in ('push', 'crawl-and-push'):
         # Blank keeps the committed archive_crawler/filter_rules/<site>.yml
         # as the sole source of truth - this is only a one-off overlay on
         # top of it (see filter_rows.py's append/replace semantics).
@@ -174,7 +174,7 @@ def main():
                 cmd += ['--filter-rules-mode', mode_choice]
 
     logfile_path = None
-    if mode in ('crawl', 'crawl-and-index'):
+    if mode in ('crawl', 'crawl-and-push'):
         download_delay = prompt_float_range(
             "Download delay (seconds)", 0.1, 2, archive_settings.DOWNLOAD_DELAY,
         )

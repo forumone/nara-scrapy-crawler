@@ -203,29 +203,33 @@ and validating the output.
 
 ---
 
-## 🔎 Indexing Pipeline
+## 🔎 Push Pipeline
 
 `scrape_index_pipeline` takes a site's content CSV through validation,
-per-site warning-based row filtering, CSV→JSONL conversion, and (once
-wired up) an OpenSearch push. Three subcommands:
+per-site warning-based row filtering, and CSV→JSONL conversion, then
+pushes the result to S3. This project's responsibility ends at that
+upload — a downstream Lambda watches the bucket and handles indexing
+(including any reconciliation against existing index contents) on the
+OpenSearch side; nothing in this repo deletes or reconciles index
+contents. Three subcommands:
 
 ```bash
 # Validate/filter/convert/push an existing CSV, no crawl
-./scrape_index_pipeline index clintonwhitehouse1
-./scrape_index_pipeline index --all
+./scrape_index_pipeline push clintonwhitehouse1
+./scrape_index_pipeline push --all
 
 # Run the spider only - scrapy crawl <site>, nothing else
 ./scrape_index_pipeline crawl clintonwhitehouse1
 ./scrape_index_pipeline crawl --all
 
-# Crawl the site first, then do everything index does
-./scrape_index_pipeline crawl-and-index clintonwhitehouse1
-./scrape_index_pipeline crawl-and-index --all
+# Crawl the site first, then do everything push does
+./scrape_index_pipeline crawl-and-push clintonwhitehouse1
+./scrape_index_pipeline crawl-and-push --all
 ```
 
 `<site>` is either a spider name (`bidenwhitehouse`) or a `source_site`
 (`www.bidenwhitehouse`) — see `archive_crawler/pipeline/registry.py`.
-`index` is the primary path: per "CSVs are frozen source of truth"
+`push` is the primary path: per "CSVs are frozen source of truth"
 (`data/8-03/`), re-invoking a crawl is the exception, not the default
 action. Run from the repo root — relative `data/` paths assume that `cwd`.
 
@@ -234,7 +238,7 @@ action. Run from the repo root — relative `data/` paths assume that `cwd`.
 Run `-h` on any subcommand for the full flag list. A few behaviors worth
 knowing that aren't obvious from the flag descriptions alone:
 
-- `--csv` is `index`-only — `crawl`/`crawl-and-index` never accept a CSV
+- `--csv` is `push`-only — `crawl`/`crawl-and-push` never accept a CSV
   path override, since that would mean passing `-O` to the spider, which
   silently corrupts output (see ARCHITECTURE.md's "Never pass `-O`/`-o`
   to a multi-`FEEDS`-entry spider"). Only the *converted JSONL* is
@@ -256,9 +260,9 @@ file the run will touch, and confirms before exec-ing the equivalent
 than the bare CLI by design (no `--jsonl`/`--logfile` path prompts); use
 `scrape_index_pipeline` directly for finer control.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md#indexing-pipeline-stages-archive_crawlerpipeline)
+See [ARCHITECTURE.md](ARCHITECTURE.md#push-pipeline-stages-archive_crawlerpipeline)
 for what each pipeline module (`registry.py`/`validate.py`/`filter_rows.py`/
-`convert.py`/`reconcile.py`) actually does.
+`convert.py`/`push.py`) actually does.
 
 ---
 
@@ -274,11 +278,11 @@ Each file's own docstring/comments have the full detail; this is just a map.
 | `spiders/exclusion_logging.py` | `ExclusionLoggingMixin` — writes `{SOURCE_SITE}_exclusions.csv` |
 | `spiders/sitemap_harvest.py` | Generic sitemap onboarding harvester — see HARVESTING.md |
 | `exclusion_rules.py`, `exclusion_rules/` | Per-domain URL exclusion rules — see ARCHITECTURE.md |
-| `filter_rules/` | Per-`source_site` index-time warning filter — see ARCHITECTURE.md's "Indexing pipeline stages" |
+| `filter_rules/` | Per-`source_site` push-time warning filter — see ARCHITECTURE.md's "Push pipeline stages" |
 | `items.py` | `ArchiveItem`, `HarvestItem` schemas |
 | `extensions/error_log.py` | `ErrorFileLogger` |
 | `audit_url_gaps.py` | Post-hoc URL gap analysis tool (see "URL Gap Analysis" above) |
-| `pipeline/`, `scrape_index_pipeline`, `scrape_index_pipeline_interactive` | Indexing pipeline (see "Indexing Pipeline" above); `scrape_index_pipeline` is the Docker `ENTRYPOINT` |
+| `pipeline/`, `scrape_index_pipeline`, `scrape_index_pipeline_interactive` | Push pipeline (see "Push Pipeline" above); `scrape_index_pipeline` is the Docker `ENTRYPOINT` |
 | `Dockerfile` | Python 3.9 Slim image configuration |
 | `crontab.example` | Example weekly re-crawl schedule for all 14 sites, 2-parallel-max |
 

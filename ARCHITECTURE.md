@@ -278,7 +278,7 @@ matching content page even completes, the CSV writer's field shape locks
 onto `HarvestItem`'s own fields (`depth`, `is_listing`, `url`) — the real
 scraped content is either silently absent or shows up with blank
 `title`/`full_text`/`source_site`/etc., not as an error. Confirmed
-directly: `scrape_index_pipeline`'s `crawl-and-index` mode's first
+directly: `scrape_index_pipeline`'s `crawl-and-push` mode's first
 implementation invoked `scrapy crawl <name> -O <path>` and produced a
 `clintonwhitehouse1.csv` where all 2,611 rows had an empty `source_site`
 — every real content row had been discarded.
@@ -292,10 +292,15 @@ when you deliberately want to redirect output to a path the spider's own
 
 ---
 
-## Indexing pipeline stages (`archive_crawler/pipeline/`)
+## Push pipeline stages (`archive_crawler/pipeline/`)
 
-`scrape_index_pipeline` (see README's "Indexing Pipeline" section for
-usage) is a thin CLI over these modules:
+`scrape_index_pipeline` (see README's "Push Pipeline" section for usage)
+is a thin CLI over these modules. This project's own responsibility ends
+at pushing a site's converted JSONL to S3 - a downstream Lambda (closer
+to the OpenSearch side of the pipeline) watches that bucket and handles
+indexing, including any reconciliation against existing index contents
+(e.g. deleting a source_site's stale documents before re-indexing).
+Nothing here deletes or reconciles index contents itself.
 
 - **`registry.py`** — `list_sites()` enumerates every content spider via
   `scrapy.spiderloader.SpiderLoader`, keyed by `source_site` (excludes
@@ -309,7 +314,7 @@ usage) is a thin CLI over these modules:
   `~/git/nara/scripts/validate-opensearch-csv.py` (invisible-unicode,
   HTML-tag, HTML-entity, missing-space, "Continue reading" checks) — that
   script audits CSVs already pulled back out of the live index; this one
-  only gates whether a row is indexed at all.
+  only gates whether a row is safe to push at all.
 - **`filter_rows.py`** — reads `archive_crawler/filter_rules/<source_site>.yml`
   (`drop_if_all_present: [no_body]`, or `[]` for "never drop") to decide
   which `warnings` labels (see README's "Warnings Column") drop a row
@@ -325,9 +330,9 @@ usage) is a thin CLI over these modules:
   is dropped, not on the live mapping). `id`/`document_type`/`source`/
   `changed` aren't populated — no document from any of the 14 archive
   sites exists in the live index yet to reference their shape.
-- **`reconcile.py`** — **stub.** Logs a dry-run summary (row count,
+- **`push.py`** — **stub.** Logs a dry-run summary (row count,
   `source_site`, destination) and makes no AWS/network call. Blocked on:
-  whether `nara-opensearch-lambda` supports delete-then-upsert/reconcile
-  or only blind bulk-upsert; where it watches in S3; what AWS access this
-  utility needs; and what should populate `id`/`document_type`/`source`/
-  `changed`. None of the other stages depend on these answers.
+  the S3 bucket/prefix the downstream Lambda watches; the AWS access this
+  utility needs (S3 write only - it never touches OpenSearch directly);
+  and what should populate `id`/`document_type`/`source`/`changed`. None
+  of the other stages depend on these answers.
