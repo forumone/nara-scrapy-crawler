@@ -44,23 +44,26 @@ pip install -r requirements.txt
 
 ---
 
-## 🏛️ Obama White House Spider
+## 🧭 Nav Harvester Spiders (No Sitemap)
 
-`obamawhitehouse.archives.gov` has no sitemap; `obama_whitehouse.py` (and
-`letsmove.py`, the same pattern on a smaller site) is a worked
-`NavHarvesterMixin` example — one spider doing nav link-following,
-listing-pagination-walking, and content extraction in a single crawl:
+Six spiders have no sitemap to work from and instead use
+`NavHarvesterMixin` (`archive_crawler/spiders/nav_harvest.py`) — one spider
+per site doing nav link-following, listing-pagination-walking, and content
+extraction in a single crawl:
 
 ```bash
-scrapy crawl obama_whitehouse
+scrapy crawl open_obama_whitehouse
 ```
 
+Replace with any of: `letsmove`, `obama_whitehouse`, `obama_petitions`,
+`trump_petitions`, `trumpwhitehouse`.
+
 See [ARCHITECTURE.md](ARCHITECTURE.md#listing-fingerprint-dedup-navharvestermixin)
-for the listing-fingerprint mechanism this relies on and HARVESTING.md's
-"Step-by-step: nav harvester" for the full walkthrough these two spiders
-illustrate. All harvester and content CSVs land under
-`data/{source_site}/` (the root `data/` is git-tracked via
-`data/.gitkeep`; `.csv` files are gitignored).
+for the listing-fingerprint mechanism these rely on — `obama_whitehouse.py`/
+`letsmove.py` are its fullest worked example — and HARVESTING.md's
+"Step-by-step: nav harvester" for the full walkthrough. All harvester and
+content CSVs land under `data/{source_site}/` (the root `data/` is
+git-tracked via `data/.gitkeep`; `.csv` files are gitignored).
 
 ---
 
