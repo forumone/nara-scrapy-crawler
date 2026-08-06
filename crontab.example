@@ -36,11 +36,14 @@
 # run's traceback is somewhere durable instead of vanishing into cron's
 # own mail handling.
 #
-# push.py is a dry-run-only stub as of this writing (see
-# archive_crawler/pipeline/push.py) - `crawl-and-push` below
-# validates/filters/converts every site on schedule but doesn't upload
-# to S3 yet. Switch to plain `crawl` instead if even the dry-run logging
-# is unwanted until push.py is wired up for real.
+# push.py (see archive_crawler/pipeline/push.py) uploads for real -
+# `crawl-and-push` below validates/filters/converts every site on
+# schedule, then uploads its JSONL to S3. Requires AWS credentials to be
+# resolvable on this server (real AWS_ACCESS_KEY_ID/etc. environment
+# variables, or a .env file per .env.example) and NARA_S3_BUCKET set;
+# missing either fails that job with a clear error rather than crawling
+# for nothing. Switch to plain `crawl` instead if a schedule that only
+# crawls/validates without uploading is wanted.
 #
 # Every job invokes the venv's own python3 directly (rather than relying
 # on PATH or scrape_index_pipeline's #!/usr/bin/env python3 shebang) -

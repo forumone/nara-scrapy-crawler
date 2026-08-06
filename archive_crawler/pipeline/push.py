@@ -1,4 +1,4 @@
-"""S3 push interface for archive_content_v2 documents - a dry-run-only stub.
+"""S3 push interface for archive_content_v2 documents.
 
 This project's responsibility ends at uploading a site's converted JSONL
 to S3. A downstream Lambda (closer to the OpenSearch side of the
@@ -8,23 +8,50 @@ index contents it needs - deleting and re-indexing a source_site's stale
 documents, for example. This project does not do that reconciliation
 and never deletes or otherwise touches index contents directly.
 
-No AWS calls yet: the S3 bucket/prefix that Lambda watches, the AWS
-access this utility needs (S3 write only - no OpenSearch access at all,
-since this project doesn't touch the index), and how id/document_type/
-source/changed should be populated on each archive_content_v2 document
-are all unconfirmed. None of this pipeline's other modules depend on
-those answers - only this one does.
+Credentials: boto3's own default provider chain already checks real
+environment variables (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/
+AWS_SESSION_TOKEN) before falling back to a shared credentials file, so
+loading a gitignored .env with python-dotenv's default override=False
+reproduces that same "real environment wins" behavior for free: a value
+already present in the environment is left untouched, and only a value
+.env defines that the environment doesn't already have gets set. See
+.env.example for what .env can configure - a fallback credentials file
+location/profile, plus the target bucket/region/prefix.
+
+Still unconfirmed: whether nara-crawl-data's <source_site>.jsonl-at-root
+key convention actually matches where the downstream Lambda watches, and
+how id/document_type/source/changed should be populated on each document
+(see convert.py) - neither blocks this module's own upload logic.
 """
 import logging
+import os
+
+import boto3
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
+load_dotenv(override=False)
+
+
+def _bucket_and_key(source_site):
+    bucket = os.environ.get('NARA_S3_BUCKET')
+    if not bucket:
+        raise RuntimeError(
+            "NARA_S3_BUCKET is not set. Copy .env.example to .env and fill "
+            "it in, or export NARA_S3_BUCKET directly in the environment."
+        )
+    prefix = os.environ.get('NARA_S3_PREFIX', '').strip('/')
+    key = f'{prefix}/{source_site}.jsonl' if prefix else f'{source_site}.jsonl'
+    return bucket, key
+
 
 def push(source_site, jsonl_path, doc_count):
-    """Log what a real push would do; make no network call."""
+    """Upload source_site's converted JSONL to S3."""
+    bucket, key = _bucket_and_key(source_site)
+    client = boto3.client('s3', region_name=os.environ.get('AWS_DEFAULT_REGION'))
+    client.upload_file(jsonl_path, bucket, key)
     logger.info(
-        "[dry-run] would push %d document(s) for source_site=%s from %s to "
-        "S3 (no AWS call made - push.py is a stub; see the NAD2-756 "
-        "pipeline plan's open questions)",
-        doc_count, source_site, jsonl_path,
+        "Pushed %d document(s) for source_site=%s from %s to s3://%s/%s",
+        doc_count, source_site, jsonl_path, bucket, key,
     )

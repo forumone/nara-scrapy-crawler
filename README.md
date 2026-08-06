@@ -264,6 +264,15 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#push-pipeline-stages-archive_crawlerpipeli
 for what each pipeline module (`registry.py`/`validate.py`/`filter_rows.py`/
 `convert.py`/`push.py`) actually does.
 
+### Credentials
+
+`push`/`crawl-and-push` need AWS credentials and `NARA_S3_BUCKET` set to
+upload. boto3's own default provider chain is used as-is — real
+`AWS_ACCESS_KEY_ID`/etc. environment variables take priority if present.
+Copy [.env.example](.env.example) to a gitignored `.env` to configure a
+fallback credentials file/profile and the target bucket/region for a
+server or workstation with no AWS environment variables of its own.
+
 ---
 
 ## 📂 Project Structure
