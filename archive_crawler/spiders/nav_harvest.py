@@ -112,6 +112,24 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     # ARCHITECTURE.md.
     LISTING_MAX_PAGES = 2000
 
+    # Opt-in escape hatch: False (default) is parse_nav's original behavior
+    # - a detected listing container means the page's own content is never
+    # scraped, full stop. Obama WH is the one confirmed exception: every
+    # /photos-and-video/{video,photogallery}/* permalink embeds the same
+    # sitewide "browse other videos/galleries" catalog as a genuine,
+    # populated-pager .view block (LISTING_CONTAINER_SELECTOR/
+    # LISTING_PAGER_SELECTOR correctly detect it), but the permalink's OWN
+    # primary content is real and distinct - the embedded widget isn't the
+    # whole page, just a sidebar. Setting this True makes parse_nav attempt
+    # _maybe_scrape_item even when a listing container is detected, falling
+    # back to logging listing_page only if that attempt finds no real body
+    # (see ObamaWhiteHouseSpider._scrape_item, which returns None instead of
+    # a no_body-warned item specifically when a listing container is also
+    # present - only that combination means "this really is just a listing,
+    # nothing more"). No other no-sitemap site has this template shape
+    # confirmed as of this writing - leave False unless one turns up.
+    SCRAPE_DETECTED_LISTINGS = False
+
     # Extension point: a subclass that also composes ArchiveSpiderMixin and
     # defines its own _scrape_item(self, response) gets content extraction
     # inline on the same response fetched for nav discovery (see
@@ -296,12 +314,18 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         )
         yield from self._walk_new_listings(response, listing_containers)
         if listing_containers:
-            # A listing page's own content isn't scraped (see
-            # _maybe_scrape_item's docstring); logging it here rather than
-            # leaving it silent means this harvest row is still accounted
-            # for - scrape + drop = harvest holds for every row this
-            # method yields a HarvestItem for.
-            self._log_dropped(response.url, 'listing_page')
+            # A listing page's own content isn't scraped, UNLESS this
+            # subclass opts in via SCRAPE_DETECTED_LISTINGS (see that
+            # attribute's own docstring) and the scrape attempt actually
+            # finds something. Either way, logging listing_page when it
+            # doesn't rather than leaving it silent means this harvest row
+            # is still accounted for - scrape + drop = harvest holds for
+            # every row this method yields a HarvestItem for.
+            scraped = list(self._maybe_scrape_item(response)) if self.SCRAPE_DETECTED_LISTINGS else []
+            if scraped:
+                yield from scraped
+            else:
+                self._log_dropped(response.url, 'listing_page')
         else:
             yield from self._maybe_scrape_item(response)
         yield from self._follow_ordinary_links(response, view_urls)
