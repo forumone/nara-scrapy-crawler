@@ -1,27 +1,17 @@
 """S3 push interface for archive_content_v2 documents.
 
 This project's responsibility ends at uploading a site's converted JSONL
-to S3. A downstream Lambda (closer to the OpenSearch side of the
-pipeline) watches that bucket for new/updated .jsonl files and handles
-indexing itself, including whatever reconciliation against existing
-index contents it needs - deleting and re-indexing a source_site's stale
-documents, for example. This project does not do that reconciliation
-and never deletes or otherwise touches index contents directly.
+to S3; a downstream Lambda watches the bucket and handles indexing,
+including any reconciliation against existing index contents. This
+module never touches index contents itself.
 
-Credentials: boto3's own default provider chain already checks real
-environment variables (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/
-AWS_SESSION_TOKEN) before falling back to a shared credentials file, so
-loading a gitignored .env with python-dotenv's default override=False
-reproduces that same "real environment wins" behavior for free: a value
-already present in the environment is left untouched, and only a value
-.env defines that the environment doesn't already have gets set. See
-.env.example for what .env can configure - a fallback credentials file
-location/profile, plus the target bucket/region/prefix.
+Credentials come from boto3's default provider chain (real environment
+variables first, then a shared credentials file). A gitignored .env,
+loaded via python-dotenv with override=False, fills in only what the
+environment doesn't already have - see .env.example for what it
+configures.
 
-Key convention: <source_site>/<source_site>.jsonl, one folder per site,
-matching nara-crawl-data's existing layout. How id/document_type/source/
-changed should be populated on each document (see convert.py) is still
-open - it doesn't block this module's own upload logic.
+Key convention: <source_site>/<source_site>.jsonl, one folder per site.
 """
 import logging
 import os
