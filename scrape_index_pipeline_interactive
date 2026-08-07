@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+"""Interactive wrapper around scrape_index_pipeline - prompts for site,
+mode, and any relevant overrides instead of requiring them as CLI args,
+same division of labor as run_crawl_interactive.sh -> run_crawl.sh: no
+pipeline logic is duplicated here, this only builds, shows, and confirms
+the equivalent command before exec-ing the real script.
+
+Deliberately simpler than the bare scrape_index_pipeline CLI: no --jsonl/
+--logfile path prompts. The JSONL always goes to its default location,
+and crawl/crawl-and-push always get an auto-named --logfile (same
+directory as the site's own CSV, source_site + mode + timestamp) rather
+than asking - finer control over either path is what the bare CLI is
+for.
+"""
+import os
+import sys
+from datetime import datetime
+
+try:
+    # Unused directly - importing it is what hooks GNU readline into every
+    # input() call below, enabling arrow-key/Home/End/Ctrl+Left/Right line
+    # editing. Without this, a script's input() (unlike the interactive
+    # interpreter, which imports readline itself via site.py) prints raw
+    # escape sequences instead of moving the cursor. Not available on
+    # Windows without pyreadline3 - degrades to plain input() there.
+    import readline  # noqa: F401
+except ImportError:
+    pass
+
+from archive_crawler import settings as archive_settings
+from archive_crawler.pipeline import registry
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def prompt_site():
+    sites = sorted(registry.list_sites().values(), key=lambda info: info.spider_name)
+    print("Known sites:")
+    for i, info in enumerate(sites, start=1):
+        print(f"  {i}. {info.spider_name}")
+    while True:
+        choice = input(f"Select a site [1-{len(sites)}]: ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(sites):
+            return sites[int(choice) - 1].spider_name
+        print(f"  Enter a number between 1 and {len(sites)}.")
+
+
+def prompt_mode():
+    print("Mode:")
+    print("  1. push            - push the existing CSV only, no crawl")
+    print("  2. crawl           - run the spider only, no pushing")
+    print("  3. crawl-and-push  - crawl the site fresh, then do everything push does")
+    while True:
+        choice = input("Select a mode [1-3] (default: 1): ").strip() or '1'
+        if choice == '1':
+            return 'push'
+        if choice == '2':
+            return 'crawl'
+        if choice == '3':
+            return 'crawl-and-push'
+        print("  Enter 1, 2, or 3.")
+
+
+def prompt_path(label, default):
+    return input(f"{label} [default: {default}]: ").strip() or None
+
+
+def prompt_confirm():
+    # No blank-Enter default to either answer - muscle memory assumes
+    # Enter means yes, so a bare Enter re-prompts instead of silently
+    # cancelling (or silently proceeding).
+    while True:
+        choice = input("Proceed? [y/n]: ").strip().lower()
+        if choice in ('y', 'yes'):
+            return True
+        if choice in ('n', 'no'):
+            return False
+        print("  Enter y or n.")
+
+
+def prompt_float_range(label, lo, hi, default):
+    while True:
+        raw = input(f"{label} [{lo}-{hi}, default: {default}]: ").strip()
+        if not raw:
+            return None
+        try:
+            value = float(raw)
+        except ValueError:
+            print(f"  Enter a number between {lo} and {hi}, or leave blank.")
+            continue
+        if lo <= value <= hi:
+            return value
+        print(f"  Must be between {lo} and {hi}.")
+
+
+def prompt_int_range(label, lo, hi, default):
+    while True:
+        raw = input(f"{label} [{lo}-{hi}, default: {default}]: ").strip()
+        if not raw:
+            return None
+        if raw.lstrip('-').isdigit() and lo <= int(raw) <= hi:
+            return int(raw)
+        print(f"  Enter a whole number between {lo} and {hi}, or leave blank.")
+
+
+def _describe_file(path):
+    tag = 'exists - will be overwritten' if os.path.exists(path) else 'new'
+    return f"  {path}\n      ({tag})"
+
+
+def _jsonl_path(csv_path):
+    return csv_path.rsplit('.', 1)[0] + '.jsonl'
+
+
+def preview_files(site_info, mode, csv_path, logfile_path):
+    """Return display lines for every file this invocation will create or
+    overwrite. Two entries (exclusions CSV, ErrorFileLogger's error log)
+    can't be pinned down exactly ahead of time - the former depends on
+    what the crawl actually finds, the latter on a timestamp Scrapy
+    stamps at its own crawl-start - so those two are listed with a caveat
+    rather than a definite new/overwritten tag."""
+    lines = ["Files that will be created or overwritten:"]
+
+    if mode == 'push':
+        lines.append(_describe_file(_jsonl_path(csv_path)))
+        return lines
+
+    data_dir = os.path.dirname(csv_path)
+    source_site = site_info.source_site
+    lines.append(_describe_file(csv_path))
+    lines.append(_describe_file(os.path.join(data_dir, f'{source_site}_harvest.csv')))
+    lines.append(
+        f"  {os.path.join(data_dir, f'{source_site}_exclusions.csv')}\n"
+        f"      (only if any URLs are excluded)"
+    )
+    lines.append(
+        f"  {os.path.join(data_dir, f'{site_info.spider_name}-errors-<timestamp>.log')}\n"
+        f"      (always written, timestamped by Scrapy at crawl start)"
+    )
+    lines.append(_describe_file(logfile_path))
+
+    if mode == 'crawl-and-push':
+        lines.append(_describe_file(_jsonl_path(csv_path)))
+
+    return lines
+
+
+def main():
+    site = prompt_site()
+    site_info = registry.resolve(site)
+    mode = prompt_mode()
+    cmd = [os.path.join(SCRIPT_DIR, 'scrape_index_pipeline'), mode, site]
+
+    csv_path = site_info.csv_path
+    if mode == 'push':
+        override = prompt_path("CSV path to read", csv_path)
+        if override:
+            cmd += ['--csv', override]
+            csv_path = override
+
+    if mode in ('push', 'crawl-and-push'):
+        # Blank keeps the committed archive_crawler/filter_rules/<site>.yml
+        # as the sole source of truth - this is only a one-off overlay on
+        # top of it (see filter_rows.py's append/replace semantics).
+        filter_rules_file = prompt_path("Warning-filter rules override file", "none")
+        if filter_rules_file:
+            cmd += ['--filter-rules-file', filter_rules_file]
+            while True:
+                mode_choice = input("Filter rules mode [append/replace] (default: append): ").strip().lower() or 'append'
+                if mode_choice in ('append', 'replace'):
+                    break
+                print("  Enter 'append' or 'replace'.")
+            if mode_choice != 'append':
+                cmd += ['--filter-rules-mode', mode_choice]
+
+    logfile_path = None
+    if mode in ('crawl', 'crawl-and-push'):
+        download_delay = prompt_float_range(
+            "Download delay (seconds)", 0.1, 2, archive_settings.DOWNLOAD_DELAY,
+        )
+        if download_delay is not None:
+            cmd += ['--download-delay', str(download_delay)]
+        concurrency = prompt_int_range(
+            "Concurrent requests per domain", 1, 20, archive_settings.CONCURRENT_REQUESTS_PER_DOMAIN,
+        )
+        if concurrency is not None:
+            cmd += ['--concurrent-requests-per-domain', str(concurrency)]
+
+        # Always on, auto-named - no prompt. Finer control (a custom path,
+        # or no logfile at all / print to the terminal instead) is what
+        # the bare scrape_index_pipeline CLI is for; this wrapper stays
+        # simple and opinionated.
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        logfile_path = os.path.join(
+            os.path.dirname(csv_path), f'{site_info.source_site}_{mode}-{timestamp}.log',
+        )
+        cmd += ['--logfile', logfile_path]
+
+    print()
+    for line in preview_files(site_info, mode, csv_path, logfile_path):
+        print(line)
+
+    print(f"\nCommand: {' '.join(cmd)}\n")
+    if not prompt_confirm():
+        print("Cancelled.")
+        return
+
+    os.execv(cmd[0], cmd)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(130)

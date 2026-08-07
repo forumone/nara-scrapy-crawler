@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""Validate, filter, convert, and push a site's content CSV to S3 as
+JSONL - see README.md's "Push pipeline" section and NAD2-756's pipeline
+plan for the full shape. This project's responsibility ends at that S3
+upload; a downstream Lambda watches the bucket and handles indexing
+(including any reconciliation against existing index contents) on the
+OpenSearch side.
+
+Usage:
+    ./scrape_index_pipeline push <site> [--csv PATH] [--jsonl PATH] [--filter-rules-file PATH] [--filter-rules-mode append|replace]
+    ./scrape_index_pipeline push --all
+    ./scrape_index_pipeline crawl <site> [--download-delay N] [--concurrent-requests-per-domain N] [--logfile PATH]
+    ./scrape_index_pipeline crawl --all
+    ./scrape_index_pipeline crawl-and-push <site> [--jsonl PATH] [--download-delay N] [--concurrent-requests-per-domain N] [--logfile PATH] [--filter-rules-file PATH] [--filter-rules-mode append|replace]
+    ./scrape_index_pipeline crawl-and-push --all
+
+<site> is either a spider name (e.g. bidenwhitehouse) or a source_site
+(e.g. www.bidenwhitehouse) - see archive_crawler/pipeline/registry.py.
+
+--csv/--jsonl/--logfile/--filter-rules-file override where a file is
+read from/written to; none can be combined with --all (one path can't
+apply to every site). --csv is push-only: crawl and crawl-and-push
+never accept a CSV path override, since that would mean passing -O to
+the spider, which silently corrupts output on every one of these
+spiders - see ARCHITECTURE.md's "Never pass -O/-o to a multi-FEEDS-entry
+spider". --logfile diverts the *entire* crawl log there instead of
+stdout/stderr (Scrapy writes to one or the other, never both) - the
+ErrorFileLogger extension's own data/<site>/<site>-errors-<timestamp>.log
+keeps recording ERROR-level messages regardless, since that's an
+independent handler. --filter-rules-file overlays a one-off warning-
+filter override on top of the committed
+archive_crawler/filter_rules/<site>.yml (see
+archive_crawler/pipeline/filter_rows.py for the append/replace overlay
+semantics, mirroring exclusion_rules.py's own).
+
+Run from the repo root, matching every other entry point in this project
+(scrapy crawl) - relative data/ paths assume that cwd.
+"""
+import argparse
+import csv
+import itertools
+import logging
+import subprocess
+import sys
+import threading
+import time
+
+from archive_crawler.pipeline import convert, filter_rows, push, registry, validate
+
+logger = logging.getLogger(__name__)
+
+_SPINNER_FRAMES = ('-', '\\', '|', '/')
+
+
+def _run_with_spinner(cmd, label):
+    """Run cmd to completion, returning its exit code. While it runs, ticks
+    a spinner + elapsed-seconds counter on its own thread - never the main
+    thread, which only blocks on proc.wait(). The actual work happens in
+    cmd's own OS process, so nothing the crawl does can starve or stall
+    the spinner thread; if the counter ever stops climbing, the spinner
+    itself has broken, not "the crawl is just slow." No-ops (falls back to
+    a plain blocking wait) when stdout isn't a real terminal, so a Docker/
+    automated invocation's logs don't fill up with carriage-return noise
+    nobody's watching."""
+    proc = subprocess.Popen(cmd)
+    if not sys.stdout.isatty():
+        return proc.wait()
+
+    stop = threading.Event()
+    start = time.monotonic()
+
+    def _spin():
+        for frame in itertools.cycle(_SPINNER_FRAMES):
+            if stop.is_set():
+                break
+            elapsed = int(time.monotonic() - start)
+            sys.stdout.write(f'\r{label} {frame}  ({elapsed}s elapsed)  ')
+            sys.stdout.flush()
+            time.sleep(0.1)
+        sys.stdout.write('\r' + ' ' * (len(label) + 24) + '\r')
+        sys.stdout.flush()
+
+    spinner_thread = threading.Thread(target=_spin, daemon=True)
+    spinner_thread.start()
+    try:
+        return proc.wait()
+    finally:
+        stop.set()
+        spinner_thread.join()
+
+
+def _download_delay_type(value):
+    try:
+        parsed = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a number")
+    if not (0.1 <= parsed <= 2):
+        raise argparse.ArgumentTypeError(f"must be between 0.1 and 2, got {parsed}")
+    return parsed
+
+
+def _concurrency_type(value):
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not an integer")
+    if not (1 <= parsed <= 20):
+        raise argparse.ArgumentTypeError(f"must be between 1 and 20, got {parsed}")
+    return parsed
+
+
+def _read_rows(csv_path):
+    # A page's full_text can exceed Python's default 128KB per-field cap
+    # (GWBush's largest pages are well past it) - raised globally, once,
+    # rather than per-call.
+    csv.field_size_limit(sys.maxsize)
+    with open(csv_path, newline='', encoding='utf-8-sig') as f:
+        return list(csv.DictReader(f))
+
+
+def _push(site_info, jsonl_path=None, filter_rules_file=None, filter_rules_mode='append'):
+    rows = _read_rows(site_info.csv_path)
+    validate.validate_rows(rows)
+    kept, dropped = filter_rows.filter_rows(
+        rows, site_info.source_site, override_path=filter_rules_file, mode=filter_rules_mode,
+    )
+    if jsonl_path is None:
+        jsonl_path = site_info.csv_path.rsplit('.', 1)[0] + '.jsonl'
+    count = convert.rows_to_jsonl(kept, jsonl_path)
+    logger.info(
+        "%s: %d row(s) read, %d dropped by warnings filter, %d converted",
+        site_info.source_site, len(rows), len(dropped), count,
+    )
+    push.push(site_info.source_site, jsonl_path, count)
+
+
+def _crawl(site_info, download_delay=None, concurrent_requests_per_domain=None, logfile=None):
+    # No -O: every content spider already writes data/<site>/<site>.csv on
+    # its own via custom_settings['FEEDS'] (see README's "CSV Naming
+    # Convention"). Passing -O here would REPLACE that FEEDS setting
+    # wholesale with one undifferentiated feed - for every fused spider
+    # (all 8 sitemap-based sites, plus obama_whitehouse/letsmove/
+    # trump_petitions/trumpwhitehouse) that setting has two entries
+    # (HarvestItem + ArchiveItem, each with its own item_classes/fields
+    # filter), and collapsing them loses the real content rows entirely.
+    # DOWNLOAD_DELAY/CONCURRENT_REQUESTS_PER_DOMAIN are ordinary scalar
+    # settings unrelated to FEEDS - safe to override via -s.
+    logger.info("Crawling %s -> %s", site_info.spider_name, site_info.csv_path)
+    cmd = ['scrapy', 'crawl', site_info.spider_name]
+    if download_delay is not None:
+        cmd += ['-s', f'DOWNLOAD_DELAY={download_delay}']
+    if concurrent_requests_per_domain is not None:
+        cmd += ['-s', f'CONCURRENT_REQUESTS_PER_DOMAIN={concurrent_requests_per_domain}']
+    if logfile is not None:
+        # Scrapy's own _get_handler() picks FileHandler-to-logfile OR
+        # StreamHandler-to-console, never both - passing this means the
+        # full log (progress, stats, warnings) goes only to logfile, not
+        # the terminal. ErrorFileLogger's own data/<site>/<site>-errors-
+        # <timestamp>.log is unaffected either way - that's a second,
+        # independent handler this doesn't touch.
+        cmd += ['--logfile', logfile]
+        returncode = _run_with_spinner(cmd, f"Crawling {site_info.spider_name}")
+        if returncode != 0:
+            raise subprocess.CalledProcessError(returncode, cmd)
+        return
+    subprocess.run(cmd, check=True)
+
+
+def _crawl_and_push(
+    site_info, jsonl_path=None, download_delay=None, concurrent_requests_per_domain=None,
+    logfile=None, filter_rules_file=None, filter_rules_mode='append',
+):
+    _crawl(
+        site_info, download_delay=download_delay,
+        concurrent_requests_per_domain=concurrent_requests_per_domain, logfile=logfile,
+    )
+    _push(site_info, jsonl_path=jsonl_path, filter_rules_file=filter_rules_file, filter_rules_mode=filter_rules_mode)
+
+
+_ACTIONS = {'push': _push, 'crawl': _crawl, 'crawl-and-push': _crawl_and_push}
+
+
+def _build_kwargs(args):
+    kwargs = {}
+    if args.mode in ('push', 'crawl-and-push'):
+        if getattr(args, 'jsonl', None):
+            kwargs['jsonl_path'] = args.jsonl
+        if getattr(args, 'filter_rules_file', None):
+            kwargs['filter_rules_file'] = args.filter_rules_file
+            kwargs['filter_rules_mode'] = args.filter_rules_mode
+    if args.mode in ('crawl', 'crawl-and-push'):
+        if args.download_delay is not None:
+            kwargs['download_delay'] = args.download_delay
+        if args.concurrent_requests_per_domain is not None:
+            kwargs['concurrent_requests_per_domain'] = args.concurrent_requests_per_domain
+        if args.logfile is not None:
+            kwargs['logfile'] = args.logfile
+    return kwargs
+
+
+def main():
+    if len(sys.argv) == 1:
+        print("No arguments given. Did you mean to run ./scrape_index_pipeline_interactive instead?", file=sys.stderr)
+        print("(Or pass a subcommand directly: push/crawl/crawl-and-push <site>, or --all. See -h.)", file=sys.stderr)
+        sys.exit(1)
+
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest='mode', required=True)
+
+    push_p = sub.add_parser('push', help='Run an existing CSV through validate/filter/convert/push, no crawl')
+    push_p.add_argument('site', nargs='?', help='Spider name or source_site (omit with --all)')
+    push_p.add_argument('--all', action='store_true', help='Run against every registered site')
+    push_p.add_argument('--csv', metavar='PATH', help="Override which CSV to read (default: the site's own data/<site>/<site>.csv)")
+    push_p.add_argument('--jsonl', metavar='PATH', help='Override where the converted JSONL is written (default: alongside the CSV, same basename)')
+    push_p.add_argument('--filter-rules-file', metavar='PATH', help='Overlay a one-off warning-filter override on top of the committed archive_crawler/filter_rules/<site>.yml')
+    push_p.add_argument('--filter-rules-mode', choices=('append', 'replace'), default='append', help="'append' (default) unions with the committed file; 'replace' uses the override's own drop_if_all_present if it defines one")
+
+    crawl_p = sub.add_parser('crawl', help='Run the spider - scrapy crawl <site>, nothing else')
+    crawl_p.add_argument('site', nargs='?')
+    crawl_p.add_argument('--all', action='store_true')
+    crawl_p.add_argument('--download-delay', type=_download_delay_type, metavar='SECONDS', help="Override DOWNLOAD_DELAY, 0.1-2 (default: settings.py's 0.25)")
+    crawl_p.add_argument('--concurrent-requests-per-domain', type=_concurrency_type, metavar='N', help="Override CONCURRENT_REQUESTS_PER_DOMAIN, 1-20 (default: settings.py's 4)")
+    crawl_p.add_argument('--logfile', metavar='PATH', help='Write the full crawl log here instead of stdout/stderr (default: none - only ERROR-level messages persist, via ErrorFileLogger)')
+
+    crawl_and_push_p = sub.add_parser('crawl-and-push', help='Run the spider, then do everything push does')
+    crawl_and_push_p.add_argument('site', nargs='?')
+    crawl_and_push_p.add_argument('--all', action='store_true')
+    crawl_and_push_p.add_argument('--jsonl', metavar='PATH', help='Override where the converted JSONL is written (default: alongside the CSV, same basename)')
+    crawl_and_push_p.add_argument('--filter-rules-file', metavar='PATH', help='Overlay a one-off warning-filter override on top of the committed archive_crawler/filter_rules/<site>.yml')
+    crawl_and_push_p.add_argument('--filter-rules-mode', choices=('append', 'replace'), default='append', help="'append' (default) unions with the committed file; 'replace' uses the override's own drop_if_all_present if it defines one")
+    crawl_and_push_p.add_argument('--download-delay', type=_download_delay_type, metavar='SECONDS', help="Override DOWNLOAD_DELAY, 0.1-2 (default: settings.py's 0.25)")
+    crawl_and_push_p.add_argument('--concurrent-requests-per-domain', type=_concurrency_type, metavar='N', help="Override CONCURRENT_REQUESTS_PER_DOMAIN, 1-20 (default: settings.py's 4)")
+    crawl_and_push_p.add_argument('--logfile', metavar='PATH', help='Write the full crawl log here instead of stdout/stderr (default: none - only ERROR-level messages persist, via ErrorFileLogger)')
+
+    args = parser.parse_args()
+
+    if not args.all and not args.site:
+        parser.error('either a site argument or --all is required')
+    if args.all and args.site:
+        parser.error('pass either a site argument or --all, not both')
+    if args.all and (
+        getattr(args, 'csv', None) or getattr(args, 'jsonl', None)
+        or getattr(args, 'logfile', None) or getattr(args, 'filter_rules_file', None)
+    ):
+        parser.error('--csv/--jsonl/--logfile/--filter-rules-file cannot be combined with --all - one path cannot apply to every site')
+
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+
+    action = _ACTIONS[args.mode]
+    kwargs = _build_kwargs(args)
+
+    try:
+        if args.all:
+            for site_info in registry.list_sites().values():
+                action(site_info, **kwargs)
+        else:
+            site_info = registry.resolve(args.site)
+            if getattr(args, 'csv', None):
+                site_info = site_info._replace(csv_path=args.csv)
+            action(site_info, **kwargs)
+    except (registry.UnknownSiteError, validate.ValidationError, filter_rows.UnknownSiteFilterError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError as e:
+        print(f"Error: {e.filename} not found - has this site been crawled yet?", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

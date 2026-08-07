@@ -32,9 +32,8 @@ DOWNLOAD_DELAY = 0.25
 # unbounded unique URLs) can grow the scheduler/dupefilter until the OS
 # OOM-kills the process, losing any buffered feed export output. Close the
 # spider gracefully instead once RSS crosses the limit. This default assumes
-# a resource-rich remote server, matching run_crawl.sh's default — override
-# per-run with -s MEMUSAGE_LIMIT_MB=N (see run_crawl.sh --memory-limit;
-# run_crawl_interactive.sh halves this by default for local dev testing).
+# a resource-rich remote server - override per-run with
+# -s MEMUSAGE_LIMIT_MB=N for local dev testing.
 MEMUSAGE_ENABLED = True
 MEMUSAGE_LIMIT_MB = 8192
 MEMUSAGE_CHECK_INTERVAL_SECONDS = 30

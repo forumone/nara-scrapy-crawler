@@ -17,9 +17,12 @@ rules:
     pattern: '/index__q_(tw_p|utm_source|utm_expid)=[^/]*\.html$'
     reason: "duplicate_tracking_param_suffix"
 
-  # Legacy alias prefix for content already reachable under its canonical
-  # path (21 URLs) - a duplicate URL space, not additional content.
+  # /realitycheck unintentionally mirrors ~54% of the entire site as it was in
+  # October 2016. All content under /realitycheck is already available at the
+  # same URL on the base site, with some exceptions that simply moved to a
+  # different URL after October 2016.
   # Example: https://obamawhitehouse.archives.gov/realitycheck/briefing-room
+  # Mirrors https://obamawhitehouse.archives.gov/briefing-room
   - match: contains
     pattern: "/realitycheck"
     reason: "url_pattern:/realitycheck"
@@ -45,8 +48,3 @@ rules:
   - match: regex
     pattern: '/administration/eop/ceq/initiatives/[^/]+/comments$'
     reason: "url_pattern:ceq_initiative_comments"
-
-# nav_deny: patterns excluded from nav-crawling only, without also
-# excluding the URL from a content scrape if reached another way. Empty
-# today.
-nav_deny: []

@@ -1,12 +1,13 @@
 # Harvesting a New Site
 
 This document describes the end-to-end process for adding a new site to the crawl
-pipeline. Some patterns below split URL discovery and content extraction into two
-separate spiders (sitemap-based sites, `generic_crawl_harvest`/`generic_crawl`);
-the `NavHarvesterMixin` pattern uses one spider for both, with content extraction
-added once selectors are ready. Either way, discovering the full URL list before
-writing (or before running) any content-extraction code makes coverage gaps and
-unexpected pages visible early, rather than after they've become data problems.
+pipeline. `generic_crawl_harvest`/`generic_crawl` split URL discovery and content
+extraction into two separate spiders; the sitemap-based (`SitemapUrlSpiderMixin`)
+and `NavHarvesterMixin` patterns each use one spider for both, with content
+extraction added once selectors are ready. Either way, discovering the full URL
+list before writing (or before running) any content-extraction code makes coverage
+gaps and unexpected pages visible early, rather than after they've become data
+problems.
 
 Check for a sitemap first (`/sitemap.xml`, `/sitemap_index.xml`, or a `Sitemap:`
 directive in `robots.txt`) — if one exists, skip everything else in this document
@@ -30,7 +31,7 @@ scrapy crawl sitemap_harvest \
 It fetches the sitemap (or sitemap index, recursing into all sub-sitemaps),
 deduplicates URLs case-insensitively, drops non-web assets (PDFs, images, etc.), and
 writes a harvest CSV — one `url` column, one row per content page — without
-fetching any content pages itself. Used by all of Clinton (CW1–6), Biden, and GWBush.
+fetching any content pages itself.
 
 Output is automatic, derived from `source_site`: the harvest CSV goes to
 `data/example/example_harvest.csv`, and any dropped non-web-extension
@@ -40,14 +41,85 @@ where `-O`/`-o` don't control output at all — pass `-a harvest_file=<path>`
 and/or `-a dropped_file=<path>` to override either default explicitly.
 Without `source_site`, `harvest_file` becomes required.
 
-Since `sitemap_harvest` never fetches a content page itself, there's no
-response here to extract content from inline. Write a separate content
-spider (plain `scrapy.Spider` + `UrlFileSpiderMixin`, reading the harvest
-CSV as `url_file`) to scrape from it, same as every sitemap-based spider
-(CW1–6, Biden, GWBush) does. See README's "Sitemap-Based Archive Spiders"
-section for a worked example, and its "Warnings column" section for the
-`parse_item` shape (`no_body`/`no_title`/`short_body` flag rather than
-exclude).
+Use this spider only to explore a *new* sitemap-based site's URL shape and
+resolved sitemap target before writing that site's spider (watch for a
+redirect, e.g. a WordPress/Yoast site's `/sitemap.xml` 301ing to
+`/sitemap_index.xml`) — its own harvest CSV output isn't consumed by
+anything downstream. The 8 already-onboarded sitemap-based sites (Clinton
+CW1–6, Biden, GWBush) don't run this spider at all: each has its own
+`SITEMAP_URL` hardcoded and fetches + scrapes in one `scrapy crawl
+<name>` run via `SitemapUrlSpiderMixin` (`archive_crawler/spiders/base.py`),
+no separate content-spider file needed. See README's "Sitemap-Based
+Archive Spiders" section for a worked example, and its "Warnings column"
+section for the `parse_item` shape (`no_body`/`no_title`/`short_body` flag
+rather than exclude).
+
+### Creating a new sitemap-based site's spider
+
+Copy an existing sitemap spider (e.g., `archive_crawler/spiders/clintonwhitehouse2.py`) and update:
+- `name`, `allowed_domains`, `SOURCE_SITE`, `SOURCE_TYPE`
+- `SITEMAP_URL` — the resolved sitemap/sitemap-index URL found above
+- `custom_settings['FEEDS']` — two entries, the harvest CSV
+  (`data/<SOURCE_SITE>/<SOURCE_SITE>_harvest.csv`, `item_classes:
+  [HarvestItem]`, `fields: ['url']`) and the content CSV
+  (`data/<SOURCE_SITE>/<SOURCE_SITE>.csv`, `item_classes: [ArchiveItem]`,
+  the same `fields` list as every other content spider) — copy the exact
+  shape from any existing sitemap-based spider. This is what makes the new
+  spider's output automatic — no `-O` needed to run it.
+- Create `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml` for any
+  URL-pattern exclusions `start_requests` needs (`rules: [{match, pattern,
+  reason}, ...]`) — see `www.georgewbush-whitehouse.yml` for an example.
+  `start_requests` itself just calls `self._get_exclusion_rules()` and
+  `exclusion_rules.match_exclude(url, rules)`; no per-site Python needed.
+- Create `archive_crawler/filter_rules/<SOURCE_SITE>.yml` for
+  `scrape_index_pipeline`'s warning-based row filter (`drop_if_all_present:
+  [no_body]`, or `[]` for "never drop") — see README's "Warnings Column"
+  for what `no_body`/`no_title`/`short_body` mean.
+- CSS selectors in `parse_item` to match the new site's content structure
+
+All sitemap-based spiders inherit from `SitemapUrlSpiderMixin` (which
+itself extends `ArchiveSpiderMixin`, for its content-extraction helpers -
+kept separate specifically so a `NavHarvesterMixin`-composed spider, which
+also extends `ArchiveSpiderMixin`, never inherits sitemap-fetching behavior
+it doesn't use). Between the two, this gives every sitemap-based spider:
+- `start_requests()` / `_parse_sitemap(response)` (`SitemapUrlSpiderMixin`)
+  — fetches `SITEMAP_URL`, recurses `sitemapindex` entries, drops whatever
+  this site's exclusion rules match (logging each), and requests the rest
+  with the standard callback and HTTP error errback
+- `_make_request(url)` (`ArchiveSpiderMixin`) — builds a `parse_item`
+  request with the standard HTTP error errback
+- `_extract_title(response)` — h1 → h2 → `<title>` with HTML entity decoding and normalisation
+- `_extract_text(response, selector)` — strips NARA banners, nav boilerplate, and invisible Unicode before returning plain text
+- `_log_exclusion(url, reason)` — records a sitemap URL rejected before ever getting a harvest row (extension/`rules:` match during `_parse_sitemap`); written to `_exclusions.csv` on spider close
+- `_log_dropped(url, reason)` — records a URL that already has a harvest row, then got rejected (bad response, or fetched fine but judged non-content); written to `_dropped.csv` on spider close - see README's "Exclusion & Dropped Output"
+- `_get_exclusion_rules()` — loads `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`, overlaid with `-a rules_file=<path>` `-a rules_mode=append|replace` if given
+- `_get_short_body_threshold()` / `_slug_title(url)` — the `warnings` column's `short_body` threshold (default 30 chars) and `no_title` fallback title
+- `EXTRA_STRIP_SELECTORS` / `EXTRA_STRIP_XPATH` — per-spider hooks for site-specific boilerplate
+
+### Validating output
+
+```bash
+# Row count
+wc -l data/{source_site}/{source_site}.csv
+
+# Check for empty titles or full_text (should return 0)
+python -c "
+import csv
+with open('data/{source_site}/{source_site}.csv') as f:
+    rows = list(csv.DictReader(f))
+print('empty title:', sum(1 for r in rows if not r.get('title')))
+print('empty full_text:', sum(1 for r in rows if not r.get('full_text')))
+print('teaser >200:', sum(1 for r in rows if len(r.get('teaser_text','')) > 200))
+"
+
+# URL gap report (harvest vs. output)
+python audit_url_gaps.py \
+  --harvest data/{source_site}/{source_site}_harvest.csv \
+  --output  data/{source_site}/{source_site}.csv \
+  --depth 3 --source-site {source_site}
+```
+
+This validation applies equally to a `NavHarvesterMixin` site's output.
 
 ---
 
@@ -63,7 +135,7 @@ extraction, all in a single pass over each fetched response. See
 with no shared-catalog-widget risk (e.g. `obama_petitions.py`,
 `trump_petitions.py`, `open_obama_whitehouse.py`, all a few hundred pages)
 can skip `LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_CONTAINER_SELECTOR`/
-`LISTING_PAGER_SELECTOR` entirely and rely on `DEPTH_LIMIT` + `nav_deny` for
+`LISTING_PAGER_SELECTOR` entirely and rely on `DEPTH_LIMIT` + `rules:` for
 scope, same as those three.
 
 `generic_crawl_harvest`/`generic_crawl` is starter/example tooling, not a
@@ -124,11 +196,8 @@ Inspect the live site to answer these questions before writing any code:
 - Are there path prefixes that should be universally out of scope regardless
   of phase? (e.g. a non-English mirror, `/sites/` Drupal assets) Put these in
   `rules:` in the new site's `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`
-  — nav-time exclusion checks `rules ∪ nav_deny`, so a `rules:` entry alone
-  covers both the nav crawl and the content spider; reserve `nav_deny` for an
-  exclusion that should hold the nav crawler back without also excluding the
-  URL from a content scrape reached some other way (see
-  `NavHarvesterMixin._apply_nav_deny`).
+  — a `rules:` entry covers both the nav crawl (see
+  `NavHarvesterMixin._apply_exclusion_rules`) and the content spider.
 - What is the domain? Are there subdomains that should be handled by separate spiders?
 
 ### Step 2 — Nav + listing discovery crawl
@@ -209,7 +278,7 @@ class MySiteSpider(NavHarvesterMixin, CrawlSpider):
             ),
             callback='parse_nav',
             follow=False,  # omit process_links=; parse_nav applies
-                           # _apply_nav_deny directly, and CrawlSpider's own
+                           # _apply_exclusion_rules directly, and CrawlSpider's own
                            # Rule-dispatch machinery that would call it is
                            # disabled entirely (see the mixin's
                            # custom_settings) - process_links= here would be
@@ -288,9 +357,11 @@ Add `ArchiveSpiderMixin` to the **same class** from step 2, and give it a
 `_scrape_item(self, response)` method — same role as a standalone spider's
 `parse_item`, but called by `_maybe_scrape_item` (in `nav_harvest.py`) on the
 response `parse_nav` already fetched for discovery, not a second request.
-This pattern has no `url_file` and no separate content-spider file — that's
-a different pattern, used by the sitemap-based spiders (see "Sitemap
-harvester" above), not by `NavHarvesterMixin` sites.
+This is one of two ways this repo fuses discovery and content-extraction
+into a single spider — the other being `SitemapUrlSpiderMixin` for
+sitemap-based sites (see "Sitemap harvester" above); the two aren't
+interchangeable (one discovers via nav link-following, the other via a
+sitemap), but neither needs a separate harvest-then-scrape pass.
 
 `_scrape_item` follows the same accumulate-and-continue shape as every
 other content spider in this repo: `no_body`/`no_title` don't drop the row
@@ -379,21 +450,6 @@ that already has `_scrape_item` defined, comment it out (or drop
 
 ---
 
-## List-first split harvester (considered and rejected)
-
-Not used by any current site in this repo, and not a legitimate fallback
-despite earlier framing here as one: it depends on a manually-curated,
-up-front list of every listing page, and there's no way to confirm that list
-is complete short of ongoing monitoring of crawl output for
-suspiciously-repeated content — exactly what the unified pattern's
-listing-fingerprint dedup (`NavHarvesterMixin`, above) exists to avoid
-needing. If a site's listing container + pager selector genuinely can't be
-made reliable enough for the unified pattern, treat that as a sign the site
-needs closer per-page discovery work (step 1 above), not a reason to fall
-back to a curated listing list.
-
----
-
 ## Step-by-step: generic harvester
 
 For simple sites, skip to a single harvest phase:
@@ -405,7 +461,7 @@ scrapy crawl generic_crawl_harvest \
     -o data/example/example_harvest.csv
 ```
 
-Where `one_off_denies.yml` has a `nav_deny: ['/print/', '/user/', '/node/\d']` list.
+Where `one_off_denies.yml` has a `rules:` list matching `/print/`, `/user/`, `/node/\d`.
 `extensions`/`rules`/`pagination`/`query_params_allow` default to
 `archive_crawler/exclusion_rules/generic_crawl_harvest.yml` unless `-a
 source_site=<name>` points at a specific site's own committed file instead;
@@ -417,7 +473,7 @@ Scrapy's duplicate-request filter then collapses facet/sort/tracking-decorated
 variants of the same page into a single crawl. This does not stop distinct facet
 *paths* (e.g. chained `/field_tags/X/field_tags/Y/` segments on faceted-search
 sites) from each being crawled once each — block those per-site with a
-`nav_deny` entry (e.g. `-a rules_file=... ` with `nav_deny: ['/field_tags/', '/search/']`).
+`rules:` entry (e.g. `-a rules_file=... ` matching `/field_tags/`, `/search/`).
 
 Then scrape using `generic_crawl` or a custom scraper spider:
 

@@ -55,7 +55,7 @@ class TrumpWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     .page-results__wrap container as the unfiltered listing, each with its
     own populated pager - the fingerprint mechanism treats each filter as its
     own listing (a genuinely different item subset, not a duplicate) and
-    walks it once, so no nav_deny/rules entry is needed to keep the crawl
+    walks it once, so no rules: entry is needed to keep the crawl
     from re-following every filter link found on every listing page.
 
     start_urls includes the three known microsites (/ai/, /bebest/, /wgdp/)

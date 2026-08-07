@@ -1,0 +1,81 @@
+# Example weekly re-crawl schedule for the 14 in-scope sites.
+#
+# Install by copying into a real crontab (after setting REPO_DIR below):
+#   crontab crontab.example
+# or merge these lines into an existing one via `crontab -e`.
+#
+# Design
+# ------
+# At most 2 crawls run at once (leaves headroom for a manual `crawl`/
+# `crawl-and-push` on top of the schedule). Each weekday below fires two
+# buckets in parallel; sites *within* one bucket run sequentially, one
+# after another. The two largest, most memory-hungry sites
+# (georgewbush_whitehouse, obama_whitehouse) run alongside much smaller
+# sites so there is less competition for resources.
+# Every site is crawled with --download-delay 2 and
+# --concurrent-requests-per-domain 1 - one request every 2 seconds, no
+# concurrent connections to the same target. That's a deliberate
+# compromise: faster than several of these sites' own robots.txt
+# Crawl-delay (10s for CW1-6/open_obama_whitehouse/trumpwhitehouse), but
+# far gentler than settings.py's local default (0.25s/4 concurrent).
+#
+# Approximate bucket durations at that 2s/1-connection rate, and the
+# buffer before the next scheduled day:
+#   Sun bucket A: georgewbush_whitehouse alone             ~46h    (buffer to Wed: ~26h)
+#   Sun bucket B: open_obama_whitehouse, obama_petitions,
+#                 trump_petitions, letsmove                ~1h28m
+#   Wed bucket A: obama_whitehouse alone                   ~30h10m (buffer to Fri: ~17h50m)
+#   Wed bucket B: trumpwhitehouse, bidenwhitehouse          ~12h57m
+#   Fri bucket A: clintonwhitehouse1-6, sequential          ~34h17m (buffer to Sun: ~13h43m)
+#   Fri bucket B: (empty placeholder for a future site)
+#
+# Per-site CSV/harvest/exclusions output and ErrorFileLogger's ERROR-level
+# log are all written automatically by the pipeline regardless of this
+# file - nothing here needs to arrange that. The data/cron-*.log files
+# below are just a combined stdout/stderr trace per bucket, so a failed
+# run's traceback is somewhere durable instead of vanishing into cron's
+# own mail handling.
+#
+# push.py (see archive_crawler/pipeline/push.py) uploads for real -
+# `crawl-and-push` below validates/filters/converts every site on
+# schedule, then uploads its JSONL to S3. Requires AWS credentials to be
+# resolvable on this server (real AWS_ACCESS_KEY_ID/etc. environment
+# variables, or a .env file per .env.example) and NARA_S3_BUCKET set;
+# missing either fails that job with a clear error rather than crawling
+# for nothing. Switch to plain `crawl` instead if a schedule that only
+# crawls/validates without uploading is wanted.
+#
+# Every job invokes the venv's own python3 directly (rather than relying
+# on PATH or scrape_index_pipeline's #!/usr/bin/env python3 shebang) -
+# cron's own PATH is minimal and won't include this project's venv, and
+# cron's top-of-file KEY=value lines are parsed literally, not expanded,
+# so a $REPO_DIR reference inside one of those (e.g. in a PATH= line)
+# would NOT work. $REPO_DIR only expands correctly inside a job's own
+# command line below, which cron runs via a real shell.
+
+REPO_DIR=/home/scrapy/nara-scrapy-crawler
+SHELL=/bin/sh
+
+# --- Sunday ---------------------------------------------------------------
+
+# Bucket A: georgewbush_whitehouse (alone - largest/most memory-hungry site)
+0 0 * * 0 cd "$REPO_DIR" && ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push georgewbush_whitehouse --download-delay 2 --concurrent-requests-per-domain 1 >> "$REPO_DIR/data/cron-sun-a-georgewbush.log" 2>&1
+
+# Bucket B: the four smallest sites, sequential
+0 0 * * 0 cd "$REPO_DIR" && ( ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push open_obama_whitehouse --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push obama_petitions --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push trump_petitions --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push letsmove --download-delay 2 --concurrent-requests-per-domain 1 ) >> "$REPO_DIR/data/cron-sun-b-small-sites.log" 2>&1
+
+# --- Wednesday --------------------------------------------------------------
+
+# Bucket A: obama_whitehouse (alone - second-largest/memory-hungry site)
+0 0 * * 3 cd "$REPO_DIR" && ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push obama_whitehouse --download-delay 2 --concurrent-requests-per-domain 1 >> "$REPO_DIR/data/cron-wed-a-obamawhitehouse.log" 2>&1
+
+# Bucket B: trumpwhitehouse, bidenwhitehouse, sequential
+0 0 * * 3 cd "$REPO_DIR" && ( ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push trumpwhitehouse --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push bidenwhitehouse --download-delay 2 --concurrent-requests-per-domain 1 ) >> "$REPO_DIR/data/cron-wed-b-trump-biden.log" 2>&1
+
+# --- Friday -----------------------------------------------------------------
+
+# Bucket A: all six Clinton sites, sequential
+0 0 * * 5 cd "$REPO_DIR" && ( ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse1 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse2 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse3 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse4 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse5 --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push clintonwhitehouse6 --download-delay 2 --concurrent-requests-per-domain 1 ) >> "$REPO_DIR/data/cron-fri-a-clinton-sites.log" 2>&1
+
+# Bucket B: placeholder for a future site - uncomment and fill in once one exists
+# 0 0 * * 5 cd "$REPO_DIR" && ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push NEW_SITE_NAME --download-delay 2 --concurrent-requests-per-domain 1 >> "$REPO_DIR/data/cron-fri-b-placeholder.log" 2>&1

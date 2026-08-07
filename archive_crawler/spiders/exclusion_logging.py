@@ -1,21 +1,7 @@
 import csv
 import os
-from urllib.parse import urlparse
-
-from scrapy.linkextractors import LinkExtractor
 
 from archive_crawler import exclusion_rules as _exclusion_rules_module
-
-# Shared by _census_links across every spider that mixes in
-# ExclusionLoggingMixin - stateless/config-only, safe to reuse. No
-# allow_domains (we want external domains surfaced, not dropped) and
-# deny_extensions=() (no IGNORED_EXTENSIONS - our own is_web_url is the sole
-# authority on what's web-shaped). Scrapy's own _is_valid_url still silently
-# drops non-http(s)/file/ftp schemes (mailto:/tel:/javascript:) with no way
-# to override that - accepted as out of scope for the census, since these
-# are a small enough share of overall link volume not to matter for
-# explaining a page-count gap at the client's claimed scale.
-_CENSUS_LINK_EXTRACTOR = LinkExtractor(deny_extensions=())
 
 
 def _spider_exclusion_rules(spider):
@@ -41,21 +27,34 @@ class ExclusionLoggingMixin:
     SOURCE_SITE, regardless of whether it's a content spider, a nav
     harvester, or a listing harvester.
 
-    Previously duplicated: ArchiveSpiderMixin and NavHarvesterMixin each
-    defined their own identical _get_exclusion_rules, and only
-    ArchiveSpiderMixin had _log_exclusion/closed() at all - meaning nav and
-    listing harvesters had no way to log what they chose not to
-    follow/yield. Factored out here so all three compose it instead of
-    tripling that duplication.
+    Factored out so a content spider, a nav harvester, and a listing
+    harvester can each compose this one mixin instead of each defining
+    their own identical `_get_exclusion_rules`/`_log_exclusion`/
+    `_log_dropped`/`closed()`.
 
-    EXCLUSIONS_FILE_SUFFIX defaults to 'exclusions' (ArchiveSpiderMixin's
-    existing filename, unchanged) - override per mixin/spider so a nav
-    harvester, a listing harvester, and a content spider sharing the same
-    SOURCE_SITE don't overwrite each other's exclusion log when run back to
-    back (e.g. NavHarvesterMixin sets 'nav-exclusions').
+    Two separate logs, split by whether a harvest row exists for the URL:
+
+    - `_log_exclusion`/`*_exclusions.csv`: a URL rejected *before* it was
+      ever a harvest candidate - for `NavHarvesterMixin`
+      (`_apply_exclusion_rules`), a `rules:`-matched link found via the
+      crawl's real, narrow link-following, dropped before ever being
+      requested; for a sitemap-based spider (`SitemapUrlSpiderMixin.
+      _parse_sitemap`), a sitemap entry that failed the extension check or
+      matched a `rules:` entry, dropped before a harvest row was ever
+      written for it. No harvest row exists for anything logged here, so
+      `*_exclusions.csv` never reconciles against the harvest CSV - for a
+      sitemap-based spider, `harvest + exclude = sitemap total` instead.
+    - `_log_dropped`/`*_dropped.csv`: a URL that already has a harvest
+      row, then got rejected - post-fetch (a bad response: `frameset`,
+      `non_text_response`, `redirect_wrapper`, `http_*`,
+      `network_error:*`) or post-harvest-row (page fetched fine but judged
+      non-content: `listing_page`, `search_listing_page`,
+      `pagination_listing_page`). `scrape + drop = harvest` holds against
+      this file exactly.
     """
 
     EXCLUSIONS_FILE_SUFFIX = 'exclusions'
+    DROPPED_FILE_SUFFIX = 'dropped'
 
     def _get_exclusion_rules(self):
         return _spider_exclusion_rules(self)
@@ -76,19 +75,27 @@ class ExclusionLoggingMixin:
         self._logged_exclusion_urls.add(url)
         self._exclusions.append({'url': url, 'reason': reason})
 
-    def closed(self, reason):
-        exclusions = getattr(self, '_exclusions', [])
-        if not exclusions:
+    def _log_dropped(self, url, reason):
+        if not hasattr(self, '_dropped'):
+            self._dropped = []
+            self._logged_dropped_urls = set()
+        if url in self._logged_dropped_urls:
             return
-        # -a exclusions_file=<path> overrides the derived default - no
-        # explicit __init__ parameter needed for this, since plain
-        # scrapy.Spider.__init__ already assigns any unrecognized -a kwarg
-        # as an instance attribute.
-        out_path = getattr(self, 'exclusions_file', None)
+        self._logged_dropped_urls.add(url)
+        self._dropped.append({'url': url, 'reason': reason})
+
+    def _write_log(self, rows, file_attr, suffix):
+        if not rows:
+            return
+        # -a exclusions_file=<path>/-a dropped_file=<path> overrides the
+        # derived default - no explicit __init__ parameter needed for
+        # this, since plain scrapy.Spider.__init__ already assigns any
+        # unrecognized -a kwarg as an instance attribute.
+        out_path = getattr(self, file_attr, None)
         if not out_path:
             out_dir = os.path.join('data', self.SOURCE_SITE)
             os.makedirs(out_dir, exist_ok=True)
-            out_path = os.path.join(out_dir, f'{self.SOURCE_SITE}_{self.EXCLUSIONS_FILE_SUFFIX}.csv')
+            out_path = os.path.join(out_dir, f'{self.SOURCE_SITE}_{suffix}.csv')
         else:
             out_dir = os.path.dirname(out_path)
             if out_dir:
@@ -96,53 +103,8 @@ class ExclusionLoggingMixin:
         with open(out_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=['url', 'reason'])
             writer.writeheader()
-            writer.writerows(exclusions)
+            writer.writerows(rows)
 
-    def _census_links(self, response):
-        """Extract every <a>/<area> href on the page via a wide-open
-        LinkExtractor (deny_extensions=() - see _CENSUS_LINK_EXTRACTOR) and
-        log one of each URL's first occurrence under a widened reason set:
-        this domain's rules:/nav_deny matches (the existing mechanism, now
-        applied to every link on the page rather than just the ones a Rule's
-        own LinkExtractor happened to extract) and non-web extensions.
-        External-domain links are silently dropped, not logged - a naive
-        mirror tool wouldn't plausibly "forget" to exclude other domains
-        either, so this bucket isn't useful signal for explaining a
-        same-domain page-count gap and would only inflate the log. Also does
-        NOT see mailto:/tel:/javascript: links - Scrapy's own _is_valid_url
-        drops any non-http(s)/file/ftp scheme unconditionally, with no way
-        to override that short of bypassing LinkExtractor entirely, which
-        isn't worth it for a share of link volume this small either.
-
-        Built to make total site-wide hyperlink volume auditable against a
-        client's page-count claim by reason - not to expand what gets
-        crawled. Never schedules a Request for anything found here; this is
-        extraction + classification only.
-
-        Returns the URLs that don't fall into any of those buckets (real,
-        same-domain, non-rule-excluded, HTML-shaped links) for callers that
-        need a further check of their own - e.g. ArchiveSpiderMixin comparing
-        against its own seed list to find content-page links never reached
-        by nav/listing harvesting at all.
-        """
-        rules = self._get_exclusion_rules()
-        allowed = set(d.lower() for d in (getattr(self, 'allowed_domains', None) or []))
-        response_base = response.url.split('#', 1)[0]
-        kept = []
-        for link in _CENSUS_LINK_EXTRACTOR.extract_links(response):
-            url = link.url
-            if url.split('#', 1)[0] == response_base:
-                continue
-            host = urlparse(url).netloc.split(':')[0].lower()
-            if allowed and host not in allowed:
-                continue
-            reason = _exclusion_rules_module.match_exclude(url, rules)
-            if reason is not None:
-                self._log_exclusion(url, reason)
-                continue
-            if not _exclusion_rules_module.is_web_url(url, rules):
-                ext = _exclusion_rules_module.url_extension(url)
-                self._log_exclusion(url, f'extension:{ext}')
-                continue
-            kept.append(url)
-        return kept
+    def closed(self, reason):
+        self._write_log(getattr(self, '_exclusions', []), 'exclusions_file', self.EXCLUSIONS_FILE_SUFFIX)
+        self._write_log(getattr(self, '_dropped', []), 'dropped_file', self.DROPPED_FILE_SUFFIX)

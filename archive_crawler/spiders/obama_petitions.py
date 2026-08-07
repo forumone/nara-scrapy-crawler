@@ -30,8 +30,8 @@ class ObamaPetitionsSpider(PetitionsSpiderMixin, NavHarvesterMixin, CrawlSpider)
     # generic_crawl_harvest-based harvest), so this leaves a comfortable
     # margin.
     #
-    # FEEDS replaces the old two-spider invocation with two named feeds from
-    # this one run, item_classes-filtered to the matching schema.
+    # FEEDS produces both harvest and content CSVs from this one run, via
+    # two named feeds each item_classes-filtered to the matching schema.
     custom_settings = {
         'DEPTH_LIMIT': 20,
         'REDIRECT_ENABLED': True,

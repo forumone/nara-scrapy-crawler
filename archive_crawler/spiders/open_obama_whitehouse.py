@@ -17,7 +17,7 @@ class OpenSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     No listing-fingerprint dedup (LISTING_VIEW_LINK_EXTRACTOR left unset):
     this site is a few hundred pages, with no evidence of the shared-catalog-
     embedded-on-thousands-of-permalinks pattern that mechanism exists for.
-    Scope is instead controlled by DEPTH_LIMIT and nav_deny (see
+    Scope is instead controlled by DEPTH_LIMIT and rules: (see
     exclusion_rules/open.obamawhitehouse.yml for the /field_tags/ facet-trap
     and /node/N/download off-domain-redirect exclusions).
     """
@@ -37,12 +37,12 @@ class OpenSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     # REDIRECT_ENABLED=True overrides the project-wide default: this site's
     # /search pager 301s to a canonicalized URL, and without following
     # redirects that truncates pagination after page 1. The one path that
-    # redirected off-domain (/node/N/download) is excluded via nav_deny
+    # redirected off-domain (/node/N/download) is excluded via rules:
     # (see exclusion_rules/open.obamawhitehouse.yml) rather than relying on
     # offsite filtering, which doesn't apply to an in-flight redirect.
     #
-    # FEEDS replaces the old two-spider invocation with two named feeds from
-    # this one run, item_classes-filtered to the matching schema.
+    # FEEDS produces both harvest and content CSVs from this one run, via
+    # two named feeds each item_classes-filtered to the matching schema.
     custom_settings = {
         'DEPTH_LIMIT': 30,
         'REDIRECT_ENABLED': True,
@@ -90,11 +90,11 @@ class OpenSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         # never recorded as a content row. Unlike _parse_generic's other
         # no-body pages (homepage, group pages), a search results page
         # isn't a named thing anyone would search for by title. Logged as
-        # an exclusion (not just skipped) so harvest = scrape + exclude
-        # still holds - otherwise these URLs would appear in the harvest
-        # CSV but in neither the content CSV nor the exclusions CSV.
+        # dropped (not just skipped) so scrape + drop = harvest still
+        # holds - otherwise these URLs would appear in the harvest CSV but
+        # in neither the content CSV nor the dropped CSV.
         if urlparse(response.url).path.startswith('/search'):
-            self._log_exclusion(response.url, 'search_listing_page')
+            self._log_dropped(response.url, 'search_listing_page')
             return None
         if 'dataset' in response.url:
             return self._parse_dataset(response)

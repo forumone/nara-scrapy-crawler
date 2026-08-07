@@ -13,7 +13,7 @@ query-string variants of the same page (e.g. Drupal/CKAN-style faceted
 search) down to a single crawl instead of one per decoration. It does not,
 however, stop distinct facet *paths* (e.g. chained /field_tags/X/field_tags/Y/
 segments) from each being crawled once each - that's a structural,
-site-specific pattern; block it via a rules_file's nav_deny patterns (see
+site-specific pattern; block it via a rules_file's rules: patterns (see
 Arguments below).
 
 See HARVESTING.md for guidance on when to use this vs. the split nav+list
@@ -47,10 +47,9 @@ source_site  Optional. Loads archive_crawler/exclusion_rules/<source_site>.yml
              Use when a site accumulates its own reusable rules file.
 rules_file   Optional. Path to a YAML file overlaid on whichever of the above
              gets loaded - -a rules_mode=append (default) unions its rules/
-             nav_deny/pagination/query_params_allow with the base file's, or
+             pagination/query_params_allow with the base file's, or
              'replace' to use rules_file's instead. Neither the base file nor
-             rules_file is written to; this is a runtime-only override,
-             replacing the old comma-separated urls_to_skip argument.
+             rules_file is written to; this is a runtime-only override.
 
 Customising for a new site
 --------------------------
@@ -103,7 +102,6 @@ class GenericCrawlHarvestSpider(CrawlSpider):
             if rules.extensions.get('mode') == 'deny' else _BASE_DENY_EXTENSIONS
         pagination_patterns = exclusion_rules.pagination_patterns(rules)
         allowed_query_params = exclusion_rules.allowed_query_params(rules)
-        deny_list = exclusion_rules.nav_deny_patterns(rules)
         process_links = lambda links: _strip_noise_query_params(links, allowed_query_params)
 
         self.rules = (
@@ -121,7 +119,7 @@ class GenericCrawlHarvestSpider(CrawlSpider):
             # Everything else: follow and record as harvested content.
             Rule(
                 LinkExtractor(
-                    deny=(*pagination_patterns, *deny_list),
+                    deny=pagination_patterns,
                     deny_extensions=deny_extensions,
                     unique=True,
                 ),

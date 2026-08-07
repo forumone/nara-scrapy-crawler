@@ -25,6 +25,18 @@ class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     hashes to the same fingerprint and is flagged-and-skipped, never
     re-walked.
 
+    SCRAPE_DETECTED_LISTINGS = True (see that attribute's own docstring on
+    NavHarvesterMixin) because that same embedded catalog widget also makes
+    every one of those permalinks match LISTING_CONTAINER_SELECTOR/
+    LISTING_PAGER_SELECTOR - without this, every video/photogallery
+    permalink's own real content (title, video caption, slideshow captions)
+    would be silently skipped as if the whole page were just a listing.
+    _scrape_item's own no-body handling is what tells a genuine listing
+    page (no body from any selector - correctly falls through to
+    listing_page) apart from a permalink that merely embeds one (real body
+    found via #video-info .caption/gallery captions/etc. - scraped
+    normally).
+
     There's no not_in_seed_list-style diagnostic here (outbound links on a
     content page checked against a complete, already-finished harvest URL
     set) - there's no complete prior harvest to check a link against when
@@ -61,6 +73,7 @@ class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     )
     LISTING_CONTAINER_SELECTOR = '.view'
     LISTING_PAGER_SELECTOR = '.pager-current'
+    SCRAPE_DETECTED_LISTINGS = True
 
     # DEPTH_LIMIT raised well past the mixin's usual 20 to comfortably clear
     # the longest known listing pagination chain
@@ -75,9 +88,9 @@ class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     # against video/photogallery fan-out is a separate, content-based
     # mechanism independent of DEPTH_LIMIT.
     #
-    # FEEDS replaces the old two-spider -O invocation with two named feeds
-    # from this one run, item_classes-filtered to the matching schema - the
-    # exact fields each of today's separately-produced CSVs already has.
+    # FEEDS produces both harvest and content CSVs from this one run, via
+    # two named feeds each item_classes-filtered to the matching schema -
+    # the exact fields each CSV needs.
     custom_settings = {
         'DEPTH_LIMIT': 1300,
         'CRAWLSPIDER_FOLLOW_LINKS': False,
@@ -194,6 +207,19 @@ class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
                     if re.search(r'/sites/default/', response.url)
                     else ''))
         if not body:
+            # A page reaches _scrape_item with no body from any selector
+            # for one of two reasons: it's genuinely a listing/index page
+            # that only got here because SCRAPE_DETECTED_LISTINGS gave it a
+            # chance (real listings have no #content/.field-items body of
+            # their own - only item rows), or it's an ordinary content page
+            # whose extraction genuinely came up empty. Only the first case
+            # should return None - parse_nav's own listing_containers check
+            # (recomputed here, side-effect-free) is what distinguishes
+            # them; the second keeps the normal no_body-warned-item
+            # behavior every other page gets.
+            listing_containers, _ = self._detect_listing_containers(response)
+            if listing_containers:
+                return None
             warnings.append('no_body')
         elif len(body) < self._get_short_body_threshold():
             warnings.append('short_body')

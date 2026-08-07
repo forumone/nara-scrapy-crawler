@@ -2,7 +2,7 @@
 
 Minimal commands to confirm the crawler works on your machine. Two of the
 simplest sites: `open_obama_whitehouse` (no sitemap, single fused spider)
-and `clintonwhitehouse1` (sitemap-based, two-phase).
+and `clintonwhitehouse1` (sitemap-based, single fused spider).
 
 ```bash
 python -m venv venv
@@ -23,15 +23,11 @@ Writes `data/open.obamawhitehouse/open.obamawhitehouse_harvest.csv` and
 
 ## clintonwhitehouse1
 
-Sitemap-based, two phases.
+Sitemap-based, one command — fetches the sitemap and scrapes every page in
+the same run.
 
 ```bash
-scrapy crawl sitemap_harvest \
-  -a sitemap_url=https://clintonwhitehouse1.archives.gov/sitemap.xml \
-  -a source_site=clintonwhitehouse1
-
-scrapy crawl clintonwhitehouse1 \
-  -a url_file=data/clintonwhitehouse1/clintonwhitehouse1_harvest.csv
+scrapy crawl clintonwhitehouse1
 ```
 
 Writes `data/clintonwhitehouse1/clintonwhitehouse1_harvest.csv` and
@@ -40,3 +36,18 @@ Writes `data/clintonwhitehouse1/clintonwhitehouse1_harvest.csv` and
 If both produce a non-empty `.csv` with real title/body content, the
 environment is set up correctly. See README.md and HARVESTING.md for the
 full picture.
+
+## Push pipeline
+
+Once a site has a `.csv`, try the interactive wrapper around the
+validate/filter/convert/push pipeline — prompts for site, mode
+(`push`/`crawl`/`crawl-and-push`), and any overrides (CSV path,
+warning-filter rules, crawl throttle), lists every file it will create
+or overwrite, then confirms before running:
+
+```bash
+./scrape_index_pipeline_interactive
+```
+
+See README.md's "Push Pipeline" section for the non-interactive
+`scrape_index_pipeline` CLI and what each mode/flag does.

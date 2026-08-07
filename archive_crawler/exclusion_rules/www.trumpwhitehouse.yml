@@ -3,7 +3,7 @@
 # filters (e.g. /briefings-statements/?issue_filter=healthcare) are each a
 # genuinely distinct item subset, not a duplicate of the unfiltered listing,
 # so NavHarvesterMixin's listing-fingerprint dedup handles them without a
-# nav_deny/rules entry: each filtered listing is walked once (its own
+# rules: entry: each filtered listing is walked once (its own
 # fingerprint), and the individual articles it links to are only ever
 # scraped once regardless of how many filters surface them.
 
@@ -18,5 +18,3 @@ extensions:
 # followed (exclusion_rules.strip_denied_query_params), so the
 # tracking-decorated URL collapses onto the same request as its bare
 # canonical form.
-
-nav_deny: []

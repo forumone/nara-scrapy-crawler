@@ -112,11 +112,23 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     # ARCHITECTURE.md.
     LISTING_MAX_PAGES = 2000
 
-    # Distinct from ArchiveSpiderMixin's default 'exclusions' - a nav
-    # harvester and its companion content spider share the same SOURCE_SITE,
-    # so writing to the same filename would have one overwrite the other's
-    # log whenever both run against the same site.
-    EXCLUSIONS_FILE_SUFFIX = 'nav-exclusions'
+    # Opt-in escape hatch: False (default) is parse_nav's original behavior
+    # - a detected listing container means the page's own content is never
+    # scraped, full stop. Obama WH is the one confirmed exception: every
+    # /photos-and-video/{video,photogallery}/* permalink embeds the same
+    # sitewide "browse other videos/galleries" catalog as a genuine,
+    # populated-pager .view block (LISTING_CONTAINER_SELECTOR/
+    # LISTING_PAGER_SELECTOR correctly detect it), but the permalink's OWN
+    # primary content is real and distinct - the embedded widget isn't the
+    # whole page, just a sidebar. Setting this True makes parse_nav attempt
+    # _maybe_scrape_item even when a listing container is detected, falling
+    # back to logging listing_page only if that attempt finds no real body
+    # (see ObamaWhiteHouseSpider._scrape_item, which returns None instead of
+    # a no_body-warned item specifically when a listing container is also
+    # present - only that combination means "this really is just a listing,
+    # nothing more"). No other no-sitemap site has this template shape
+    # confirmed as of this writing - leave False unless one turns up.
+    SCRAPE_DETECTED_LISTINGS = False
 
     # Extension point: a subclass that also composes ArchiveSpiderMixin and
     # defines its own _scrape_item(self, response) gets content extraction
@@ -154,7 +166,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         """Mutate each link's .url in place, dropping utm_*-prefixed (and any
         site-configured query_params_deny) params - see
         exclusion_rules.strip_denied_query_params. Done first, before
-        _filter_web_urls/_apply_nav_deny/dedup, so a tracking-decorated URL
+        _filter_web_urls/_apply_exclusion_rules/dedup, so a tracking-decorated URL
         collapses onto its bare canonical form's own request/dupefilter
         fingerprint instead of needing a separate match_exclude rule."""
         rules = self._get_exclusion_rules()
@@ -166,17 +178,9 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         rules = self._get_exclusion_rules()
         return [lnk for lnk in links if _exclusion_rules_module.is_web_url(lnk.url, rules)]
 
-    def _apply_nav_deny(self, links):
-        """Drop links matching this domain's nav_deny regex patterns OR its
-        rules: entries (archive_crawler/exclusion_rules/<SOURCE_SITE>.yml).
-        Checking rules: here too means an out-of-scope URL (e.g. a
-        non-English mirror) only needs one entry to be excluded from both
-        the nav crawl and the content spider, instead of a duplicate in each
-        list. nav_deny stays available for exclusions that should hold the
-        nav crawler back without also excluding the URL from a content
-        scrape reached some other way (e.g. a known-duplicate URL shape not
-        worth nav-following into, but fine to scrape if it ends up in a
-        url_file regardless).
+    def _apply_exclusion_rules(self, links):
+        """Drop links matching this domain's rules: entries
+        (archive_crawler/exclusion_rules/<SOURCE_SITE>.yml).
 
         Called directly from parse_nav's own manual link-following loop, not
         via a Rule's process_links= - CRAWLSPIDER_FOLLOW_LINKS is set False
@@ -189,24 +193,20 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         in play when there isn't one.
 
         Every dropped link is logged via _log_exclusion (deduped by URL, see
-        ExclusionLoggingMixin) so a shortfall in final harvest counts can be
-        checked against what was deliberately excluded here, rather than
-        left indistinguishable from a link the crawl simply never found.
-        Scoped to rules:/nav_deny matches only - not _filter_web_urls'
-        non-web-URL filtering (mailto:/external links etc. - high volume,
-        not useful signal for this diagnostic).
+        ExclusionLoggingMixin): these links come from the crawl's own real,
+        narrow link-following - the same candidate set that would otherwise
+        be scheduled and become a harvest row - so a rules: match here is a
+        genuine per-rule exclusion the client's audit needs. Scoped to
+        rules: matches only - not _filter_web_urls' non-web-URL filtering
+        (mailto:/external links etc. - high volume, not useful signal for
+        this diagnostic).
         """
         rules = self._get_exclusion_rules()
-        patterns = _exclusion_rules_module.nav_deny_patterns(rules)
         kept = []
         for lnk in links:
             reason = _exclusion_rules_module.match_exclude(lnk.url, rules)
             if reason is not None:
                 self._log_exclusion(lnk.url, reason)
-                continue
-            nav_deny_match = next((p for p in patterns if re.search(p, lnk.url)), None)
-            if nav_deny_match is not None:
-                self._log_exclusion(lnk.url, f'nav_deny:{nav_deny_match}')
                 continue
             kept.append(lnk)
         return kept
@@ -252,8 +252,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
     def parse_nav(self, response):
         """Yield the URL and follow links if this is a nav content page.
 
-        Delegates to three phases, in order, each doing one part of what
-        used to be a single ~70-line function - see ARCHITECTURE.md for the
+        Delegates to three phases, in order - see ARCHITECTURE.md for the
         full listing-fingerprint mechanism these phases implement:
 
         1. _detect_listing_containers - find every LISTING_CONTAINER_SELECTOR
@@ -278,9 +277,9 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         not on the seed URLs themselves.
 
         The two checks below guard every remaining line in this method:
-        _detect_listing_containers, _census_links, and
-        _follow_ordinary_links all call response.css(...) or a
-        LinkExtractor's extract_links(response) unconditionally, both of
+        _detect_listing_containers and _follow_ordinary_links both call
+        response.css(...) or a LinkExtractor's extract_links(response)
+        unconditionally, both of
         which need an lxml element tree. A URL with no extension hinting
         at its real content type (e.g. a JSON API endpoint) can reach here
         regardless of is_web_url's extension-based check, since that only
@@ -298,21 +297,36 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         """
         if not _exclusion_rules_module.is_web_url(response.url, self._get_exclusion_rules()):
             return
+        depth = response.request.meta.get('depth', 0) if response.request else 0
         if not isinstance(response, scrapy.http.TextResponse):
-            self._log_exclusion(response.url, 'non_text_response')
+            yield HarvestItem(url=response.url, is_listing=False, depth=depth)
+            self._log_dropped(response.url, 'non_text_response')
             return
         if response.selector.type == 'json':
-            self._log_exclusion(response.url, 'non_text_response')
+            yield HarvestItem(url=response.url, is_listing=False, depth=depth)
+            self._log_dropped(response.url, 'non_text_response')
             return
         listing_containers, view_urls = self._detect_listing_containers(response)
         yield HarvestItem(
             url=response.url,
             is_listing=bool(listing_containers),
-            depth=response.request.meta.get('depth', 0) if response.request else 0,
+            depth=depth,
         )
-        self._census_links(response)
         yield from self._walk_new_listings(response, listing_containers)
-        if not listing_containers:
+        if listing_containers:
+            # A listing page's own content isn't scraped, UNLESS this
+            # subclass opts in via SCRAPE_DETECTED_LISTINGS (see that
+            # attribute's own docstring) and the scrape attempt actually
+            # finds something. Either way, logging listing_page when it
+            # doesn't rather than leaving it silent means this harvest row
+            # is still accounted for - scrape + drop = harvest holds for
+            # every row this method yields a HarvestItem for.
+            scraped = list(self._maybe_scrape_item(response)) if self.SCRAPE_DETECTED_LISTINGS else []
+            if scraped:
+                yield from scraped
+            else:
+                self._log_dropped(response.url, 'listing_page')
+        else:
             yield from self._maybe_scrape_item(response)
         yield from self._follow_ordinary_links(response, view_urls)
 
@@ -380,7 +394,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
             self._seen_listing_fingerprints.add(key)
             yield from self._walk_listing_pagination(
                 response, container_index=index, view_id=view_id,
-                display_id=display_id, _skip_census=True,
+                display_id=display_id,
             )
 
     def _follow_ordinary_links(self, response, view_urls):
@@ -390,7 +404,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         through this ordinary loop (see the mixin's docstring)."""
         for rule in self._rules:
             links = self._strip_query_noise(rule.link_extractor.extract_links(response))
-            links = self._apply_nav_deny(self._filter_web_urls(links))
+            links = self._apply_exclusion_rules(self._filter_web_urls(links))
             for link in links:
                 if link.url in view_urls:
                     continue
@@ -474,7 +488,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
 
     def _walk_listing_pagination(
         self, response, container_index, view_id=None, display_id=None,
-        _page_count=1, _skip_census=False,
+        _page_count=1,
     ):
         """Walk one listing container's full pagination automatically,
         fetching each extracted item through parse_nav (rather than merely
@@ -495,22 +509,22 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         page's container has to be re-selected from that page's own
         response regardless).
 
-        _skip_census avoids double-logging the entry page's census
-        (_walk_new_listings' caller already ran it on that same response
-        before dispatching here) without skipping it for every later page
-        in the chain, which never go through parse_nav at all.
-
         Guards against a non-HTML response the same way parse_nav does
         (see its docstring for why two checks are needed) - this method is
         registered as its own Scrapy callback for pagination-page requests
         (response.follow(..., callback=self._walk_listing_pagination,
-        ...)), so it never goes through parse_nav's own guard.
+        ...)), so it never goes through parse_nav's own guard. Unlike
+        parse_nav, no HarvestItem is yielded here even on success - a
+        pagination-continuation page's own URL has never had a harvest row
+        (pre-dating this method's dropped/excluded split), so a failure
+        here isn't logged against any existing row either; scrape + drop =
+        harvest is unaffected either way.
         """
         if not isinstance(response, scrapy.http.TextResponse):
-            self._log_exclusion(response.url, 'non_text_response')
+            self._log_dropped(response.url, 'non_text_response')
             return
         if response.selector.type == 'json':
-            self._log_exclusion(response.url, 'non_text_response')
+            self._log_dropped(response.url, 'non_text_response')
             return
         container = self._select_container(response, container_index, view_id, display_id)
         rules = self._get_exclusion_rules()
@@ -521,9 +535,6 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
                 self._log_exclusion(url, reason)
                 continue
             yield response.follow(url, callback=self.parse_nav)
-
-        if not _skip_census:
-            self._census_links(response)
 
         if _page_count >= self.LISTING_MAX_PAGES:
             self.logger.warning(
