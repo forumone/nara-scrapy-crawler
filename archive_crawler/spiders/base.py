@@ -12,24 +12,17 @@ from archive_crawler import exclusion_rules as _exclusion_rules_module
 from archive_crawler.items import ArchiveItem, HarvestItem
 from archive_crawler.spiders.exclusion_logging import ExclusionLoggingMixin
 
-# Invisible Unicode format characters that appear in archived source HTML.
-# Soft hyphen (U+00AD), zero-width space/non-joiner/joiner (U+200B-D),
-# directional marks (U+200E-F), BOM/ZWNBSP (U+FEFF). Also strips the Unicode
-# replacement character (U+FFFD) here too: genuine mojibake from a non-UTF8
-# byte in the archived source, not invisible, but the same "junk artifact to
-# remove" treatment applies.
+# Invisible Unicode format characters in archived HTML, plus the Unicode
+# replacement character (U+FFFD, mojibake from a non-UTF8 source) - not
+# invisible, but the same junk-artifact treatment applies.
 _INVISIBLE_RE = re.compile('[\u00ad\u200b\u200c\u200d\u200e\u200f\u2060\ufeff\ufffd]')
 
-# Matches a single h1/h2 element and its content, non-greedy so it stops at
-# the first closing tag encountered in the source, the same span lxml uses
-# when deciding where the element ends.
+# Matches a single h1/h2 span, non-greedy so it stops at the same closing
+# tag lxml would.
 _HEADING_SPAN_RE = re.compile(r'(<h[12]\b[^>]*>)(.*?)(</h[12]>)', re.IGNORECASE | re.DOTALL)
-# Block-level tags that, when left unclosed inside a heading (e.g. archived
-# pages that omit </p> in "<h1>Foo<p>Bar</h1>"), make lxml auto-close the
-# still-open h1/h2 the moment it hits the nested tag, silently truncating
-# the heading and stranding the rest as an orphan sibling no selector can
-# recover. Stripping these tags out of the heading span before parsing keeps
-# the heading text intact.
+# An unclosed block tag inside a heading (e.g. "<h1>Foo<p>Bar</h1>") makes
+# lxml auto-close the heading early, truncating it. Stripped from the
+# heading span before parsing to keep the heading text intact.
 _NESTED_BLOCK_TAG_RE = re.compile(
     r'</?(?:p|div|table|ul|ol|li|center|blockquote|tr|td|th)\b[^>]*>', re.IGNORECASE,
 )
@@ -40,31 +33,21 @@ _MONTHS = (
 )
 _WEEKDAYS = r'(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)'
 
-# Anchor text for a page's plain-text/no-graphics twin, e.g. "[Text version]"
-# linking wf-work.html to wf-work-plain.html - a UI toggle link, not authored
-# content, so it stays stripped regardless of the letterhead policy below.
-# Flattened into ordinary text by _extract_text's tag-stripping,
-# indistinguishable from real content by the time this pattern runs.
+# Anchor text for a page's plain-text/no-graphics twin (e.g. "[Text
+# version]") - a UI toggle link, not authored content, stripped regardless
+# of the letterhead policy below.
 TEXT_VERSION_TOGGLE_PATTERNS = (
     re.compile(r'^\s*\[\s*(?:Text|Graphics)\s+Version\s*\]\s*', re.IGNORECASE),
 )
 
-# Currently unused - not referenced by any spider's LEADING_TEXT_STRIP_PATTERNS.
-# TODO: decide whether to keep or delete once client direction on letterhead
-# removal is settled. Kept for now, not deleted, in case a future post-hoc
-# boilerplate-removal script is ever wanted - re-scraping to recover this
-# text if it were deleted and needed again would cost far more than keeping
-# already-tested regexes around unused.
+# Unused - not referenced by any spider's LEADING_TEXT_STRIP_PATTERNS. Kept
+# rather than deleted: re-scraping to recover this text if it were needed
+# again would cost far more than keeping tested regexes around unused.
 #
-# Components appeared in varying combinations and order on CW1-6/GWBush
-# (e.g. GWBush puts "For Immediate Release" before "Office of the Press
-# Secretary"), which is why this was applied in a fixpoint loop rather than
-# a single pass when it was active - see _extract_text's git history.
-#
-# The masthead only stripped when immediately followed by a recognized
-# continuation, never unconditionally, so it didn't eat legitimate titles
+# Only strips the masthead when immediately followed by a recognized
+# continuation, never unconditionally, so it doesn't eat legitimate titles
 # that happen to start with "The White House" (e.g. "The White House
-# Visitors Office" or "The White House Conference on the New Economy").
+# Visitors Office").
 _RETIRED_PRESS_RELEASE_LETTERHEAD_PATTERNS = (
     re.compile(
         r'^\s*T\s*H\s*E\s+W\s*H\s*I\s*T\s*E\s+H\s*O\s*U\s*S\s*E\b\s*'
@@ -87,32 +70,28 @@ _RETIRED_PRESS_RELEASE_LETTERHEAD_PATTERNS = (
 )
 
 # Clinton-era press-release pages (CW1-5) often have the masthead as its own
-# h1/h2 ("THE WHITE HOUSE" or "THE WHITE HOUSE Office of the Press
-# Secretary") followed by a second heading with the real subject; _extract_title
-# only ever reads the first heading, so it picks up the masthead instead of
-# the title. Matches only when the ENTIRE heading text is masthead
-# (+ optional office line) and nothing else, so it doesn't misfire on a
-# single heading that already contains real content after the masthead.
+# heading, followed by a second heading with the real subject; _extract_title
+# only reads the first heading, so it'd pick up the masthead instead. Matches
+# only when the entire heading is masthead text, so it doesn't misfire on a
+# heading that already contains real content after the masthead.
 _MASTHEAD_TITLE_RE = re.compile(
     r'^\s*THE\s+WHITE\s+HOUSE\b(?:\s+Office\s+of\s+(?:the\s+)?[A-Za-z][A-Za-z \'-]*)?\s*$',
     re.IGNORECASE,
 )
 
-# Matches when extracted text is nothing but a dateline (e.g. "June 27,
-# 1996" or "December 8-9, 1998") - the signature of a <blockquote> that was
-# auto-closed by the parser right after the dateline rather than where the
-# archived HTML's author intended (see _extract_press_release_body).
+# Matches text that's nothing but a dateline (e.g. "June 27, 1996") - the
+# signature of a <blockquote> auto-closed right after the dateline instead
+# of where the author intended (see _extract_press_release_body).
 _DATELINE_ONLY_RE = re.compile(
     r'^\s*(?:' + _WEEKDAYS + r',?\s+)?' + _MONTHS + r'\s+\d{1,2}(?:-\d{1,2})?,?\s*\d{4}\.?\s*$',
     re.IGNORECASE,
 )
 
-# CW4/CW5 OMB PAYGO cost-estimate pages (same report series, different alias
-# directory per site) have no h1/h2/<title> a generic selector can use, but
-# carry a machine-extractable "BILL TITLE: ... BILL PURPOSE:" field in the
-# body text itself, optionally followed by "LAW NUMBER: P.L. ###-###". No
-# URL-path gating needed - the paired BILL TITLE/BILL PURPOSE markers are
-# specific enough not to false-positive on unrelated content.
+# CW4/CW5 OMB PAYGO cost-estimate pages have no h1/h2/<title> a generic
+# selector can use, but carry a machine-extractable "BILL TITLE: ... BILL
+# PURPOSE:" field in the body, optionally followed by "LAW NUMBER: P.L.
+# ###-###". No URL-path gating needed - the paired markers are specific
+# enough not to false-positive on unrelated content.
 _OMB_PAYGO_BILL_TITLE_RE = re.compile(
     r'BILL TITLE:\s*(.*?)\s*BILL PURPOSE:', re.IGNORECASE | re.DOTALL,
 )
@@ -135,13 +114,10 @@ def omb_paygo_title(body):
 
 
 class ArchiveSpiderMixin(ExclusionLoggingMixin):
-    # Every subclass that doesn't set its own custom_settings gets a single
-    # FEEDS entry derived from SOURCE_SITE: data/<SOURCE_SITE>/<SOURCE_SITE>.csv,
-    # matching every other spider's automatic-output convention (see
-    # ExclusionLoggingMixin.closed for the same derivation applied to the
-    # exclusions CSV). A subclass that defines its own custom_settings (e.g.
-    # a NavHarvesterMixin site with two FEEDS entries, or generic_crawl's
-    # -O/-o-driven output) is left alone.
+    # Every subclass without its own custom_settings gets one FEEDS entry
+    # derived from SOURCE_SITE: data/<SOURCE_SITE>/<SOURCE_SITE>.csv. A
+    # subclass that defines custom_settings itself (e.g. NavHarvesterMixin's
+    # two-entry FEEDS, or generic_crawl's -O/-o output) is left alone.
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if 'custom_settings' not in cls.__dict__ and getattr(cls, 'SOURCE_SITE', None):
@@ -165,34 +141,29 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
     # per-run via -a short_body_threshold=<N>; see _get_short_body_threshold.
     SHORT_BODY_THRESHOLD = 30
 
-    # CSS selectors for site-specific boilerplate to strip before text extraction,
-    # in addition to the shared selectors (#menufloat, .mobile-select, etc.).
-    # Override in subclasses, e.g.: EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)
+    # CSS selectors for site-specific boilerplate to strip, in addition to
+    # the shared selectors (#menufloat, .mobile-select, etc.). Override in
+    # subclasses, e.g.: EXTRA_STRIP_SELECTORS = ('a[href$=".header.html"]',)
     EXTRA_STRIP_SELECTORS = ()
 
-    # XPath expressions for boilerplate that can't be expressed as CSS selectors
-    # (e.g. parent-of conditions). Applied in the same pre-extraction pass as
-    # EXTRA_STRIP_SELECTORS. Each expression is evaluated against the full document.
+    # XPath expressions for boilerplate CSS can't express (e.g. parent-of
+    # conditions), applied in the same pass as EXTRA_STRIP_SELECTORS.
     # Override in subclasses, e.g.:
     #   EXTRA_STRIP_XPATH = ('.//center[.//img[@src="/911/images/star.gif"]]',)
     EXTRA_STRIP_XPATH = ()
 
-    # Compiled regexes matched against the START of the fully-extracted text
-    # (after all DOM-level stripping above) and removed if found. For
-    # boilerplate that isn't a removable DOM node but a fixed run of text at
-    # the front of the page (nav banners, letterhead, repeated widget
-    # content) that DOM-selector stripping can't target cleanly.
-    # Override in subclasses, e.g.:
+    # Compiled regexes matched against the start of the fully-extracted text
+    # and removed if found - for boilerplate that's a fixed run of text
+    # (nav banners, letterhead) rather than a removable DOM node. Override
+    # in subclasses, e.g.:
     #   LEADING_TEXT_STRIP_PATTERNS = (re.compile(r'^\s*Foo\b.*?\bBar\b\s*', re.IGNORECASE),)
     LEADING_TEXT_STRIP_PATTERNS = ()
 
-    # Compiled regexes removed wherever they occur in the fully-extracted
-    # text, not just at the start. For boilerplate inserted mid-page (e.g. a
-    # breadcrumb/section label between the headline and body) that isn't
-    # confined to a leading position. Verify the pattern never matches
-    # legitimate content before adding one - unlike the leading patterns,
-    # there's no position-based safety net here.
-    # Override in subclasses, e.g.:
+    # Compiled regexes removed wherever they occur, not just at the start -
+    # for boilerplate inserted mid-page (e.g. a breadcrumb between headline
+    # and body). Verify a pattern never matches legitimate content before
+    # adding one - no position-based safety net here. Override in
+    # subclasses, e.g.:
     #   MIDTEXT_STRIP_PATTERNS = (re.compile(r'\s*Foo Bar\b\s*'),)
     MIDTEXT_STRIP_PATTERNS = ()
 
@@ -223,21 +194,14 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
 
     @staticmethod
     def _combine_headings(texts):
-        """Join sibling heading elements into one title when there are
-        exactly two (e.g. "III. New Community -" + "Fighting Crime"), since
-        _extract_title otherwise only ever reads the first one. Three or
-        more is ambiguous about what belongs together, so only the first is
-        used in that case, same as before this existed.
+        """Join two sibling headings into one title (e.g. "III. New
+        Community -" + "Fighting Crime"), since _extract_title otherwise
+        only reads the first. Three or more is ambiguous, so only the first
+        is used in that case.
 
         Skips the join when the first heading is masthead-only text (see
-        _MASTHEAD_TITLE_RE) - joining would just prepend that boilerplate to
-        the real title instead of letting _extract_title's masthead handling
-        fall back to <title>, which gives a cleaner result on that template.
-
-        Also skips the join when the two headings are the same text (some
-        pages render an identical heading twice, just re-wrapped with a
-        <br> in a different spot) - joining would just repeat the title.
-        """
+        _MASTHEAD_TITLE_RE), or when both headings are identical text (some
+        pages render the same heading twice, just re-wrapped with a <br>)."""
         texts = [t.strip() for t in texts if t.strip()]
         if not texts:
             return ''
@@ -264,20 +228,17 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         )
         sel = Selector(text=html_text)
         # :not(.element-invisible) excludes Drupal's screen-reader-only
-        # utility class (e.g. a "Search form" accessibility label rendered
-        # as an h2 ahead of any real heading on some obamawhitehouse Panels
-        # pages) - never real visible content on any site, not a
-        # site-specific judgment call.
+        # utility class (e.g. a "Search form" label rendered as an h2 ahead
+        # of a real heading on some obamawhitehouse Panels pages) - never
+        # real visible content on any site.
         title = (
             ArchiveSpiderMixin._combine_headings(sel.css('h1:not(.element-invisible)').xpath('string(.)').getall())
             or ArchiveSpiderMixin._combine_headings(sel.css('h2:not(.element-invisible)').xpath('string(.)').getall())
         )
         if _MASTHEAD_TITLE_RE.match(title):
-            # The heading is just the masthead - the real subject, if the
-            # page has one at all, is in a second heading _extract_title
-            # never reads. <title> reliably holds it on this template
-            # (e.g. "Remarks - Alice Deal Jr. High School"), so prefer it
-            # over the masthead when present.
+            # The heading is just the masthead - the real subject, if any,
+            # is in a second heading _extract_title never reads. <title>
+            # reliably holds it on this template, so prefer it when present.
             title_tag = remove_tags(sel.css('title::text').get(default='').strip())
             title = title_tag or title
         if not title:
@@ -297,9 +258,7 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         """Fallback title for a no_title row: last URL path segment, known
         extension stripped, '-'/'_' replaced with spaces, no title-casing
         (preserves acronyms like EO12902/AFVTBXL5 as-is). E.g.
-        /omb/fedreg/pp99-1.html -> 'pp99 1'. Synthesized, not authored - the
-        warnings column's own no_title marker is what signals that, so no
-        extra bracket-wrapping is added here."""
+        /omb/fedreg/pp99-1.html -> 'pp99 1'."""
         segment = urlparse(url).path.rstrip('/').rsplit('/', 1)[-1]
         for ext in self._get_exclusion_rules().extensions.get('values', []):
             suffix = '.' + ext.lower()
@@ -329,33 +288,26 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
 
     @staticmethod
     def _is_redirect_wrapper(response):
-        """A page whose entire content is a client-side meta-refresh to a
-        canonical URL elsewhere (e.g. archived-site "Redirecting..." pages
-        left behind by a URL-normalization pass) - not present as an actual
-        HTTP redirect, so Scrapy's own redirect middleware never sees it and
-        parse_item would otherwise extract this wrapper's own near-empty
-        "Redirecting..." title/body as if it were real content. Confirmed to
-        occur site-wide on obamawhitehouse, not confined to one URL shape or
-        section - detected generically by content rather than by a maintained
-        URL list."""
+        """A page whose entire content is a client-side meta-refresh to
+        another URL (e.g. leftover "Redirecting..." pages from a
+        URL-normalization pass) - not a real HTTP redirect, so Scrapy's
+        redirect middleware never sees it and parse_item would otherwise
+        extract the wrapper's own near-empty content. Detected by content
+        rather than a maintained URL list - occurs site-wide on
+        obamawhitehouse, not confined to one section."""
         for val in response.css('meta::attr(http-equiv)').getall():
             if val.strip().lower() == 'refresh':
                 return True
         return False
 
     def _is_excluded_response(self, response):
-        """Common parse_item entry check. A response can be non-text (e.g. a
-        binary file served from an extension-less URL a link-following crawl
-        swept up, indistinguishable from a real page by URL shape alone), a
-        frameset with no extractable content, or a client-side redirect
-        wrapper page; css()/xpath() raise NotSupported on the first. Every
+        """Common parse_item entry check: a non-text response (e.g. a
+        binary file at an extension-less URL), a frameset with no
+        extractable content, or a client-side redirect wrapper page. Every
         caller reaches this only after a harvest row already exists for
-        response.url (a sitemap-based spider's _parse_sitemap already
-        yielded one before calling _make_request; NavHarvesterMixin's
-        parse_nav already yielded one before _maybe_scrape_item), so this
-        logs to _log_dropped, not _log_exclusion - scrape + drop = harvest
-        holds against every reason logged here. Returns True if the
-        response should be skipped."""
+        response.url, so this logs to _log_dropped, not _log_exclusion -
+        scrape + drop = harvest holds against every reason logged here.
+        Returns True if the response should be skipped."""
         if not isinstance(response, scrapy.http.TextResponse):
             self._log_dropped(response.url, 'non_text_response')
             return True
@@ -368,24 +320,18 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         return False
 
     def _extract_press_release_body(self, response):
-        """Return the best available body text for Clinton-era pages.
-
-        WH press releases wrap their entire body in <blockquote>, purely for
-        its default indentation styling - a convenient way to skip the
-        masthead/nav chrome that sits outside it, without needing the
-        regex-based letterhead stripping used elsewhere. Non-press-release
-        pages (OMB, CEQ, etc.) don't use blockquote at all, so this falls
-        back to full body when there's no blockquote.
+        """Best-available body text for Clinton-era pages. WH press
+        releases wrap their body in <blockquote>, which conveniently skips
+        the masthead/nav chrome outside it; non-press-release pages (OMB,
+        CEQ, etc.) don't use blockquote, so this falls back to full body
+        when there's none.
 
         Some archived pages never close that <blockquote> where the
-        author's markup implies they meant to (the matching closing tag is
-        often the very last one in the document, evidently meant to span
-        the whole letter) - lxml's error correction then closes it early,
-        right after a short leading fragment such as the dateline, leaving
-        the real letter content stranded as body-level siblings the
-        blockquote selector never sees. Falls through to body in that case
-        rather than trusting a blockquote result that's just a dateline.
-        """
+        author's markup implies they meant to - lxml closes it early,
+        right after a short leading fragment like the dateline, stranding
+        the real content as body-level siblings the selector never sees.
+        Falls through to body rather than trust a blockquote result that's
+        just a dateline."""
         blockquote = self._extract_text(response, 'blockquote')
         if blockquote and not _DATELINE_ONLY_RE.match(blockquote):
             return blockquote
@@ -405,15 +351,11 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
 
     def _extract_first_substantial(self, response, selector):
         """Like _extract_text, but for a CSS selector with multiple
-        same-shape candidate matches in document order (e.g. a Drupal
-        Panels landing page rendering 100+ unrelated .field-item panes,
-        where the first in document order can be an unrelated
-        video-embed-fallback link rather than the real content). Returns
-        the first match whose cleaned text meets the short_body threshold,
-        skipping earlier matches that clean down to nothing or near-nothing.
-        Falls back to the first match's own cleaned text (same result
-        _extract_text would give) if none clear the threshold - CSS only,
-        not meant for XPath selectors."""
+        same-shape matches (e.g. a Drupal Panels page rendering 100+
+        unrelated .field-item panes, where the first isn't the real
+        content). Returns the first match whose cleaned text meets the
+        short_body threshold, falling back to the first match if none
+        clear it. CSS only."""
         if response.css('frameset'):
             return ''
         threshold = self._get_short_body_threshold()
@@ -428,23 +370,19 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
 
     def _clean_matched_html(self, match):
         try:
-            # iframe: browser-fallback content inside the tag (e.g. a
-            # YouTube embed's fallback <a> link, sometimes stored literally
-            # HTML-escaped, e.g. "&lt;a href=...&gt;") is never real visible
-            # page text - same non-content status as script/style, applied
-            # uniformly rather than as a site-specific judgment call.
+            # iframe fallback content (e.g. an HTML-escaped YouTube-embed
+            # fallback link) is never real page text - same treatment as
+            # script/style.
             cleaned = remove_tags_with_content(match, which_ones=('script', 'style', 'iframe'))
         except TypeError:
             cleaned = ''
-        # Remove injected/boilerplate UI elements BEFORE the </div>→space
-        # substitution below. If we wait until after, the </div> on #menufloat
-        # is replaced with a space, leaving it unclosed; lxml then re-parses and
-        # nests all subsequent siblings inside #menufloat, so removing it would
-        # silently delete all body content.
-        # #menufloat: NARA's banner on Clinton-era archived sites.
-        # .mobile-select: Biden WH mobile section-nav widget (hidden on desktop).
-        # table[summary*="Breadcrumbs"], table[summary*="Print"]: breadcrumb/print
-        #   navigation tables common on GWBush-era archived government sites.
+        # Boilerplate removed BEFORE the </div>->space substitution below -
+        # doing it after leaves #menufloat unclosed, so lxml re-nests every
+        # following sibling inside it, and removing it would delete all
+        # body content.
+        # #menufloat: NARA's Clinton-era banner. .mobile-select: Biden WH
+        # mobile nav widget. table[summary*="Breadcrumbs"/"Print"]:
+        # GWBush-era nav tables.
         sel_pre = Selector(text=cleaned)
         boilerplate = '#menufloat, .mobile-select, table[summary*="Breadcrumbs"], table[summary*="Print"]'
         if self.EXTRA_STRIP_SELECTORS:
@@ -473,11 +411,9 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         text = re.sub(r'([\W_])\1{4,} ?', '', text)
         text = re.sub(r'\s+', ' ', text).strip()
         text = _INVISIBLE_RE.sub('', text)
-        # Loop to a fixpoint rather than a single pass: letterhead components
-        # (masthead, office, location, dateline) don't always appear in the
-        # same order across pages (e.g. GWBush has "For Immediate Release"
-        # before "Office of the Press Secretary"), so a later pattern in the
-        # tuple may need to fire before an earlier one gets its turn.
+        # Loop to a fixpoint, not a single pass: letterhead components don't
+        # always appear in the same order across pages, so a later pattern
+        # may need to fire before an earlier one gets its turn.
         pre_strip_text = text
         for _ in range(8):
             new_text = text
@@ -487,12 +423,9 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
                 break
             text = new_text
         if not text.strip() and pre_strip_text.strip():
-            # A page whose entire extracted text was just a dateline or
-            # similar (e.g. a malformed <blockquote> that only captured
-            # "November 22, 1996" from a formal letter's letterhead, a
-            # pre-existing extraction gap unrelated to this stripping)
-            # would otherwise end up completely empty. Keep the original
-            # rather than trade a near-useless value for a useless one.
+            # Keep the pre-strip text if stripping emptied it entirely
+            # (e.g. a page whose only extracted text was a dateline) -
+            # a near-useless value beats a useless one.
             text = pre_strip_text
         for pattern in self.MIDTEXT_STRIP_PATTERNS:
             text = pattern.sub(' ', text)
@@ -502,28 +435,20 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
 
 
 class SitemapUrlSpiderMixin(ArchiveSpiderMixin):
-    """For a content spider that discovers its own URLs directly from a
-    sitemap (SITEMAP_URL class attribute) - the fused sitemap+scrape
-    pattern for clintonwhitehouse1-6, bidenwhitehouse,
-    georgewbush_whitehouse. Folds SitemapHarvestSpider's
-    sitemap/sitemapindex-recursion into one start_requests that yields a
-    parse_item request for every surviving leaf URL directly, rather than
-    writing a harvest CSV for a separate content-spider run to read back.
+    """Content spider that discovers its own URLs from a sitemap
+    (SITEMAP_URL), folding sitemap/sitemapindex recursion into one
+    start_requests that yields a parse_item request for every surviving
+    leaf URL directly, rather than writing a harvest CSV for a separate run
+    to read back.
 
-    Deliberately NOT part of plain ArchiveSpiderMixin: a
-    NavHarvesterMixin-composed spider (which also extends
-    ArchiveSpiderMixin, for its content-extraction helpers) crawls from
-    start_urls instead and must fall through to CrawlSpider/Spider's own
-    start_requests - putting sitemap-fetching here instead of on
-    ArchiveSpiderMixin means that fallthrough needs no special-casing
-    anywhere, in either direction.
+    Kept off plain ArchiveSpiderMixin: a NavHarvesterMixin-composed spider
+    also extends ArchiveSpiderMixin but crawls from start_urls, and needs
+    to fall through to CrawlSpider/Spider's own start_requests untouched.
 
-    REDIRECT_ENABLED stays False project-wide for both the sitemap-fetch
-    and content-fetch requests this mixin issues - none of the committed
-    SITEMAP_URLs redirect, and a sub-sitemap that ever did would only log a
-    warning (_log_sitemap_fetch_error) rather than need redirect-following
-    logic built for it.
-    """
+    REDIRECT_ENABLED stays False for both requests this mixin issues -
+    none of the committed SITEMAP_URLs redirect, and a sub-sitemap that
+    did would just log a warning (_log_sitemap_fetch_error), not need
+    redirect-following logic."""
 
     def start_requests(self):
         sitemap_url = getattr(self, 'SITEMAP_URL', None)
@@ -584,25 +509,22 @@ class SitemapUrlSpiderMixin(ArchiveSpiderMixin):
 
 class PetitionsSpiderMixin(ArchiveSpiderMixin):
     """Shared by obama_petitions.py and trump_petitions.py - the same
-    Drupal petitions-site template, differing only in SOURCE_SITE/domain.
+    Drupal petitions template, differing only in SOURCE_SITE/domain.
     _scrape_item dispatches on URL shape: a petition detail page
-    (_parse_petition) gets its response-date appended to full_text when one
-    is present; every other page (listing, about, etc.) uses the plainer
-    _parse_generic, which also falls back to #content-main for pages
-    without the standard field-item body wrapper.
+    (_parse_petition) gets its response-date appended to full_text; every
+    other page uses the plainer _parse_generic (falls back to
+    #content-main when there's no field-item body wrapper).
 
-    Composed alongside NavHarvesterMixin by both spiders, listed first in
-    the MRO (`class ObamaPetitionsSpider(PetitionsSpiderMixin,
-    NavHarvesterMixin, CrawlSpider)`) so this _scrape_item is found before
-    NavHarvesterMixin's own _scrape_item = None default."""
+    Listed first in the MRO ahead of NavHarvesterMixin so this
+    _scrape_item is found before NavHarvesterMixin's own
+    _scrape_item = None default."""
 
     def _scrape_item(self, response):
         if self._is_excluded_response(response):
             return None
-        # Root/`/responses` pagination pages (`?page=N`) are followed for
-        # petition-link discovery (see NavHarvesterMixin's pagination walk)
-        # but carry no unique content of their own - logged as dropped
-        # (not just skipped) so scrape + drop = harvest still holds.
+        # Pagination pages (`?page=N`) are followed for petition-link
+        # discovery but carry no unique content - logged as dropped, not
+        # just skipped, so scrape + drop = harvest still holds.
         parsed_url = urlparse(response.url)
         if 'page' in parse_qs(parsed_url.query) or parsed_url.path.rstrip('/') == '/responses':
             self._log_dropped(response.url, 'pagination_listing_page')

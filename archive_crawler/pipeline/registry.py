@@ -2,9 +2,7 @@
 
 Enumerates every content spider registered under archive_crawler.spiders.
 Every in-scope site is invocable the same way (`scrapy crawl <name> -O
-data/<site>/<site>.csv`) - no sitemap-based/nav-fused distinction needed
-here, since the sitemap harvester fusion (see
-NAD2-756-sitemap-harvester-fusion-plan) made every site self-contained.
+data/<site>/<site>.csv`) - no sitemap-based/link-crawler distinction needed
 """
 import os
 from collections import namedtuple
@@ -12,12 +10,7 @@ from collections import namedtuple
 from scrapy.settings import Settings
 from scrapy.spiderloader import SpiderLoader
 
-# One-off exploratory tools, not fixed-site content spiders: generic_crawl/
-# generic_crawl_harvest have no committed SOURCE_SITE (generic_crawl sets
-# it dynamically from -a site_id=, generic_crawl_harvest has none at all),
-# and sitemap_harvest is a standalone onboarding tool with no content
-# output of its own. Excluded explicitly rather than relying solely on the
-# missing-SOURCE_SITE filter below, so the intent reads clearly here too.
+# One-off exploratory tools, not fixed-site content spiders
 _EXCLUDED_SPIDER_NAMES = frozenset({'generic_crawl', 'generic_crawl_harvest', 'sitemap_harvest'})
 
 SiteInfo = namedtuple('SiteInfo', ['source_site', 'spider_name', 'csv_path'])

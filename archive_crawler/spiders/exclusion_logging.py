@@ -24,13 +24,7 @@ def _spider_exclusion_rules(spider):
 
 class ExclusionLoggingMixin:
     """Shared exclusion-rule access + logging for any spider with a
-    SOURCE_SITE, regardless of whether it's a content spider, a nav
-    harvester, or a listing harvester.
-
-    Factored out so a content spider, a nav harvester, and a listing
-    harvester can each compose this one mixin instead of each defining
-    their own identical `_get_exclusion_rules`/`_log_exclusion`/
-    `_log_dropped`/`closed()`.
+    SOURCE_SITE, regardless of spider type.
 
     Two separate logs, split by whether a harvest row exists for the URL:
 

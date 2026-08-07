@@ -1,31 +1,24 @@
-"""Per-source_site warning-based row filtering, applied before conversion.
-
-See project memory project_warnings_column_plan for the warnings column
-itself (no_body/no_title/short_body). A row is dropped only when its full
-warnings set is a SUPERSET of the site's configured filter set - a
-two-label filter entry requires both labels present on that row, not
-either alone.
+"""Per-source_site warning-based row filtering (no_body/no_title/
+short_body warnings), applied before conversion. A row is dropped only
+when its full warnings set is a superset of the site's configured filter
+set - a two-label filter entry requires both labels present, not either
+alone.
 
 Config lives at archive_crawler/filter_rules/<source_site>.yml, one file
-per site, mirroring archive_crawler/exclusion_rules.py's per-domain
-convention (a separate directory, not the same files - crawl-time URL
-exclusion and index-time warning-filtering are different concerns
-consumed by different tools):
+per site (separate from exclusion_rules.py's per-domain rules, which
+cover crawl-time URL exclusion rather than this module's index-time
+warning-filtering):
 
     drop_if_all_present: [no_body]     # or [] for "never drop"
 
 A source_site with no committed file is a configuration error, not a
-default to fall back on - most sites already filter no_body in some
-form, so a silent default is more likely wrong than requiring one
-explicit file per site (even an empty drop_if_all_present: []).
+default to fall back on.
 
-load_filter_set's override_path/mode overlay a per-run override on top of
-the committed file, same shape as exclusion_rules.load_rules(): 'append'
-unions the override's drop_if_all_present into the committed list (can
-only make the drop condition MORE restrictive - more labels required
-together, so fewer rows qualify - never less); 'replace' uses the
-override's own value if it defines the key at all, else falls back to
-the committed file's.
+load_filter_set's override_path/mode overlay a per-run override on top
+of the committed file: 'append' unions the override's
+drop_if_all_present into the committed list (only ever more
+restrictive); 'replace' uses the override's own value if it defines the
+key, else falls back to the committed file's.
 """
 import os
 
