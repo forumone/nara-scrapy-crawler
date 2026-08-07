@@ -174,11 +174,12 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         executes, and reads as if a second, redundant filtering mechanism is
         in play when there isn't one.
 
-        Every dropped link is logged via _log_dropped (deduped by URL, see
-        ExclusionLoggingMixin) since a rules: match happens before a harvest
-        row would ever exist for the link - it was never a real harvest
-        candidate, same as _census_links' own findings. Scoped to rules:
-        matches only - not _filter_web_urls' non-web-URL filtering
+        Every dropped link is logged via _log_exclusion (deduped by URL, see
+        ExclusionLoggingMixin): these links come from the crawl's own real,
+        narrow link-following - the same candidate set that would otherwise
+        be scheduled and become a harvest row - so a rules: match here is a
+        genuine per-rule exclusion the client's audit needs. Scoped to
+        rules: matches only - not _filter_web_urls' non-web-URL filtering
         (mailto:/external links etc. - high volume, not useful signal for
         this diagnostic).
         """
@@ -187,7 +188,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         for lnk in links:
             reason = _exclusion_rules_module.match_exclude(lnk.url, rules)
             if reason is not None:
-                self._log_dropped(lnk.url, reason)
+                self._log_exclusion(lnk.url, reason)
                 continue
             kept.append(lnk)
         return kept
@@ -258,9 +259,9 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         not on the seed URLs themselves.
 
         The two checks below guard every remaining line in this method:
-        _detect_listing_containers, _census_links, and
-        _follow_ordinary_links all call response.css(...) or a
-        LinkExtractor's extract_links(response) unconditionally, both of
+        _detect_listing_containers and _follow_ordinary_links both call
+        response.css(...) or a LinkExtractor's extract_links(response)
+        unconditionally, both of
         which need an lxml element tree. A URL with no extension hinting
         at its real content type (e.g. a JSON API endpoint) can reach here
         regardless of is_web_url's extension-based check, since that only
@@ -278,27 +279,29 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         """
         if not _exclusion_rules_module.is_web_url(response.url, self._get_exclusion_rules()):
             return
+        depth = response.request.meta.get('depth', 0) if response.request else 0
         if not isinstance(response, scrapy.http.TextResponse):
-            self._log_exclusion(response.url, 'non_text_response')
+            yield HarvestItem(url=response.url, is_listing=False, depth=depth)
+            self._log_dropped(response.url, 'non_text_response')
             return
         if response.selector.type == 'json':
-            self._log_exclusion(response.url, 'non_text_response')
+            yield HarvestItem(url=response.url, is_listing=False, depth=depth)
+            self._log_dropped(response.url, 'non_text_response')
             return
         listing_containers, view_urls = self._detect_listing_containers(response)
         yield HarvestItem(
             url=response.url,
             is_listing=bool(listing_containers),
-            depth=response.request.meta.get('depth', 0) if response.request else 0,
+            depth=depth,
         )
-        self._census_links(response)
         yield from self._walk_new_listings(response, listing_containers)
         if listing_containers:
             # A listing page's own content isn't scraped (see
             # _maybe_scrape_item's docstring); logging it here rather than
             # leaving it silent means this harvest row is still accounted
-            # for - scrape + exclude = harvest holds for every row this
+            # for - scrape + drop = harvest holds for every row this
             # method yields a HarvestItem for.
-            self._log_exclusion(response.url, 'listing_page')
+            self._log_dropped(response.url, 'listing_page')
         else:
             yield from self._maybe_scrape_item(response)
         yield from self._follow_ordinary_links(response, view_urls)
@@ -367,7 +370,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
             self._seen_listing_fingerprints.add(key)
             yield from self._walk_listing_pagination(
                 response, container_index=index, view_id=view_id,
-                display_id=display_id, _skip_census=True,
+                display_id=display_id,
             )
 
     def _follow_ordinary_links(self, response, view_urls):
@@ -461,7 +464,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
 
     def _walk_listing_pagination(
         self, response, container_index, view_id=None, display_id=None,
-        _page_count=1, _skip_census=False,
+        _page_count=1,
     ):
         """Walk one listing container's full pagination automatically,
         fetching each extracted item through parse_nav (rather than merely
@@ -482,22 +485,22 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         page's container has to be re-selected from that page's own
         response regardless).
 
-        _skip_census avoids double-logging the entry page's census
-        (_walk_new_listings' caller already ran it on that same response
-        before dispatching here) without skipping it for every later page
-        in the chain, which never go through parse_nav at all.
-
         Guards against a non-HTML response the same way parse_nav does
         (see its docstring for why two checks are needed) - this method is
         registered as its own Scrapy callback for pagination-page requests
         (response.follow(..., callback=self._walk_listing_pagination,
-        ...)), so it never goes through parse_nav's own guard.
+        ...)), so it never goes through parse_nav's own guard. Unlike
+        parse_nav, no HarvestItem is yielded here even on success - a
+        pagination-continuation page's own URL has never had a harvest row
+        (pre-dating this method's dropped/excluded split), so a failure
+        here isn't logged against any existing row either; scrape + drop =
+        harvest is unaffected either way.
         """
         if not isinstance(response, scrapy.http.TextResponse):
-            self._log_exclusion(response.url, 'non_text_response')
+            self._log_dropped(response.url, 'non_text_response')
             return
         if response.selector.type == 'json':
-            self._log_exclusion(response.url, 'non_text_response')
+            self._log_dropped(response.url, 'non_text_response')
             return
         container = self._select_container(response, container_index, view_id, display_id)
         rules = self._get_exclusion_rules()
@@ -508,9 +511,6 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
                 self._log_exclusion(url, reason)
                 continue
             yield response.follow(url, callback=self.parse_nav)
-
-        if not _skip_census:
-            self._census_links(response)
 
         if _page_count >= self.LISTING_MAX_PAGES:
             self.logger.warning(

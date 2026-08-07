@@ -90,7 +90,8 @@ it doesn't use). Between the two, this gives every sitemap-based spider:
   request with the standard HTTP error errback
 - `_extract_title(response)` — h1 → h2 → `<title>` with HTML entity decoding and normalisation
 - `_extract_text(response, selector)` — strips NARA banners, nav boilerplate, and invisible Unicode before returning plain text
-- `_log_exclusion(url, reason)` — records a skipped URL; written to `_exclusions.csv` on spider close
+- `_log_exclusion(url, reason)` — records a sitemap URL rejected before ever getting a harvest row (extension/`rules:` match during `_parse_sitemap`); written to `_exclusions.csv` on spider close
+- `_log_dropped(url, reason)` — records a URL that already has a harvest row, then got rejected (bad response, or fetched fine but judged non-content); written to `_dropped.csv` on spider close - see README's "Exclusion & Dropped Output"
 - `_get_exclusion_rules()` — loads `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`, overlaid with `-a rules_file=<path>` `-a rules_mode=append|replace` if given
 - `_get_short_body_threshold()` / `_slug_title(url)` — the `warnings` column's `short_body` threshold (default 30 chars) and `no_title` fallback title
 - `EXTRA_STRIP_SELECTORS` / `EXTRA_STRIP_XPATH` — per-spider hooks for site-specific boilerplate

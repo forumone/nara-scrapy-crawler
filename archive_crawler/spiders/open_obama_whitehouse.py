@@ -90,11 +90,11 @@ class OpenSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         # never recorded as a content row. Unlike _parse_generic's other
         # no-body pages (homepage, group pages), a search results page
         # isn't a named thing anyone would search for by title. Logged as
-        # an exclusion (not just skipped) so harvest = scrape + exclude
-        # still holds - otherwise these URLs would appear in the harvest
-        # CSV but in neither the content CSV nor the exclusions CSV.
+        # dropped (not just skipped) so scrape + drop = harvest still
+        # holds - otherwise these URLs would appear in the harvest CSV but
+        # in neither the content CSV nor the dropped CSV.
         if urlparse(response.url).path.startswith('/search'):
-            self._log_exclusion(response.url, 'search_listing_page')
+            self._log_dropped(response.url, 'search_listing_page')
             return None
         if 'dataset' in response.url:
             return self._parse_dataset(response)

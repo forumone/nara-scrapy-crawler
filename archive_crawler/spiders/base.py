@@ -323,9 +323,9 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
                 reason = 'http_5xx'
             else:
                 reason = f'http_{status}'
-            self._log_exclusion(failure.value.response.url, reason)
+            self._log_dropped(failure.value.response.url, reason)
         else:
-            self._log_exclusion(failure.request.url, f'network_error:{failure.type.__name__}')
+            self._log_dropped(failure.request.url, f'network_error:{failure.type.__name__}')
 
     @staticmethod
     def _is_redirect_wrapper(response):
@@ -348,17 +348,22 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         binary file served from an extension-less URL a link-following crawl
         swept up, indistinguishable from a real page by URL shape alone), a
         frameset with no extractable content, or a client-side redirect
-        wrapper page; css()/xpath() raise NotSupported on the first. Logs the
-        appropriate exclusion and returns True if the response should be
-        skipped."""
+        wrapper page; css()/xpath() raise NotSupported on the first. Every
+        caller reaches this only after a harvest row already exists for
+        response.url (a sitemap-based spider's _parse_sitemap already
+        yielded one before calling _make_request; NavHarvesterMixin's
+        parse_nav already yielded one before _maybe_scrape_item), so this
+        logs to _log_dropped, not _log_exclusion - scrape + drop = harvest
+        holds against every reason logged here. Returns True if the
+        response should be skipped."""
         if not isinstance(response, scrapy.http.TextResponse):
-            self._log_exclusion(response.url, 'non_text_response')
+            self._log_dropped(response.url, 'non_text_response')
             return True
         if response.css('frameset'):
-            self._log_exclusion(response.url, 'frameset')
+            self._log_dropped(response.url, 'frameset')
             return True
         if self._is_redirect_wrapper(response):
-            self._log_exclusion(response.url, 'redirect_wrapper')
+            self._log_dropped(response.url, 'redirect_wrapper')
             return True
         return False
 
@@ -596,11 +601,11 @@ class PetitionsSpiderMixin(ArchiveSpiderMixin):
             return None
         # Root/`/responses` pagination pages (`?page=N`) are followed for
         # petition-link discovery (see NavHarvesterMixin's pagination walk)
-        # but carry no unique content of their own - logged as an exclusion
-        # (not just skipped) so harvest = scrape + exclude still holds.
+        # but carry no unique content of their own - logged as dropped
+        # (not just skipped) so scrape + drop = harvest still holds.
         parsed_url = urlparse(response.url)
         if 'page' in parse_qs(parsed_url.query) or parsed_url.path.rstrip('/') == '/responses':
-            self._log_exclusion(response.url, 'pagination_listing_page')
+            self._log_dropped(response.url, 'pagination_listing_page')
             return None
         if '/petition/' in response.url:
             return self._parse_petition(response)

@@ -324,7 +324,7 @@ actually render inside the pooled container scope.
 **What.** A guard against `parse_nav` (and its pagination-walk counterpart)
 crashing when a followed link turns out not to be an HTML page.
 
-**Why.** `parse_nav`, `_detect_listing_containers`, `_census_links`, and
+**Why.** `parse_nav`, `_detect_listing_containers`, and
 `_follow_ordinary_links` all call `response.css(...)` or a `LinkExtractor`'s
 `extract_links(response)` unconditionally, assuming an HTML document.
 `is_web_url`'s extension-based check (see below) can't fully guard this on
