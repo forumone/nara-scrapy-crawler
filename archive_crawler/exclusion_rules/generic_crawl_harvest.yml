@@ -29,8 +29,6 @@ extensions:
 
 rules: []
 
-nav_deny: []
-
 pagination:
   - '\?page='
   - '/page/'

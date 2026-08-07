@@ -1,23 +1,24 @@
-# URL exclusion rules for open.obamawhitehouse. No URL-pattern exclusions
-# configured today; low-quality pages are handled via content-based checks
-# (no_body/no_title) instead.
+# URL exclusion rules for open.obamawhitehouse. Low-quality pages are also
+# handled via content-based checks (no_body/no_title).
 
 extensions:
   mode: allow
   values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
 
-rules: []
-
-# /search/field_tags/X/field_tags/Y/... and /search/field_topic/... chain
-# combinatorially - each result page links to every other facet
-# combination, across multiple facet dimensions (tags, topic, content
-# type). Path-based form, any dimension name.
-nav_deny:
-  - '/field_[a-z_]+/'
+rules:
+  # /search/field_tags/X/field_tags/Y/... and /search/field_topic/... chain
+  # combinatorially - each result page links to every other facet
+  # combination, across multiple facet dimensions (tags, topic, content
+  # type). Path-based form, any dimension name.
+  - match: regex
+    pattern: '/field_[a-z_]+/'
+    reason: "url_pattern:/field_[a-z_]+/"
   # Same facet mechanism, query-string form (f[0]=, f[1]=, ... - Drupal's
   # Facet API convention) - used on pages like /group/data-catalog that
   # have no pager at all, so they render facets as the only way to filter.
-  - 'f%5B\d+%5D='
+  - match: regex
+    pattern: 'f%5B\d+%5D='
+    reason: "url_pattern:f%5B\\d+%5D="
   # /node/N/download and /node/N/dataset/download are resource-download
   # endpoints, not content pages - a general /download match rather than
   # enumerating each path shape, since more than one has turned up.
@@ -27,13 +28,19 @@ nav_deny:
   # trying to filter its target. Others serve a raw non-HTML file
   # directly, which crashes the nav crawler's link-extraction the same
   # way /api/ does below.
-  - '/download'
+  - match: contains
+    pattern: "/download"
+    reason: "url_pattern:/download"
   # /api/3/action/... is DKAN's JSON API, linked from every dataset page -
   # not a content page, and a non-HTML response crashes the nav crawler's
   # link-extraction (Scrapy's JSON auto-selector has no lxml tree to walk).
-  - '/api/'
+  - match: contains
+    pattern: "/api/"
+    reason: "url_pattern:/api/"
   # /node/N/revisions and /node/N/revisions/M/view are Drupal's version-
   # history pages, linked from every node - always empty (no real content
   # ever renders in this template), 425 distinct URLs observed on one
   # crawl alone.
-  - '/revisions'
+  - match: contains
+    pattern: "/revisions"
+    reason: "url_pattern:/revisions"

@@ -49,17 +49,18 @@ class ExclusionLoggingMixin:
     harvest` holds exactly for a NavHarvesterMixin-based spider's harvest
     CSV:
 
-    - `_log_exclusion`/`*_exclusions.csv`: a URL that was (or would have
-      been) a real harvest-candidate - extracted by the site's own Rule/
-      listing-pagination logic - excluded before or after fetching it.
-      Every row here corresponds to a URL that would otherwise have added
-      one row to the harvest CSV.
-    - `_log_dropped`/`*_dropped.csv`: `_census_links`'s own output only
-      (see its docstring) - links found via a separate, wider sweep of
-      every same-domain href on a page, built to audit total sitewide
-      hyperlink volume, not to decide what the crawl follows. A URL logged
-      here was never a harvest-candidate in the first place, so it isn't
-      expected to reconcile against the harvest CSV at all.
+    - `_log_exclusion`/`*_exclusions.csv`: a URL that *was* counted into
+      `*_harvest.csv` - a real harvest row already existed for it - then
+      rejected, post-fetch or post-harvest-row. Every row here corresponds
+      to a URL that added one row to the harvest CSV.
+    - `_log_dropped`/`*_dropped.csv`: anything rejected *before* a harvest
+      row would ever exist for it, regardless of which code path found it -
+      `_census_links`'s own wide, non-following sweep of every same-domain
+      href on a page (built to audit total sitewide hyperlink volume, not
+      to decide what the crawl follows), and `rules:` matches found via the
+      crawl's real, narrow link-following (`_apply_exclusion_rules`) alike.
+      A URL logged here was never a harvest-candidate in the first place,
+      so it isn't expected to reconcile against the harvest CSV at all.
     """
 
     EXCLUSIONS_FILE_SUFFIX = 'exclusions'
@@ -122,9 +123,9 @@ class ExclusionLoggingMixin:
         """Extract every <a>/<area> href on the page via a wide-open
         LinkExtractor (deny_extensions=() - see _CENSUS_LINK_EXTRACTOR) and
         log one of each URL's first occurrence under a widened reason set:
-        this domain's rules:/nav_deny matches (the existing mechanism, now
-        applied to every link on the page rather than just the ones a Rule's
-        own LinkExtractor happened to extract) and non-web extensions.
+        this domain's rules: matches (the existing mechanism, now applied to
+        every link on the page rather than just the ones a Rule's own
+        LinkExtractor happened to extract) and non-web extensions.
         External-domain links are silently dropped, not logged - a naive
         mirror tool wouldn't plausibly "forget" to exclude other domains
         either, so this bucket isn't useful signal for explaining a
@@ -138,9 +139,10 @@ class ExclusionLoggingMixin:
         client's page-count claim by reason - not to expand what gets
         crawled. Logs every reason via _log_dropped, not _log_exclusion -
         none of these URLs were ever real harvest-candidates (see class
-        docstring), so they belong in *_dropped.csv, not *_exclusions.csv.
-        Never schedules a Request for anything found here; this is
-        extraction + classification only.
+        docstring), so they belong in *_dropped.csv, not *_exclusions.csv -
+        the same bucket _apply_exclusion_rules' own rules: matches land in,
+        for the same reason. Never schedules a Request for anything found
+        here; this is extraction + classification only.
 
         Returns the URLs that don't fall into any of those buckets (real,
         same-domain, non-rule-excluded, HTML-shaped links) for callers that

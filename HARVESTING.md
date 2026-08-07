@@ -134,7 +134,7 @@ extraction, all in a single pass over each fetched response. See
 with no shared-catalog-widget risk (e.g. `obama_petitions.py`,
 `trump_petitions.py`, `open_obama_whitehouse.py`, all a few hundred pages)
 can skip `LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_CONTAINER_SELECTOR`/
-`LISTING_PAGER_SELECTOR` entirely and rely on `DEPTH_LIMIT` + `nav_deny` for
+`LISTING_PAGER_SELECTOR` entirely and rely on `DEPTH_LIMIT` + `rules:` for
 scope, same as those three.
 
 `generic_crawl_harvest`/`generic_crawl` is starter/example tooling, not a
@@ -195,11 +195,8 @@ Inspect the live site to answer these questions before writing any code:
 - Are there path prefixes that should be universally out of scope regardless
   of phase? (e.g. a non-English mirror, `/sites/` Drupal assets) Put these in
   `rules:` in the new site's `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`
-  — nav-time exclusion checks `rules ∪ nav_deny`, so a `rules:` entry alone
-  covers both the nav crawl and the content spider; reserve `nav_deny` for an
-  exclusion that should hold the nav crawler back without also excluding the
-  URL from a content scrape reached some other way (see
-  `NavHarvesterMixin._apply_nav_deny`).
+  — a `rules:` entry covers both the nav crawl (see
+  `NavHarvesterMixin._apply_exclusion_rules`) and the content spider.
 - What is the domain? Are there subdomains that should be handled by separate spiders?
 
 ### Step 2 — Nav + listing discovery crawl
@@ -280,7 +277,7 @@ class MySiteSpider(NavHarvesterMixin, CrawlSpider):
             ),
             callback='parse_nav',
             follow=False,  # omit process_links=; parse_nav applies
-                           # _apply_nav_deny directly, and CrawlSpider's own
+                           # _apply_exclusion_rules directly, and CrawlSpider's own
                            # Rule-dispatch machinery that would call it is
                            # disabled entirely (see the mixin's
                            # custom_settings) - process_links= here would be
@@ -463,7 +460,7 @@ scrapy crawl generic_crawl_harvest \
     -o data/example/example_harvest.csv
 ```
 
-Where `one_off_denies.yml` has a `nav_deny: ['/print/', '/user/', '/node/\d']` list.
+Where `one_off_denies.yml` has a `rules:` list matching `/print/`, `/user/`, `/node/\d`.
 `extensions`/`rules`/`pagination`/`query_params_allow` default to
 `archive_crawler/exclusion_rules/generic_crawl_harvest.yml` unless `-a
 source_site=<name>` points at a specific site's own committed file instead;
@@ -475,7 +472,7 @@ Scrapy's duplicate-request filter then collapses facet/sort/tracking-decorated
 variants of the same page into a single crawl. This does not stop distinct facet
 *paths* (e.g. chained `/field_tags/X/field_tags/Y/` segments on faceted-search
 sites) from each being crawled once each — block those per-site with a
-`nav_deny` entry (e.g. `-a rules_file=... ` with `nav_deny: ['/field_tags/', '/search/']`).
+`rules:` entry (e.g. `-a rules_file=... ` matching `/field_tags/`, `/search/`).
 
 Then scrape using `generic_crawl` or a custom scraper spider:
 

@@ -17,7 +17,7 @@ class OpenSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     No listing-fingerprint dedup (LISTING_VIEW_LINK_EXTRACTOR left unset):
     this site is a few hundred pages, with no evidence of the shared-catalog-
     embedded-on-thousands-of-permalinks pattern that mechanism exists for.
-    Scope is instead controlled by DEPTH_LIMIT and nav_deny (see
+    Scope is instead controlled by DEPTH_LIMIT and rules: (see
     exclusion_rules/open.obamawhitehouse.yml for the /field_tags/ facet-trap
     and /node/N/download off-domain-redirect exclusions).
     """
@@ -37,7 +37,7 @@ class OpenSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     # REDIRECT_ENABLED=True overrides the project-wide default: this site's
     # /search pager 301s to a canonicalized URL, and without following
     # redirects that truncates pagination after page 1. The one path that
-    # redirected off-domain (/node/N/download) is excluded via nav_deny
+    # redirected off-domain (/node/N/download) is excluded via rules:
     # (see exclusion_rules/open.obamawhitehouse.yml) rather than relying on
     # offsite filtering, which doesn't apply to an in-flight redirect.
     #

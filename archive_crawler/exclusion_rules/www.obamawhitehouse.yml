@@ -48,8 +48,3 @@ rules:
   - match: regex
     pattern: '/administration/eop/ceq/initiatives/[^/]+/comments$'
     reason: "url_pattern:ceq_initiative_comments"
-
-# nav_deny: patterns excluded from nav-crawling only, without also
-# excluding the URL from a content scrape if reached another way. Empty
-# today.
-nav_deny: []

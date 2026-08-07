@@ -148,7 +148,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         """Mutate each link's .url in place, dropping utm_*-prefixed (and any
         site-configured query_params_deny) params - see
         exclusion_rules.strip_denied_query_params. Done first, before
-        _filter_web_urls/_apply_nav_deny/dedup, so a tracking-decorated URL
+        _filter_web_urls/_apply_exclusion_rules/dedup, so a tracking-decorated URL
         collapses onto its bare canonical form's own request/dupefilter
         fingerprint instead of needing a separate match_exclude rule."""
         rules = self._get_exclusion_rules()
@@ -160,17 +160,9 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         rules = self._get_exclusion_rules()
         return [lnk for lnk in links if _exclusion_rules_module.is_web_url(lnk.url, rules)]
 
-    def _apply_nav_deny(self, links):
-        """Drop links matching this domain's nav_deny regex patterns OR its
-        rules: entries (archive_crawler/exclusion_rules/<SOURCE_SITE>.yml).
-        Checking rules: here too means an out-of-scope URL (e.g. a
-        non-English mirror) only needs one entry to be excluded from both
-        the nav crawl and the content spider, instead of a duplicate in each
-        list. nav_deny stays available for exclusions that should hold the
-        nav crawler back without also excluding the URL from a content
-        scrape reached some other way (e.g. a known-duplicate URL shape not
-        worth nav-following into, but fine to scrape if it ends up in a
-        url_file regardless).
+    def _apply_exclusion_rules(self, links):
+        """Drop links matching this domain's rules: entries
+        (archive_crawler/exclusion_rules/<SOURCE_SITE>.yml).
 
         Called directly from parse_nav's own manual link-following loop, not
         via a Rule's process_links= - CRAWLSPIDER_FOLLOW_LINKS is set False
@@ -182,25 +174,20 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         executes, and reads as if a second, redundant filtering mechanism is
         in play when there isn't one.
 
-        Every dropped link is logged via _log_exclusion (deduped by URL, see
-        ExclusionLoggingMixin) so a shortfall in final harvest counts can be
-        checked against what was deliberately excluded here, rather than
-        left indistinguishable from a link the crawl simply never found.
-        Scoped to rules:/nav_deny matches only - not _filter_web_urls'
-        non-web-URL filtering (mailto:/external links etc. - high volume,
-        not useful signal for this diagnostic).
+        Every dropped link is logged via _log_dropped (deduped by URL, see
+        ExclusionLoggingMixin) since a rules: match happens before a harvest
+        row would ever exist for the link - it was never a real harvest
+        candidate, same as _census_links' own findings. Scoped to rules:
+        matches only - not _filter_web_urls' non-web-URL filtering
+        (mailto:/external links etc. - high volume, not useful signal for
+        this diagnostic).
         """
         rules = self._get_exclusion_rules()
-        patterns = _exclusion_rules_module.nav_deny_patterns(rules)
         kept = []
         for lnk in links:
             reason = _exclusion_rules_module.match_exclude(lnk.url, rules)
             if reason is not None:
-                self._log_exclusion(lnk.url, reason)
-                continue
-            nav_deny_match = next((p for p in patterns if re.search(p, lnk.url)), None)
-            if nav_deny_match is not None:
-                self._log_exclusion(lnk.url, f'nav_deny:{nav_deny_match}')
+                self._log_dropped(lnk.url, reason)
                 continue
             kept.append(lnk)
         return kept
@@ -390,7 +377,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         through this ordinary loop (see the mixin's docstring)."""
         for rule in self._rules:
             links = self._strip_query_noise(rule.link_extractor.extract_links(response))
-            links = self._apply_nav_deny(self._filter_web_urls(links))
+            links = self._apply_exclusion_rules(self._filter_web_urls(links))
             for link in links:
                 if link.url in view_urls:
                     continue

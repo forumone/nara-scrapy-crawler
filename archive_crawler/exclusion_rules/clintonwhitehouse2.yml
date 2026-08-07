@@ -7,5 +7,3 @@ extensions:
   values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
 
 rules: []
-
-nav_deny: []

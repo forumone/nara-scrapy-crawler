@@ -22,32 +22,22 @@ internals).
 **What.** Every harvest-capable and content spider reads a per-domain YAML
 file at `archive_crawler/exclusion_rules/<SOURCE_SITE>.yml`, loaded by
 `exclusion_rules.load_rules`. See that module's own docstring for the file
-format (`extensions`, `rules`, `nav_deny`, `pagination`,
-`query_params_allow`) and for how a new site's file should be structured.
+format (`extensions`, `rules`, `pagination`, `query_params_allow`) and for
+how a new site's file should be structured.
 
-**Why.** Two pieces of that schema are easy to conflate — `rules:` vs.
-`nav_deny:`, and the `extensions`-based `is_web_url` filter — so this section
-covers the design rationale that separates them.
+**Why.** The `rules:` list and the `extensions`-based `is_web_url` filter are
+easy to conflate, so this section covers the design rationale that separates
+them.
 
 **How it works.**
 
-`rules:` vs. `nav_deny:` — both are lists of exclusion patterns, checked at
-different points and for different purposes:
-
-- `rules:` entries are checked by both the nav crawler
-  (`NavHarvesterMixin._apply_nav_deny`) and the content spider
-  (`SitemapUrlSpiderMixin._parse_sitemap`, for the sitemap-based spiders).
-  A single `rules:` entry excludes a URL shape from the entire pipeline —
-  nav crawl and content scrape alike — with one entry instead of a
-  duplicate in each. Use this for URLs that are genuinely out of scope
-  everywhere (a non-English mirror, a known-duplicate alias prefix).
-- `nav_deny:` entries are checked only by the nav crawler. Use this for a
-  URL shape that should hold the nav crawler back from following it,
-  without also excluding the same URL from a content scrape reached some
-  other way (e.g. via a `url_file` built independently of the nav crawl).
-  If a URL should never be scraped under any path, it belongs in `rules:`,
-  not `nav_deny:` — a `nav_deny:`-only exclusion doesn't stop the content
-  spider from picking it up elsewhere.
+`rules:` entries are checked by both the nav crawler
+(`NavHarvesterMixin._apply_exclusion_rules`) and the content spider
+(`SitemapUrlSpiderMixin._parse_sitemap`, for the sitemap-based spiders).
+A single `rules:` entry excludes a URL shape from the entire pipeline — nav
+crawl and content scrape alike — with one entry instead of a duplicate in
+each. Use this for URLs that are genuinely out of scope everywhere (a
+non-English mirror, a known-duplicate alias prefix).
 
 `is_web_url` — extension-based filtering (allow-list or deny-list, per
 `extensions.mode`) that both the nav crawler and content spiders use to
@@ -318,7 +308,7 @@ Each facet-filter combination is otherwise a distinct URL Scrapy's
 dupefilter has no reason to collapse, and following them all is a real
 combinatorial-blowup risk, not just noise.
 
-Current mitigation is `nav_deny`, not the fingerprint mechanism — see
+Current mitigation is a `rules:` exclusion, not the fingerprint mechanism — see
 `exclusion_rules/open.obamawhitehouse.yml` for the two patterns needed
 (`/field_[a-z_]+/` for path-based facets, `f%5B\d+%5D=` for Drupal's
 Facet API query-string convention). When building a new no-sitemap site,
@@ -364,7 +354,7 @@ Both checks live at the top of `parse_nav` and `_walk_listing_pagination`
 its own Scrapy callback for pagination-page requests, never routed through
 `parse_nav`.
 
-**Watch out for.** A site-specific `nav_deny` entry (e.g.
+**Watch out for.** A site-specific `rules:` entry (e.g.
 `open.obamawhitehouse.yml`'s `/api/` and `/download` patterns) is still
 worth adding for a *known* non-HTML endpoint even with this guard in
 place — it saves the wasted request entirely rather than

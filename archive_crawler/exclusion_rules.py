@@ -24,9 +24,6 @@ per domain, structured as:
           - "https://example.com/page-two"   # rather than a path shape)
         reason: "some_reason"
 
-    nav_deny:                 # regex patterns for NavHarvesterMixin's Rule(deny=...)
-      - '/sites/'
-
     pagination:                # generic_crawl_harvest: follow-but-don't-record patterns
       - '\\?page='
 
@@ -63,12 +60,11 @@ _DEFAULT_QUERY_PARAM_DENY_PREFIXES = ('utm_',)
 class ExclusionRules:
     """Loaded, merged rule set for one domain. Immutable once constructed."""
 
-    def __init__(self, extensions=None, rules=None, nav_deny=None,
+    def __init__(self, extensions=None, rules=None,
                  pagination=None, query_params_allow=None,
                  query_params_deny=None):
         self.extensions = extensions or dict(_DEFAULT_EXTENSIONS)
         self.rules = rules or []
-        self.nav_deny = nav_deny or []
         self.pagination = pagination or []
         self.query_params_allow = query_params_allow or []
         self.query_params_deny = query_params_deny or []
@@ -96,7 +92,6 @@ def _rules_from_dict(data):
     return ExclusionRules(
         extensions=data.get('extensions') or dict(_DEFAULT_EXTENSIONS),
         rules=rules,
-        nav_deny=list(data.get('nav_deny') or []),
         pagination=list(data.get('pagination') or []),
         query_params_allow=list(data.get('query_params_allow') or []),
         query_params_deny=list(data.get('query_params_deny') or []),
@@ -107,7 +102,7 @@ def load_rules(source_site, override_path=None, mode='append'):
     """Load the committed rules file for source_site, optionally overlaying
     override_path per mode:
 
-    - 'append': union of committed + override rules/nav_deny/pagination/
+    - 'append': union of committed + override rules/pagination/
       query_params_allow (extensions from override replace the committed
       ones if given). Neither the committed file nor override_path is
       written to - this is a runtime-only merge.
@@ -127,7 +122,6 @@ def load_rules(source_site, override_path=None, mode='append'):
         return ExclusionRules(
             extensions=override.extensions or base.extensions,
             rules=override.rules or base.rules,
-            nav_deny=override.nav_deny or base.nav_deny,
             pagination=override.pagination or base.pagination,
             query_params_allow=override.query_params_allow or base.query_params_allow,
             query_params_deny=override.query_params_deny or base.query_params_deny,
@@ -136,7 +130,6 @@ def load_rules(source_site, override_path=None, mode='append'):
         return ExclusionRules(
             extensions=override.extensions or base.extensions,
             rules=base.rules + override.rules,
-            nav_deny=base.nav_deny + override.nav_deny,
             pagination=base.pagination + override.pagination,
             query_params_allow=base.query_params_allow + override.query_params_allow,
             query_params_deny=base.query_params_deny + override.query_params_deny,
@@ -190,10 +183,6 @@ def match_exclude(url, rules):
         if _matches(entry, url):
             return entry['reason']
     return None
-
-
-def nav_deny_patterns(rules):
-    return tuple(rules.nav_deny)
 
 
 def pagination_patterns(rules):

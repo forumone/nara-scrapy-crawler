@@ -1,16 +1,15 @@
-# URL exclusion rules for petitions.obamawhitehouse. No URL-pattern
-# exclusions configured today; low-quality pages are handled via
-# content-based checks (no_body/no_title) instead.
+# URL exclusion rules for petitions.obamawhitehouse. Low-quality pages are
+# also handled via content-based checks (no_body/no_title).
 
 extensions:
   mode: allow
   values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
 
-rules: []
-
-# /user/login?destination=<page> appears on every single page (the
-# Drupal "log in to sign this petition" link) and always 404s in the
-# archive - not a content page, and without this the crawl wastes over
-# half its requests on predictable 404s.
-nav_deny:
-  - '/user/login'
+rules:
+  # /user/login?destination=<page> appears on every single page (the
+  # Drupal "log in to sign this petition" link) and always 404s in the
+  # archive - not a content page, and without this the crawl wastes over
+  # half its requests on predictable 404s.
+  - match: contains
+    pattern: "/user/login"
+    reason: "url_pattern:/user/login"
