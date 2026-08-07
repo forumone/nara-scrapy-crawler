@@ -18,10 +18,10 @@ already present in the environment is left untouched, and only a value
 .env.example for what .env can configure - a fallback credentials file
 location/profile, plus the target bucket/region/prefix.
 
-Still unconfirmed: whether nara-crawl-data's <source_site>.jsonl-at-root
-key convention actually matches where the downstream Lambda watches, and
-how id/document_type/source/changed should be populated on each document
-(see convert.py) - neither blocks this module's own upload logic.
+Key convention: <source_site>/<source_site>.jsonl, one folder per site,
+matching nara-crawl-data's existing layout. How id/document_type/source/
+changed should be populated on each document (see convert.py) is still
+open - it doesn't block this module's own upload logic.
 """
 import logging
 import os
@@ -42,7 +42,9 @@ def _bucket_and_key(source_site):
             "it in, or export NARA_S3_BUCKET directly in the environment."
         )
     prefix = os.environ.get('NARA_S3_PREFIX', '').strip('/')
-    key = f'{prefix}/{source_site}.jsonl' if prefix else f'{source_site}.jsonl'
+    key = f'{source_site}/{source_site}.jsonl'
+    if prefix:
+        key = f'{prefix}/{key}'
     return bucket, key
 
 

@@ -133,12 +133,11 @@ or reconciles index contents itself.
   `changed` aren't populated — no document from any of the 14 archive
   sites exists in the live index yet to reference their shape.
 
-**Watch out for.** `push.py` uploads to a fixed `<source_site>.jsonl` key at
-the root of the `NARA_S3_BUCKET` bucket (`nara-crawl-data`) — unconfirmed
-whether that key/prefix convention actually matches where the downstream
-Lambda watches, and `convert.py`'s `id`/`document_type`/`source`/`changed`
-gap (see above) is still open. Neither blocks a real upload from working
-today. Credentials: boto3's own default provider chain is used as-is (real
+**Watch out for.** `push.py` uploads to a `<source_site>/<source_site>.jsonl`
+key in the `NARA_S3_BUCKET` bucket (`nara-crawl-data`), one folder per site.
+`convert.py`'s `id`/`document_type`/`source`/`changed` gap (see above) is
+still open, but doesn't block a real upload from working today.
+Credentials: boto3's own default provider chain is used as-is (real
 environment variables first, shared credentials file after); see
 `.env.example` for the gitignored `.env` fallback that points boto3 at a
 non-default credentials file/profile and configures the bucket/region,
