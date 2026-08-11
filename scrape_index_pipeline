@@ -40,6 +40,7 @@ import argparse
 import csv
 import itertools
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -159,6 +160,12 @@ def _crawl(site_info, download_delay=None, concurrent_requests_per_domain=None, 
         # <timestamp>.log is unaffected either way - that's a second,
         # independent handler this doesn't touch.
         cmd += ['--logfile', logfile]
+        # Scrapy opens the log FileHandler before the spider runs, i.e.
+        # before FEEDS would otherwise create data/<site>/ for the CSV -
+        # on a brand-new site directory this dir doesn't exist yet.
+        logfile_dir = os.path.dirname(logfile)
+        if logfile_dir:
+            os.makedirs(logfile_dir, exist_ok=True)
         returncode = _run_with_spinner(cmd, f"Crawling {site_info.spider_name}")
         if returncode != 0:
             raise subprocess.CalledProcessError(returncode, cmd)
