@@ -15,13 +15,25 @@ Key convention: <source_site>/<source_site>.jsonl, one folder per site.
 """
 import logging
 import os
+import socket
 
 import boto3
+import urllib3.util.connection as urllib3_connection
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
 load_dotenv(override=False)
+
+# S3's plain regional endpoint (s3.<region>.amazonaws.com, as opposed to
+# the separate dualstack hostname) is IPv4-only. On networks where the
+# resolver synthesizes a DNS64 AAAA answer for it anyway, the default
+# getaddrinfo(AF_UNSPEC) call returns only that synthetic address, and
+# connecting through it stalls/retries unreliably instead of failing
+# outright or falling back. Forcing AF_INET goes straight to the real A
+# record instead. Scoped to this module (only active for push/crawl-and-
+# push's own S3 connections), not a system-wide DNS change.
+urllib3_connection.allowed_gai_family = lambda: socket.AF_INET
 
 
 def _bucket_and_key(source_site):
