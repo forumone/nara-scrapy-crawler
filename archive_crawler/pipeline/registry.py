@@ -10,8 +10,12 @@ from collections import namedtuple
 from scrapy.settings import Settings
 from scrapy.spiderloader import SpiderLoader
 
-# One-off exploratory tools, not fixed-site content spiders
-_EXCLUDED_SPIDER_NAMES = frozenset({'generic_crawl', 'generic_crawl_harvest', 'sitemap_harvest'})
+# One-off exploratory tools (not fixed-site content spiders) and sites
+# out of indexing scope
+_EXCLUDED_SPIDER_NAMES = frozenset({
+    'generic_crawl', 'generic_crawl_harvest', 'sitemap_harvest',
+    'obama_petitions', 'trump_petitions',
+})
 
 SiteInfo = namedtuple('SiteInfo', ['source_site', 'spider_name', 'csv_path'])
 

@@ -49,8 +49,7 @@ extraction in a single crawl:
 scrapy crawl open_obama_whitehouse
 ```
 
-Replace with any of: `letsmove`, `obama_whitehouse`, `obama_petitions`,
-`trump_petitions`, `trumpwhitehouse`.
+Replace with any of: `letsmove`, `obama_whitehouse`, `trumpwhitehouse`.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md#listing-fingerprint-dedup-navharvestermixin)
 for the listing-fingerprint mechanism these rely on — `obama_whitehouse.py`/
@@ -103,10 +102,10 @@ being dropped:
 
 Each scrape spider automatically writes up to two CSVs alongside the output CSV when the spider closes, no `-O`/`-a` needed (`-a exclusions_file=<path>`/`-a dropped_file=<path>` to override either derived default). Each row contains the skipped URL and a typed reason. Neither file's rows ever appear in the main output CSV. The split is by whether a harvest row exists for the URL:
 
-- **`{source_site}_exclusions.csv`** — a URL rejected *before* it was ever a harvest candidate, so it has no harvest row at all: for the 6 no-sitemap spiders, a `rules:`-matched link found via real link-following, dropped before ever being requested; for the 8 sitemap-based spiders, a sitemap entry that failed the extension allowlist or matched a `rules:` entry, dropped before a harvest row was written for it. This is the file a per-rule "what got excluded and why" audit should read.
+- **`{source_site}_exclusions.csv`** — a URL rejected *before* it was ever a harvest candidate, so it has no harvest row at all: for the 4 no-sitemap spiders, a `rules:`-matched link found via real link-following, dropped before ever being requested; for the 8 sitemap-based spiders, a sitemap entry that failed the extension allowlist or matched a `rules:` entry, dropped before a harvest row was written for it. This is the file a per-rule "what got excluded and why" audit should read.
 - **`{source_site}_dropped.csv`** — a URL that already has a harvest row, then got rejected: post-fetch (a bad response) or post-harvest-row (fetched fine, judged non-content).
 
-Two invariants hold as a result, for every one of the 14 in-scope sites: **`scraped + dropped = harvested`** always; and for the 8 sitemap-based spiders specifically, **`harvested + excluded = sitemap total`** (the 6 no-sitemap spiders have no fixed "total" to reconcile `excluded` against - a nav crawl's link-discovery isn't bounded by a fixed URL list the way a sitemap is).
+Two invariants hold as a result, for every one of the 12 in-scope sites: **`scraped + dropped = harvested`** always; and for the 8 sitemap-based spiders specifically, **`harvested + excluded = sitemap total`** (the 4 no-sitemap spiders have no fixed "total" to reconcile `excluded` against - a nav crawl's link-discovery isn't bounded by a fixed URL list the way a sitemap is).
 
 | Reason | File | Description |
 |---|---|---|
@@ -196,7 +195,7 @@ Before raising throttling further, check the target domain's `robots.txt` for a 
 
 ## 🗂 CSV Naming Convention
 
-All harvester and content output files follow a consistent naming scheme. Every spider except `generic_crawl`/`generic_crawl_harvest` (one-off exploratory tools with no fixed site identity, see "Running Locally" above — the only two spiders that still require `-O`/`-o` for any output at all) writes to its own path automatically. Don't pass `-O <path>` to any of the 14 in-scope content spiders to redirect their output — every one of them has a two-entry `custom_settings['FEEDS']` (harvest + content), and Scrapy's CLI setting replaces that dict wholesale rather than adding to it, silently dropping the harvest CSV and corrupting the content CSV's own shape (see ARCHITECTURE.md). Use `-a exclusions_file=<path>`/`-a dropped_file=<path>` for the exclusions/dropped CSVs, and — for `sitemap_harvest` specifically, where `-O` doesn't apply at all — `-a harvest_file=<path>`/`-a dropped_file=<path>` (its own, unrelated `dropped_file`).
+All harvester and content output files follow a consistent naming scheme. Every spider except `generic_crawl`/`generic_crawl_harvest` (one-off exploratory tools with no fixed site identity, see "Running Locally" above — the only two spiders that still require `-O`/`-o` for any output at all) writes to its own path automatically. Don't pass `-O <path>` to any of the 12 in-scope content spiders to redirect their output — every one of them has a two-entry `custom_settings['FEEDS']` (harvest + content), and Scrapy's CLI setting replaces that dict wholesale rather than adding to it, silently dropping the harvest CSV and corrupting the content CSV's own shape (see ARCHITECTURE.md). Use `-a exclusions_file=<path>`/`-a dropped_file=<path>` for the exclusions/dropped CSVs, and — for `sitemap_harvest` specifically, where `-O` doesn't apply at all — `-a harvest_file=<path>`/`-a dropped_file=<path>` (its own, unrelated `dropped_file`).
 
 | File | Contents |
 |---|---|
@@ -265,7 +264,7 @@ knowing that aren't obvious from the flag descriptions alone:
   terminal, a spinner + elapsed-seconds counter fills the gap this
   otherwise leaves blank.
 - `--csv`/`--jsonl`/`--logfile`/`--filter-rules-file` cannot be combined
-  with `--all` (one path can't apply to 14 sites); the throttle flags
+  with `--all` (one path can't apply to 12 sites); the throttle flags
   can.
 
 `scrape_index_pipeline_interactive` prompts for site, mode, and any
@@ -309,7 +308,7 @@ Each file's own docstring/comments have the full detail; this is just a map.
 | `audit_url_gaps.py` | Post-hoc URL gap analysis tool (see "URL Gap Analysis" above) |
 | `pipeline/`, `scrape_index_pipeline`, `scrape_index_pipeline_interactive` | Push pipeline (see "Push Pipeline" above); `scrape_index_pipeline` is the Docker `ENTRYPOINT` |
 | `Dockerfile` | Python 3.9 Slim image configuration |
-| `crontab.example` | Example weekly re-crawl schedule for all 14 sites, 2-parallel-max |
+| `crontab.example` | Example weekly re-crawl schedule for all 12 sites, 2-parallel-max |
 
 
 ## 🛠 Deployment to AWS

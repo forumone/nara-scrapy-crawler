@@ -132,11 +132,10 @@ site. One spider handles nav link-following, listing pagination-walking (if
 step 1 finds a reliable listing container + pager selector), and content
 extraction, all in a single pass over each fetched response. See
 "Step-by-step: nav harvester" below. Listing detection is optional - a site
-with no shared-catalog-widget risk (e.g. `obama_petitions.py`,
-`trump_petitions.py`, `open_obama_whitehouse.py`, all a few hundred pages)
-can skip `LISTING_VIEW_LINK_EXTRACTOR`/`LISTING_CONTAINER_SELECTOR`/
-`LISTING_PAGER_SELECTOR` entirely and rely on `DEPTH_LIMIT` + `rules:` for
-scope, same as those three.
+with no shared-catalog-widget risk (e.g. `open_obama_whitehouse.py`, a few
+hundred pages) can skip `LISTING_VIEW_LINK_EXTRACTOR`/
+`LISTING_CONTAINER_SELECTOR`/`LISTING_PAGER_SELECTOR` entirely and rely on
+`DEPTH_LIMIT` + `rules:` for scope, same as that one.
 
 `generic_crawl_harvest`/`generic_crawl` is starter/example tooling, not a
 production-ready alternative for a new site — its selectors are tuned to
@@ -505,4 +504,4 @@ One file, one class, one crawl (step 2's discovery-only version and step
 4's content-extracting version are the same file, not two).
 
 Use the `source_site` value as `<site>` (e.g. `letsmove.obamawhitehouse`,
-`petitions.trumpwhitehouse`). Dots in the source_site become dots in filenames.
+`open.obamawhitehouse`). Dots in the source_site become dots in filenames.

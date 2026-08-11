@@ -54,11 +54,11 @@ a real extension, always passes regardless of mode.
 ## Never pass `-O`/`-o` to a multi-`FEEDS`-entry spider
 
 **What.** A hard rule: never pass Scrapy's `-O`/`-o` CLI flags to any of
-this project's 14 in-scope content spiders.
+this project's 12 in-scope content spiders.
 
 **Why.** Every fused spider (all 8 sitemap-based sites, plus
-`obama_whitehouse`/`letsmove`/`trump_petitions`/`obama_petitions`/
-`trumpwhitehouse`) declares `custom_settings['FEEDS']` with **two**
+`obama_whitehouse`/`letsmove`/`trumpwhitehouse`) declares
+`custom_settings['FEEDS']` with **two**
 entries — a harvest feed (`item_classes: [HarvestItem]`, `fields:
 ['url']` or `['url', 'is_listing', 'depth']`) and a content feed
 (`item_classes: [ArchiveItem]`, the full field list) — so that one
@@ -130,7 +130,7 @@ or reconciles index contents itself.
 - **`convert.py`** — CSV row → `archive_content_v2` document field mapping
   (`source_type` → `source_type_id` is the one renamed field; `warnings`
   is dropped, not on the live mapping). `id`/`document_type`/`source`/
-  `changed` aren't populated — no document from any of the 14 archive
+  `changed` aren't populated — no document from any of the 12 archive
   sites exists in the live index yet to reference their shape.
 
 **Watch out for.** `push.py` uploads to a `<source_site>/<source_site>.jsonl`

@@ -1,4 +1,4 @@
-# Example weekly re-crawl schedule for the 14 in-scope sites.
+# Example weekly re-crawl schedule for the 12 in-scope sites.
 #
 # Install by copying into a real crontab (after setting REPO_DIR below):
 #   crontab crontab.example
@@ -22,8 +22,7 @@
 # Approximate bucket durations at that 2s/1-connection rate, and the
 # buffer before the next scheduled day:
 #   Sun bucket A: georgewbush_whitehouse alone             ~46h    (buffer to Wed: ~26h)
-#   Sun bucket B: open_obama_whitehouse, obama_petitions,
-#                 trump_petitions, letsmove                ~1h28m
+#   Sun bucket B: open_obama_whitehouse, letsmove          ~1h05m
 #   Wed bucket A: obama_whitehouse alone                   ~30h10m (buffer to Fri: ~17h50m)
 #   Wed bucket B: trumpwhitehouse, bidenwhitehouse          ~12h57m
 #   Fri bucket A: clintonwhitehouse1-6, sequential          ~34h17m (buffer to Sun: ~13h43m)
@@ -61,8 +60,8 @@ SHELL=/bin/sh
 # Bucket A: georgewbush_whitehouse (alone - largest/most memory-hungry site)
 0 0 * * 0 cd "$REPO_DIR" && ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push georgewbush_whitehouse --download-delay 2 --concurrent-requests-per-domain 1 >> "$REPO_DIR/data/cron-sun-a-georgewbush.log" 2>&1
 
-# Bucket B: the four smallest sites, sequential
-0 0 * * 0 cd "$REPO_DIR" && ( ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push open_obama_whitehouse --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push obama_petitions --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push trump_petitions --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push letsmove --download-delay 2 --concurrent-requests-per-domain 1 ) >> "$REPO_DIR/data/cron-sun-b-small-sites.log" 2>&1
+# Bucket B: the two smallest sites, sequential
+0 0 * * 0 cd "$REPO_DIR" && ( ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push open_obama_whitehouse --download-delay 2 --concurrent-requests-per-domain 1; ./venv/bin/python3 ./scrape_index_pipeline crawl-and-push letsmove --download-delay 2 --concurrent-requests-per-domain 1 ) >> "$REPO_DIR/data/cron-sun-b-small-sites.log" 2>&1
 
 # --- Wednesday --------------------------------------------------------------
 
