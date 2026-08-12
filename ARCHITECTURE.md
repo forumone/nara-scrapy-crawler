@@ -110,9 +110,14 @@ or reconciles index contents itself.
   fixed site identity). `resolve(site_arg)` looks a site up by either
   spider name or `source_site`.
 - **`validate.py`** — every `source_site` value present must be a known
-  site, and `full_text`/`teaser_text` are checked against a bare-URL regex
-  to catch a column swap. Raises `ValidationError` listing every problem
-  found, not just the first. Narrower than
+  site, and `url` must be present and well-formed (it becomes the
+  OpenSearch document ID downstream). Raises `ValidationError` listing
+  every problem found, not just the first. `full_text`/`teaser_text`
+  are not validated — an earlier bare-URL-regex check on those fields
+  (meant to catch a column swap) produced a false positive on a real
+  page whose only body content is an outbound link, blocking an entire
+  site's push over one legitimate row; removed in favor of validating
+  `url` instead. Narrower than
   `~/git/nara/scripts/validate-opensearch-csv.py` (invisible-unicode,
   HTML-tag, HTML-entity, missing-space, "Continue reading" checks) — that
   script audits CSVs already pulled back out of the live index; this one
@@ -130,13 +135,17 @@ or reconciles index contents itself.
 - **`convert.py`** — CSV row → `archive_content_v2` document field mapping
   (`source_type` → `source_type_id` is the one renamed field; `warnings`
   is dropped, not on the live mapping). `id`/`document_type`/`source`/
-  `changed` aren't populated — no document from any of the 12 archive
-  sites exists in the live index yet to reference their shape.
+  `changed` still aren't populated. All 12 in-scope sites now have real
+  documents live in the index (2026-08-11/12 full rescrape,
+  423,549 documents) with this gap in every one of them - it's a live
+  production gap now, not a theoretical future one, though it hasn't
+  blocked indexing, `source_site.keyword` counts, or search from working.
 
 **Watch out for.** `push.py` uploads to a `<source_site>/<source_site>.jsonl`
 key in the `NARA_S3_BUCKET` bucket (`nara-crawl-data`), one folder per site.
 `convert.py`'s `id`/`document_type`/`source`/`changed` gap (see above) is
-still open, but doesn't block a real upload from working today.
+still open, live in production across all 12 sites now, but doesn't block
+a real upload or search from working today.
 Credentials: boto3's own default provider chain is used as-is (real
 environment variables first, shared credentials file after); see
 `.env.example` for the gitignored `.env` fallback that points boto3 at a
