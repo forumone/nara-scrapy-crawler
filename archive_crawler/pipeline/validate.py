@@ -11,10 +11,7 @@ import re
 
 from archive_crawler.pipeline import registry
 
-# A bare URL in full_text/teaser_text is the signature of a column swap
-# (e.g. a hand-edited CSV with url and full_text transposed) - a real
-# page's body text is never just a URL on its own.
-_BARE_URL_RE = re.compile(r'^\s*https?://\S+\s*$')
+_URL_RE = re.compile(r'^https?://\S+$')
 
 
 class ValidationError(ValueError):
@@ -33,9 +30,8 @@ def validate_rows(rows):
         source_site = row.get('source_site', '')
         if source_site not in allowed_source_sites:
             problems.append(f"row {i}: unknown source_site {source_site!r}")
-        for field in ('full_text', 'teaser_text'):
-            value = row.get(field) or ''
-            if _BARE_URL_RE.match(value):
-                problems.append(f"row {i}: {field} looks like a bare URL, possible column swap: {value!r}")
+        url = row.get('url') or ''
+        if not _URL_RE.match(url):
+            problems.append(f"row {i}: url is missing or malformed (becomes the OpenSearch document ID): {url!r}")
     if problems:
         raise ValidationError('\n'.join(problems))
