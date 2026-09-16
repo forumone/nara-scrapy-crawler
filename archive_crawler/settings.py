@@ -83,6 +83,13 @@ EXTENSIONS = {
     "archive_crawler.extensions.error_log.ErrorFileLogger": 100,
 }
 
+# Catches any uncaught exception from a callback (a bug in this project's
+# own parsing code) and logs it to *_dropped.csv instead of leaving it as
+# a console-only traceback. See middlewares.py's own docstring.
+SPIDER_MIDDLEWARES = {
+    "archive_crawler.middlewares.UnhandledSpiderExceptionLoggingMiddleware": 1000,
+}
+
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html
 #AUTOTHROTTLE_ENABLED = True

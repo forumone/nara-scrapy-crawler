@@ -43,8 +43,11 @@ class ExclusionLoggingMixin:
       `non_text_response`, `redirect_wrapper`, `http_*`,
       `network_error:*`) or post-harvest-row (page fetched fine but judged
       non-content: `listing_page`, `search_listing_page`,
-      `pagination_listing_page`). `scrape + drop = harvest` holds against
-      this file exactly.
+      `pagination_listing_page`). Also `spider_exception:*` - an uncaught
+      exception in this project's own parsing code, caught project-wide by
+      middlewares.py's UnhandledSpiderExceptionLoggingMiddleware, logged
+      here instead of only a console traceback. `scrape + drop = harvest`
+      holds against this file exactly.
 
     Both files are written on every run, even with zero rows (header
     only) - a stale file from a prior run never survives a run that had
