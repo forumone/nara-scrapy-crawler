@@ -445,6 +445,17 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         pagination page (a Selector is scoped to the response it came
         from, so it can't be carried across requests).
 
+        Both the item requests and the next-page continuation request use
+        errback=self._log_nav_fetch_error, same as start_requests and
+        _follow_ordinary_links - a permanently-failed fetch here (e.g. a
+        broken CDN cache entry serving an empty 200 body, confirmed live
+        on trumpwhitehouse) used to end this whole chain silently, with
+        no dropped-log row and no further pages ever discovered. A failed
+        continuation request does still get a HarvestItem, from that
+        errback - a minor asymmetry against the "no HarvestItem here even
+        on success" rule below, traded for not losing the failure
+        entirely.
+
         Guards against a non-HTML response the same way parse_nav does -
         registered as its own Scrapy callback, so it never goes through
         parse_nav's guard. Unlike parse_nav, no HarvestItem is yielded
@@ -464,7 +475,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
             if reason is not None:
                 self._log_exclusion(url, reason)
                 continue
-            yield response.follow(url, callback=self.parse_nav)
+            yield response.follow(url, callback=self.parse_nav, errback=self._log_nav_fetch_error)
 
         if _page_count >= self.LISTING_MAX_PAGES:
             self.logger.warning(
@@ -481,6 +492,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         if next_href:
             yield response.follow(
                 next_href, callback=self._walk_listing_pagination,
+                errback=self._log_nav_fetch_error,
                 cb_kwargs={
                     'container_index': container_index,
                     'view_id': view_id,
