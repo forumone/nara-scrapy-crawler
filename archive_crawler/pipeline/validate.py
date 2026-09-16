@@ -23,7 +23,13 @@ def validate_rows(rows):
     not just the first - so an operator sees everything to fix in one
     pass. Row numbers are 1-indexed against the CSV including its header
     (so the first data row is row 2, matching what a spreadsheet/editor
-    would show)."""
+    would show).
+
+    Zero rows is always rejected, with no override - a push has no
+    content to justify going ahead, whatever the cause (a failed crawl,
+    a bad --csv path, an accidentally-truncated file)."""
+    if not rows:
+        raise ValidationError('CSV has 0 rows - refusing to push')
     allowed_source_sites = {info.source_site for info in registry.list_sites().values()}
     problems = []
     for i, row in enumerate(rows, start=2):

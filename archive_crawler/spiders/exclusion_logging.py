@@ -45,6 +45,12 @@ class ExclusionLoggingMixin:
       non-content: `listing_page`, `search_listing_page`,
       `pagination_listing_page`). `scrape + drop = harvest` holds against
       this file exactly.
+
+    Both files are written on every run, even with zero rows (header
+    only) - a stale file from a prior run never survives a run that had
+    nothing to log. scrape_index_pipeline's crawl_health check relies on
+    this to read *_dropped.csv as this run's own record, not leftover
+    state from whenever the site last had a fetch failure.
     """
 
     EXCLUSIONS_FILE_SUFFIX = 'exclusions'
@@ -79,8 +85,11 @@ class ExclusionLoggingMixin:
         self._dropped.append({'url': url, 'reason': reason})
 
     def _write_log(self, rows, file_attr, suffix):
-        if not rows:
-            return
+        # Always write, even with zero rows - a downstream consumer (e.g.
+        # scrape_index_pipeline's crawl_health check) reads this file to
+        # judge THIS run's health. Skipping the write on an empty run would
+        # leave a prior run's file in place, making a healthy re-crawl look
+        # like it still has that old run's dropped rows.
         # -a exclusions_file=<path>/-a dropped_file=<path> overrides the
         # derived default - no explicit __init__ parameter needed for
         # this, since plain scrapy.Spider.__init__ already assigns any
