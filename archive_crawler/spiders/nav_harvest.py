@@ -134,7 +134,26 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         JOBDIR-based resume (the usual reason dont_filter=True matters),
         so there's no downside to recording it normally."""
         for url in self.start_urls:
-            yield scrapy.Request(url, dont_filter=False)
+            yield scrapy.Request(url, dont_filter=False, errback=self._log_nav_fetch_error)
+
+    def _log_nav_fetch_error(self, failure):
+        """Errback for both start_requests and _follow_ordinary_links - a
+        nav-crawl request that never reached parse_nav, so no HarvestItem
+        was yielded there for it (unlike a sitemap-based spider, where
+        HarvestItem is yielded up front, before the content fetch - see
+        SitemapUrlSpiderMixin._parse_sitemap in base.py).
+
+        Calls ArchiveSpiderMixin._log_http_error (relies on the same MRO
+        composition every real subclass already provides for _log_dropped)
+        to record the http_5xx/network_error reason scrape_index_pipeline's
+        crawl_health check counts, then yields the HarvestItem parse_nav
+        would have - so harvest + drop still reconciles against scrape for
+        this URL, same as a fetch that succeeded but got content-judgment-
+        dropped."""
+        self._log_http_error(failure)
+        depth = failure.request.meta.get('depth', 0) if failure.request else 0
+        url = failure.request.url if failure.request else ''
+        yield HarvestItem(url=url, is_listing=False, depth=depth)
 
     def _strip_query_noise(self, links):
         """Mutate each link's .url in place, dropping utm_*-prefixed (and
@@ -344,7 +363,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
             for link in links:
                 if link.url in view_urls:
                     continue
-                yield response.follow(link.url, callback=self.parse_nav)
+                yield response.follow(link.url, callback=self.parse_nav, errback=self._log_nav_fetch_error)
 
     def _maybe_scrape_item(self, response):
         """No-op unless a subclass also composes ArchiveSpiderMixin and
