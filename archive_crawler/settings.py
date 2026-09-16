@@ -83,10 +83,15 @@ EXTENSIONS = {
     "archive_crawler.extensions.error_log.ErrorFileLogger": 100,
 }
 
-# Catches any uncaught exception from a callback (a bug in this project's
-# own parsing code) and logs it to *_dropped.csv instead of leaving it as
-# a console-only traceback. See middlewares.py's own docstring.
+# EmptyResponseGuardMiddleware must run after HttpErrorMiddleware
+# (priority 50) - it only ever sees a response HttpErrorMiddleware
+# already treated as normal (2xx, or an explicitly allowed status), so a
+# real 404/3xx/5xx never reaches its 0-byte check. Catches any uncaught
+# exception from a callback (a bug in this project's own parsing code)
+# and logs it to *_dropped.csv instead of leaving it as a console-only
+# traceback. See middlewares.py's own docstrings.
 SPIDER_MIDDLEWARES = {
+    "archive_crawler.middlewares.EmptyResponseGuardMiddleware": 900,
     "archive_crawler.middlewares.UnhandledSpiderExceptionLoggingMiddleware": 1000,
 }
 
