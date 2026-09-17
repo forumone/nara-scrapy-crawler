@@ -148,10 +148,17 @@ class TrumpWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         ),
     )
 
-    # The theme's one confirmed listing item template: an
-    # article.briefing-statement's own h2.briefing-statement__title link.
+    # .briefing-statement__title only matches the briefings-statements/
+    # remarks/news templates, and only half of news' own items (5 of 10
+    # confirmed live) - presidential-actions and articles use their own
+    # class names for the same h2 title link and matched zero, which
+    # silently cost nearly all of both categories (2 of ~1,780 real
+    # presidential-actions items scraped, 3 of ~620 real articles items,
+    # confirmed against a live run). Every listing template on this site
+    # puts its item title in an h2 inside the item's own <article> - this
+    # selector covers all five without a per-listing special case.
     def _listing_pagination_items(self, container):
-        return container.css('.briefing-statement__title a::attr(href)').getall()
+        return container.css('article h2 a::attr(href)').getall()
 
     def _listing_pagination_next_url(self, container):
         return container.css('.pagination__next::attr(href)').get()

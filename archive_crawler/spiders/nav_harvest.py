@@ -331,6 +331,20 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         container was already flagged is_listing and nothing inside it
         gets walked or followed twice.
 
+        An empty item_urls set never counts as a dedup match, and is
+        never registered - it carries no real signal that two listings
+        are the same catalog, only that _listing_pagination_items found
+        nothing on this one. On a site where view_id/display_id are both
+        None (every non-Drupal site - see _view_identity), two
+        independently-broken listings collapse onto the identical empty
+        fingerprint, and whichever is discovered second gets silently
+        treated as an already-walked duplicate of the first, skipping its
+        entire pagination walk. Confirmed live on trumpwhitehouse:
+        presidential-actions and articles both matched zero items under
+        the old item selector, and articles (discovered second) never
+        issued a single page-2 request as a result - not a cosmetic
+        undercount, real content past page 1 was never requested at all.
+
         response.url in FORCE_SKIP_LISTING_URLS short-circuits the whole
         page."""
         if response.url in self.FORCE_SKIP_LISTING_URLS:
@@ -341,13 +355,23 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
             # differ per permalink even for a byte-identical catalog.
             item_urls = {response.urljoin(href) for href in self._listing_pagination_items(container)}
             view_id, display_id = self._view_identity(container)
-            # Register before walking, not after - avoids a race where
-            # two near-simultaneous discoveries of the same shared
-            # catalog both start walking before either finishes.
-            key = (view_id, display_id, self._listing_fingerprint(item_urls))
-            if key in self._seen_listing_fingerprints:
-                continue
-            self._seen_listing_fingerprints.add(key)
+            if item_urls:
+                # Register before walking, not after - avoids a race
+                # where two near-simultaneous discoveries of the same
+                # shared catalog both start walking before either
+                # finishes.
+                key = (view_id, display_id, self._listing_fingerprint(item_urls))
+                if key in self._seen_listing_fingerprints:
+                    continue
+                self._seen_listing_fingerprints.add(key)
+            else:
+                self.logger.warning(
+                    'Listing container %d at %s matched zero items via '
+                    '_listing_pagination_items - walking it anyway '
+                    '(not deduped), but its own item selector likely '
+                    'needs fixing for this template.',
+                    index, response.url,
+                )
             yield from self._walk_listing_pagination(
                 response, container_index=index, view_id=view_id,
                 display_id=display_id,
