@@ -5,32 +5,42 @@ class EmptyResponseError(ValueError):
     pass
 
 
+class EmptyPaginationResponseError(EmptyResponseError):
+    """Same 0-byte-body condition as EmptyResponseError, but on a
+    NavHarvesterMixin._walk_listing_pagination request specifically - a
+    dead pager-continuation page costs everything past it in that
+    listing's chain (see nav_harvest.py), not just the one page a
+    content-leaf failure costs. crawl_health.py counts this reason but
+    not plain EmptyResponseError - see that module for why."""
+    pass
+
+
 class EmptyResponseGuardMiddleware:
-    """Raise EmptyResponseError for a response that would otherwise reach
-    a callback normally (status 200, or another status a spider has
-    explicitly opted into via handle_httpstatus_list) but has a 0-byte
-    body.
+    """Raise EmptyResponseError (or EmptyPaginationResponseError, on a
+    pagination-continuation request) for a response that would otherwise
+    reach a callback normally (status 200, or another status a spider
+    has explicitly opted into via handle_httpstatus_list) but has a
+    0-byte body.
 
     Confirmed live 2026-09-16 against trumpwhitehouse, and confirmed
-    widespread the same day on several Clinton-era sites: CloudFront can
-    serve a genuinely empty body on a 200 response, from a stale/broken
-    edge cache entry. That response passes every existing check (not a
-    network error, not an HTTP error, a real TextResponse) and reaches
-    _scrape_item, where it silently produces a no_body/no_title row -
-    exactly the content some sites' filter_rules/<source_site>.yml drops
-    before push, which then reads as a deletion to the downstream
-    Lambda's mark-and-sweep. Raising here, before any callback ever sees
-    the response, sends it to the failing request's own errback -
-    Scrapy's call_spider() hands a process_spider_input failure straight
-    to request.errback when one is set (scrapy/core/scraper.py), before
-    any spider middleware's process_spider_exception gets a look, and
-    every real spider in this project sets one. That errback classifies
-    it the same way it classifies a DNS failure: logged as
-    network_error:EmptyResponseError in *_dropped.csv, already counted by
-    crawl_health.py's abort threshold via its existing network_error:*
-    match - see count_fetch_errors. UnhandledSpiderExceptionLoggingMiddleware
-    below only ever sees this for a spider with no errback wired
-    anywhere, which does not describe anything in this project today.
+    widespread the same day - persistently, on the same URLs, for months
+    - on several Clinton-era sites' ordinary content pages: CloudFront
+    can serve a genuinely empty body on a 200 response, from a
+    stale/broken edge cache entry. That response passes every existing
+    check (not a network error, not an HTTP error, a real TextResponse)
+    and reaches _scrape_item, where it silently produces a
+    no_body/no_title row - exactly the content some sites'
+    filter_rules/<source_site>.yml drops before push, which then reads
+    as a deletion to the downstream Lambda's mark-and-sweep.
+
+    Raising here, before any callback ever sees the response, sends it
+    to the failing request's own errback - Scrapy's call_spider() hands
+    a process_spider_input failure straight to request.errback when one
+    is set (scrapy/core/scraper.py), before any spider middleware's
+    process_spider_exception gets a look, and every real spider in this
+    project sets one. That errback classifies it the same way it
+    classifies a DNS failure: network_error:<this class's name> in
+    *_dropped.csv.
 
     Ordered after HttpErrorMiddleware (priority 50 in settings.py) in
     SPIDER_MIDDLEWARES, so a real 404/3xx/5xx never reaches this check at
@@ -38,8 +48,13 @@ class EmptyResponseGuardMiddleware:
     """
 
     def process_spider_input(self, response, spider):
-        if not response.body:
-            raise EmptyResponseError(f'0-byte response body: {response.url}')
+        if response.body:
+            return
+        callback = getattr(response.request, 'callback', None)
+        if getattr(callback, '__name__', '') == '_walk_listing_pagination':
+            raise EmptyPaginationResponseError(
+                f'0-byte response body on a pagination-continuation page: {response.url}')
+        raise EmptyResponseError(f'0-byte response body: {response.url}')
 
 
 class UnhandledSpiderExceptionLoggingMiddleware:

@@ -8,18 +8,24 @@ those conditions risks the index-side Lambda's mark-and-sweep
 reconciliation (see push.py) removing documents for URLs that are still
 real content, just not fetched correctly this run.
 
-EmptyResponseGuardMiddleware (archive_crawler/middlewares.py) raises
-EmptyResponseError for a 0-byte body that otherwise looks like a normal
-response - confirmed live 2026-09-16, a stale/broken CloudFront edge
-cache entry on trumpwhitehouse, and confirmed widespread on several
-Clinton-era sites the same day. That exception reaches each request's own
-errback before any spider middleware's process_spider_exception ever
-sees it (Scrapy's own call_spider() hands a process_spider_input failure
-straight to request.errback when one is set, which every real spider
-here has) - so it gets classified exactly like a network failure,
-network_error:EmptyResponseError, not a separate spider_exception
-reason. The network_error:* prefix match below already covers it; no
-dedicated case is needed.
+EmptyResponseGuardMiddleware (archive_crawler/middlewares.py) raises for
+a 0-byte body that otherwise looks like a normal response - confirmed
+live 2026-09-16 on trumpwhitehouse (a stale/broken CloudFront edge cache
+entry) and, separately, confirmed widespread and persistent - the same
+URLs, unchanged for months - on several Clinton-era sites' ordinary
+content pages. That second case is deliberately NOT counted here:
+threshold-based abort assumes a failure eventually resolves so a later
+crawl gets through cleanly; a permanently-empty page never resolves, so
+counting it would abort every future push for that site, forever,
+requiring a manual --bypass on every single run - worse than the
+problem it would guard against. network_error:EmptyResponseError is
+logged (visible for manual review) but excluded from this count.
+
+network_error:EmptyPaginationResponseError - the same 0-byte condition,
+but on a NavHarvesterMixin._walk_listing_pagination request - IS
+counted. A dead pager-continuation page costs everything past it in that
+listing's chain, not just the one page, and this failure mode has no
+evidence of being persistent the way the content-leaf case is.
 
 A missing dropped-log (a site not yet re-crawled since this check was
 added, or a hand-built --csv unrelated to any crawl) is treated as 0
@@ -32,6 +38,7 @@ import os
 
 _NETWORK_ERROR_PREFIX = 'network_error:'
 _HTTP_5XX_REASON = 'http_5xx'
+_EXCLUDED_REASONS = frozenset({'network_error:EmptyResponseError'})
 
 
 class CrawlHealthError(ValueError):
@@ -43,9 +50,9 @@ def _dropped_path(csv_path):
 
 
 def count_fetch_errors(csv_path):
-    """Count http_5xx/network_error rows (network_error:EmptyResponseError
-    included) in csv_path's sibling dropped-log. Returns 0 if that file
-    does not exist."""
+    """Count http_5xx/network_error rows in csv_path's sibling
+    dropped-log, except _EXCLUDED_REASONS (see module docstring). Returns
+    0 if that file does not exist."""
     dropped_path = _dropped_path(csv_path)
     if not os.path.exists(dropped_path):
         return 0
@@ -53,6 +60,8 @@ def count_fetch_errors(csv_path):
     with open(dropped_path, newline='', encoding='utf-8') as f:
         for row in csv.DictReader(f):
             reason = row.get('reason', '')
+            if reason in _EXCLUDED_REASONS:
+                continue
             if reason == _HTTP_5XX_REASON or reason.startswith(_NETWORK_ERROR_PREFIX):
                 count += 1
     return count
