@@ -27,6 +27,14 @@ counted. A dead pager-continuation page costs everything past it in that
 listing's chain, not just the one page, and this failure mode has no
 evidence of being persistent the way the content-leaf case is.
 
+network_error:EmptySitemapResponseError - the same 0-byte condition, but
+on an ArchiveSpiderMixin._parse_sitemap request (the top-level sitemap
+index or one of its sub-sitemaps) - IS counted, for the same reason as
+the pagination case above: a lost sub-sitemap silently drops every URL
+it would have listed, with nothing else to flag it, since the site's
+other sub-sitemaps still produce a nonzero CSV that validate.py's
+zero-row check would not catch.
+
 A missing dropped-log (a site not yet re-crawled since this check was
 added, or a hand-built --csv unrelated to any crawl) is treated as 0
 errors, not a hard failure - the zero-row check in validate.py and the

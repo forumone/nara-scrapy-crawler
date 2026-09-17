@@ -15,9 +15,23 @@ class EmptyPaginationResponseError(EmptyResponseError):
     pass
 
 
+class EmptySitemapResponseError(EmptyResponseError):
+    """Same 0-byte-body condition as EmptyResponseError, but on an
+    ArchiveSpiderMixin._parse_sitemap request - the top-level sitemap
+    index or one of its listed sub-sitemaps. Losing a sub-sitemap loses
+    every URL it would have listed, silently, with no per-URL retry or
+    record beyond this one row - the same cascading shape
+    EmptyPaginationResponseError already covers for a dead
+    pager-continuation page, not a single content-leaf loss.
+    crawl_health.py counts this reason but not plain
+    EmptyResponseError - see that module for why."""
+    pass
+
+
 class EmptyResponseGuardMiddleware:
-    """Raise EmptyResponseError (or EmptyPaginationResponseError, on a
-    pagination-continuation request) for a response that would otherwise
+    """Raise EmptyResponseError (or EmptyPaginationResponseError on a
+    pagination-continuation request, or EmptySitemapResponseError on a
+    sitemap/sub-sitemap request) for a response that would otherwise
     reach a callback normally (status 200, or another status a spider
     has explicitly opted into via handle_httpstatus_list) but has a
     0-byte body.
@@ -50,10 +64,13 @@ class EmptyResponseGuardMiddleware:
     def process_spider_input(self, response, spider):
         if response.body:
             return
-        callback = getattr(response.request, 'callback', None)
-        if getattr(callback, '__name__', '') == '_walk_listing_pagination':
+        callback_name = getattr(getattr(response.request, 'callback', None), '__name__', '')
+        if callback_name == '_walk_listing_pagination':
             raise EmptyPaginationResponseError(
                 f'0-byte response body on a pagination-continuation page: {response.url}')
+        if callback_name == '_parse_sitemap':
+            raise EmptySitemapResponseError(
+                f'0-byte response body on a sitemap/sub-sitemap request: {response.url}')
         raise EmptyResponseError(f'0-byte response body: {response.url}')
 
 

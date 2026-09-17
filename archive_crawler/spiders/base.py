@@ -495,6 +495,14 @@ class SitemapUrlSpiderMixin(ArchiveSpiderMixin):
             yield self._make_request(url)
 
     def _log_sitemap_fetch_error(self, failure):
+        """Errback for every _parse_sitemap request - the top-level sitemap
+        index and each sub-sitemap it lists. A redirect is followed-up
+        elsewhere and logged only as a warning here, not a failure. A real
+        server error, network error, or empty response (EmptyResponseGuard
+        Middleware's EmptySitemapResponseError, raised on this same request)
+        now also reaches _log_dropped, same as _log_http_error does for a
+        content-page fetch - previously this method only logged a warning,
+        so none of this ever reached *_dropped.csv or crawl_health's count."""
         from scrapy.spidermiddlewares.httperror import HttpError
         if failure.check(HttpError):
             status = failure.value.response.status
@@ -504,6 +512,11 @@ class SitemapUrlSpiderMixin(ArchiveSpiderMixin):
                     status, failure.value.response.url,
                 )
                 return
+            reason = 'http_5xx' if status >= 500 else f'http_{status}'
+            self._log_dropped(failure.value.response.url, reason)
+            self.logger.warning("Sitemap fetch failed: %s", failure.getErrorMessage())
+            return
+        self._log_dropped(failure.request.url, f'network_error:{failure.type.__name__}')
         self.logger.warning("Sitemap fetch failed: %s", failure.getErrorMessage())
 
 
