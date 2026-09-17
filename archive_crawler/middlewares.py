@@ -11,7 +11,8 @@ class EmptyResponseGuardMiddleware:
     explicitly opted into via handle_httpstatus_list) but has a 0-byte
     body.
 
-    Confirmed live 2026-09-16 against trumpwhitehouse: CloudFront can
+    Confirmed live 2026-09-16 against trumpwhitehouse, and confirmed
+    widespread the same day on several Clinton-era sites: CloudFront can
     serve a genuinely empty body on a 200 response, from a stale/broken
     edge cache entry. That response passes every existing check (not a
     network error, not an HTTP error, a real TextResponse) and reaches
@@ -19,10 +20,17 @@ class EmptyResponseGuardMiddleware:
     exactly the content some sites' filter_rules/<source_site>.yml drops
     before push, which then reads as a deletion to the downstream
     Lambda's mark-and-sweep. Raising here, before any callback ever sees
-    the response, routes it through UnhandledSpiderExceptionLoggingMiddleware
-    instead - logged as spider_exception:EmptyResponseError in
-    *_dropped.csv, and (unlike a generic spider_exception) counted by
-    crawl_health.py's abort threshold - see count_fetch_errors.
+    the response, sends it to the failing request's own errback -
+    Scrapy's call_spider() hands a process_spider_input failure straight
+    to request.errback when one is set (scrapy/core/scraper.py), before
+    any spider middleware's process_spider_exception gets a look, and
+    every real spider in this project sets one. That errback classifies
+    it the same way it classifies a DNS failure: logged as
+    network_error:EmptyResponseError in *_dropped.csv, already counted by
+    crawl_health.py's abort threshold via its existing network_error:*
+    match - see count_fetch_errors. UnhandledSpiderExceptionLoggingMiddleware
+    below only ever sees this for a spider with no errback wired
+    anywhere, which does not describe anything in this project today.
 
     Ordered after HttpErrorMiddleware (priority 50 in settings.py) in
     SPIDER_MIDDLEWARES, so a real 404/3xx/5xx never reaches this check at
@@ -50,14 +58,13 @@ class UnhandledSpiderExceptionLoggingMiddleware:
     has no way to see it either.
 
     Logged as spider_exception:<ExceptionClassName> - a distinct prefix
-    from http_5xx/network_error:*, since this is usually a bug in this
-    project's own parsing code, not a network or server problem.
-    crawl_health.py deliberately does not count most spider_exception
-    reasons toward its abort threshold; that threshold's message talks
-    about the site/network being unreachable, which would misdescribe a
-    parsing bug. spider_exception:EmptyResponseError is the one
-    exception - see EmptyResponseGuardMiddleware above and
-    count_fetch_errors.
+    from http_5xx/network_error:*, since this is a bug in this project's
+    own parsing code, not a network or server problem. crawl_health.py
+    deliberately does not count spider_exception reasons toward its
+    abort threshold; that threshold's message talks about the site/
+    network being unreachable, which would misdescribe a parsing bug.
+    EmptyResponseGuardMiddleware's own EmptyResponseError never reaches
+    this class in practice - see that class's docstring for why.
 
     Returns an empty iterable, matching Scrapy's own default behavior of
     dropping the rest of a crashed callback's output - this does not
