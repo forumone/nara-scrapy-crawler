@@ -469,12 +469,17 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         pagination page (a Selector is scoped to the response it came
         from, so it can't be carried across requests).
 
-        Both the item requests and the next-page continuation request use
-        errback=self._log_nav_fetch_error, same as start_requests and
-        _follow_ordinary_links - a permanently-failed fetch here (e.g. a
-        broken CDN cache entry serving an empty 200 body, confirmed live
-        on trumpwhitehouse) used to end this whole chain silently, with
-        no dropped-log row and no further pages ever discovered. A failed
+        The item requests use errback=self._log_nav_fetch_error, same as
+        start_requests and _follow_ordinary_links. The next-page
+        continuation request uses its own errback,
+        _log_pagination_fetch_error - a permanently-failed fetch there
+        (e.g. a broken CDN cache entry serving an empty 200 body,
+        confirmed live on trumpwhitehouse) used to end this whole chain
+        silently, with no dropped-log row and no further pages ever
+        discovered. That errback logs under the critical_pagination:
+        prefix crawl_health.py always aborts on, since losing that one
+        request costs every page past it, not just one item - unlike an
+        item-request failure, which loses only that one item. A failed
         continuation request does still get a HarvestItem, from that
         errback - a minor asymmetry against the "no HarvestItem here even
         on success" rule below, traded for not losing the failure
@@ -516,7 +521,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         if next_href:
             yield response.follow(
                 next_href, callback=self._walk_listing_pagination,
-                errback=self._log_nav_fetch_error,
+                errback=self._log_pagination_fetch_error,
                 cb_kwargs={
                     'container_index': container_index,
                     'view_id': view_id,
@@ -524,3 +529,30 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
                     '_page_count': _page_count + 1,
                 },
             )
+
+    def _log_pagination_fetch_error(self, failure):
+        """Errback for the next-page continuation request in
+        _walk_listing_pagination only - not that method's own item
+        requests, and not start_requests/_follow_ordinary_links (both
+        still use _log_nav_fetch_error). A lost continuation page ends
+        the whole pagination chain past it, the same failure shape as a
+        lost sub-sitemap (base.py's _log_sitemap_fetch_error), so this
+        logs under the critical_pagination: prefix crawl_health.py
+        always aborts on, ignoring both --error-threshold and --bypass.
+        Still yields the HarvestItem _log_nav_fetch_error would have, so
+        scrape + drop = harvest holds for this URL too."""
+        from scrapy.spidermiddlewares.httperror import HttpError
+        if failure.check(HttpError):
+            status = failure.value.response.status
+            if status < 400:
+                reason = 'critical_pagination:http_3xx'
+            elif status >= 500:
+                reason = 'critical_pagination:http_5xx'
+            else:
+                reason = f'critical_pagination:http_{status}'
+            self._log_dropped(failure.value.response.url, reason)
+        else:
+            self._log_dropped(failure.request.url, f'critical_pagination:network_error:{failure.type.__name__}')
+        depth = failure.request.meta.get('depth', 0) if failure.request else 0
+        url = failure.request.url if failure.request else ''
+        yield HarvestItem(url=url, is_listing=False, depth=depth)

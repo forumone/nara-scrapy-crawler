@@ -17,7 +17,7 @@ _EXCLUDED_SPIDER_NAMES = frozenset({
     'obama_petitions', 'trump_petitions',
 })
 
-SiteInfo = namedtuple('SiteInfo', ['source_site', 'spider_name', 'csv_path'])
+SiteInfo = namedtuple('SiteInfo', ['source_site', 'spider_name', 'csv_path', 'error_threshold'])
 
 
 class UnknownSiteError(ValueError):
@@ -45,6 +45,7 @@ def list_sites():
             source_site=source_site,
             spider_name=spider_name,
             csv_path=os.path.join('data', source_site, f'{source_site}.csv'),
+            error_threshold=getattr(spider_cls, 'ERROR_THRESHOLD', 1),
         )
     return sites
 

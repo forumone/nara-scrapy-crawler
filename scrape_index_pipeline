@@ -20,11 +20,16 @@ site's CSV: validate.py rejects 0 rows outright (no override - a network
 or server outage can leave a crawl with nothing to push, and the
 index-side Lambda's mark-and-sweep reconciliation should never be handed
 a chance to read that as "the site now has zero pages"); then
-crawl_health.py counts http_5xx/network_error rows in the site's sibling
-*_dropped.csv and aborts at --error-threshold or more (default 1) - a
-partial outage can still leave real, nonzero rows that would otherwise
-sweep away every URL that failed to fetch this run as if it were gone
-from the live site. --bypass skips only the second check.
+crawl_health.py checks the site's sibling *_dropped.csv in two tiers -
+any critical_sitemap:*/critical_pagination:* row (a lost sitemap or
+listing-pagination request, which costs every page past it, not just
+one) always aborts, with no override; then, unless --bypass, it counts
+ordinary http_5xx/network_error rows and aborts at --error-threshold or
+more (default: the site's own ERROR_THRESHOLD class attribute, normally
+1 - see archive_crawler/spiders/base.py; --error-threshold on the CLI
+overrides it) - a partial outage can still leave real, nonzero rows that
+would otherwise sweep away every URL that failed to fetch this run as if
+it were gone from the live site. --bypass skips only that second tier.
 
 <site> is either a spider name (e.g. bidenwhitehouse) or a source_site
 (e.g. www.bidenwhitehouse) - see archive_crawler/pipeline/registry.py.
@@ -132,12 +137,13 @@ def _read_rows(csv_path):
 
 def _push(
     site_info, jsonl_path=None, filter_rules_file=None, filter_rules_mode='append',
-    error_threshold=1, bypass=False,
+    error_threshold=None, bypass=False,
 ):
+    if error_threshold is None:
+        error_threshold = site_info.error_threshold
     rows = _read_rows(site_info.csv_path)
     validate.validate_rows(rows)
-    if not bypass:
-        crawl_health.check_crawl_health(site_info.source_site, site_info.csv_path, error_threshold)
+    crawl_health.check_crawl_health(site_info.source_site, site_info.csv_path, error_threshold, bypass=bypass)
     kept, dropped = filter_rows.filter_rows(
         rows, site_info.source_site, override_path=filter_rules_file, mode=filter_rules_mode,
     )
@@ -192,7 +198,7 @@ def _crawl(site_info, download_delay=None, concurrent_requests_per_domain=None, 
 def _crawl_and_push(
     site_info, jsonl_path=None, download_delay=None, concurrent_requests_per_domain=None,
     logfile=None, filter_rules_file=None, filter_rules_mode='append',
-    error_threshold=1, bypass=False,
+    error_threshold=None, bypass=False,
 ):
     _crawl(
         site_info, download_delay=download_delay,
@@ -242,8 +248,8 @@ def main():
     push_p.add_argument('--jsonl', metavar='PATH', help='Override where the converted JSONL is written (default: alongside the CSV, same basename)')
     push_p.add_argument('--filter-rules-file', metavar='PATH', help='Overlay a one-off warning-filter override on top of the committed archive_crawler/filter_rules/<site>.yml')
     push_p.add_argument('--filter-rules-mode', choices=('append', 'replace'), default='append', help="'append' (default) unions with the committed file; 'replace' uses the override's own drop_if_all_present if it defines one")
-    push_p.add_argument('--error-threshold', type=int, default=1, metavar='N', help='Abort if the site\'s *_dropped.csv has at least N http_5xx/network_error rows (default: 1)')
-    push_p.add_argument('--bypass', action='store_true', help='Skip the http_5xx/network_error abort check (the zero-row check always runs, with no override)')
+    push_p.add_argument('--error-threshold', type=int, default=None, metavar='N', help='Abort if the site\'s *_dropped.csv has at least N http_5xx/network_error rows (default: the site\'s own ERROR_THRESHOLD, normally 1 - see archive_crawler/spiders/base.py)')
+    push_p.add_argument('--bypass', action='store_true', help='Skip only the ordinary http_5xx/network_error threshold check (the zero-row check and the critical sitemap/pagination check both always run, with no override)')
 
     crawl_p = sub.add_parser('crawl', help='Run the spider - scrapy crawl <site>, nothing else')
     crawl_p.add_argument('site')
@@ -259,8 +265,8 @@ def main():
     crawl_and_push_p.add_argument('--download-delay', type=_download_delay_type, metavar='SECONDS', help="Override DOWNLOAD_DELAY, 0.1-2 (default: settings.py's 0.25)")
     crawl_and_push_p.add_argument('--concurrent-requests-per-domain', type=_concurrency_type, metavar='N', help="Override CONCURRENT_REQUESTS_PER_DOMAIN, 1-20 (default: settings.py's 4)")
     crawl_and_push_p.add_argument('--logfile', metavar='PATH', help='Write the full crawl log here instead of stdout/stderr (default: none - only ERROR-level messages persist, via ErrorFileLogger)')
-    crawl_and_push_p.add_argument('--error-threshold', type=int, default=1, metavar='N', help='Abort before pushing if the site\'s *_dropped.csv has at least N http_5xx/network_error rows (default: 1)')
-    crawl_and_push_p.add_argument('--bypass', action='store_true', help='Skip the http_5xx/network_error abort check (the zero-row check always runs, with no override)')
+    crawl_and_push_p.add_argument('--error-threshold', type=int, default=None, metavar='N', help='Abort before pushing if the site\'s *_dropped.csv has at least N http_5xx/network_error rows (default: the site\'s own ERROR_THRESHOLD, normally 1 - see archive_crawler/spiders/base.py)')
+    crawl_and_push_p.add_argument('--bypass', action='store_true', help='Skip only the ordinary http_5xx/network_error threshold check (the zero-row check and the critical sitemap/pagination check both always run, with no override)')
 
     args = parser.parse_args()
 

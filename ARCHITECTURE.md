@@ -125,22 +125,33 @@ or reconciles index contents itself.
   HTML-tag, HTML-entity, missing-space, "Continue reading" checks). That
   script audits CSVs already pulled back out of the live index. This one
   only gates whether a row is safe to push at all.
-- **`crawl_health.py`** — runs right after `validate.py`, unless `--bypass`
-  is passed. Counts `http_5xx` and `network_error:*` rows in the site's
-  sibling `*_dropped.csv`, except `network_error:EmptyResponseError`. That
-  one reason stays excluded on purpose: it turned up persistent, on the
-  same URLs, unchanged for months, on several Clinton-era sites. Counting
-  it would abort every future push for those sites, forever, since a
-  permanently broken page never resolves the way a transient failure does.
-  `network_error:EmptyPaginationResponseError` and
-  `network_error:EmptySitemapResponseError` both still count. Either one
-  means a dead pagination or sub-sitemap request cost everything past it,
-  not just one page. Raises `CrawlHealthError` at `--error-threshold` or
-  more matching rows (default 1). Both reasons mean the site, or the
-  network path to it, went unreachable for at least part of this crawl,
-  not just that individual pages got excluded by content rules.
-  `--bypass` skips only this check. It never skips the 0-row check
-  `validate.py` already ran.
+- **`crawl_health.py`** — runs right after `validate.py`, and checks the
+  site's sibling `*_dropped.csv` in two tiers. The first tier always runs,
+  with no override, not even `--bypass`. It looks for any
+  `critical_sitemap:*` row (`ArchiveSpiderMixin._log_sitemap_fetch_error`
+  in `base.py`, for a failed top-level sitemap or sub-sitemap request) or
+  `critical_pagination:*` row (`NavHarvesterMixin._log_pagination_fetch_error`
+  in `nav_harvest.py`, for a failed listing-pagination continuation
+  request). Either one means a lost request cost every page past it, not
+  just one page, so a single matching row always raises `CrawlHealthError`.
+  Each covers both a real server/network error and its matching
+  empty-response case (`EmptySitemapResponseError`/
+  `EmptyPaginationResponseError`) under the same prefix — see the module
+  docstring for the full split. The second tier, skipped only by
+  `--bypass`, counts ordinary `http_5xx`/`network_error:*` rows on a
+  content-page fetch, except `network_error:EmptyResponseError`. That one
+  reason stays excluded on purpose: it turned up persistent, on the same
+  URLs, unchanged for months, on several Clinton-era sites. Counting it
+  would abort every future push for those sites, forever, since a
+  permanently broken page never resolves the way a transient failure
+  does. This tier raises `CrawlHealthError` at `--error-threshold` or
+  more matching rows. The default threshold comes from the site's spider
+  class, its `ERROR_THRESHOLD` attribute (see
+  `archive_crawler/spiders/base.py`), normally 1 through
+  `ArchiveSpiderMixin`. A spider overrides it to set its own default.
+  `--error-threshold` on the CLI always wins over both. `--bypass` skips
+  only this second tier. It never skips the first tier, and never skips
+  the 0-row check `validate.py` already ran.
 - **`filter_rows.py`** — reads `archive_crawler/filter_rules/<source_site>.yml`
   (`drop_if_all_present: [no_body]`, or `[]` for "never drop") to decide
   which `warnings` labels (see README's "Warnings Column") drop a row

@@ -114,6 +114,11 @@ def omb_paygo_title(body):
 
 
 class ArchiveSpiderMixin(ExclusionLoggingMixin):
+    # scrape_index_pipeline's crawl_health.py abort check reads this as its
+    # per-site default --error-threshold. A subclass overrides it to set
+    # its own default; the CLI flag, when passed, still wins over both.
+    ERROR_THRESHOLD = 1
+
     # Every subclass without its own custom_settings gets one FEEDS entry
     # derived from SOURCE_SITE: data/<SOURCE_SITE>/<SOURCE_SITE>.csv. A
     # subclass that defines custom_settings itself (e.g. NavHarvesterMixin's
@@ -500,9 +505,14 @@ class SitemapUrlSpiderMixin(ArchiveSpiderMixin):
         elsewhere and logged only as a warning here, not a failure. A real
         server error, network error, or empty response (EmptyResponseGuard
         Middleware's EmptySitemapResponseError, raised on this same request)
-        now also reaches _log_dropped, same as _log_http_error does for a
-        content-page fetch - previously this method only logged a warning,
-        so none of this ever reached *_dropped.csv or crawl_health's count."""
+        reaches _log_dropped under the critical_sitemap: prefix, not the
+        plain http_5xx/network_error: reason a content-page fetch gets from
+        _log_http_error. crawl_health.py always aborts on that prefix,
+        ignoring both --error-threshold and --bypass - a lost sub-sitemap
+        drops every URL it would have listed, with nothing else to flag
+        it, since the site's other sub-sitemaps still produce a nonzero
+        CSV. See crawl_health.py's module docstring for the full reason
+        split."""
         from scrapy.spidermiddlewares.httperror import HttpError
         if failure.check(HttpError):
             status = failure.value.response.status
@@ -512,11 +522,11 @@ class SitemapUrlSpiderMixin(ArchiveSpiderMixin):
                     status, failure.value.response.url,
                 )
                 return
-            reason = 'http_5xx' if status >= 500 else f'http_{status}'
+            reason = 'critical_sitemap:http_5xx' if status >= 500 else f'critical_sitemap:http_{status}'
             self._log_dropped(failure.value.response.url, reason)
             self.logger.warning("Sitemap fetch failed: %s", failure.getErrorMessage())
             return
-        self._log_dropped(failure.request.url, f'network_error:{failure.type.__name__}')
+        self._log_dropped(failure.request.url, f'critical_sitemap:network_error:{failure.type.__name__}')
         self.logger.warning("Sitemap fetch failed: %s", failure.getErrorMessage())
 
 
