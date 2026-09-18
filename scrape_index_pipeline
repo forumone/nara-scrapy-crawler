@@ -8,11 +8,12 @@ OpenSearch side.
 
 Usage:
     ./scrape_index_pipeline push <site> [--csv PATH] [--jsonl PATH] [--filter-rules-file PATH] [--filter-rules-mode append|replace] [--error-threshold N] [--bypass]
-    ./scrape_index_pipeline push --all
     ./scrape_index_pipeline crawl <site> [--download-delay N] [--concurrent-requests-per-domain N] [--logfile PATH]
-    ./scrape_index_pipeline crawl --all
     ./scrape_index_pipeline crawl-and-push <site> [--jsonl PATH] [--download-delay N] [--concurrent-requests-per-domain N] [--logfile PATH] [--filter-rules-file PATH] [--filter-rules-mode append|replace] [--error-threshold N] [--bypass]
-    ./scrape_index_pipeline crawl-and-push --all
+
+Every command takes exactly one site. To run against every site, call
+this once per site (see crontab.example) - each call gets its own
+exit code, and one site aborting never blocks the sites after it.
 
 Before push/crawl-and-push upload anything, two checks run against the
 site's CSV: validate.py rejects 0 rows outright (no override - a network
@@ -29,8 +30,7 @@ from the live site. --bypass skips only the second check.
 (e.g. www.bidenwhitehouse) - see archive_crawler/pipeline/registry.py.
 
 --csv/--jsonl/--logfile/--filter-rules-file override where a file is
-read from/written to; none can be combined with --all (one path can't
-apply to every site). --csv is push-only: crawl and crawl-and-push
+read from/written to. --csv is push-only: crawl and crawl-and-push
 never accept a CSV path override, since that would mean passing -O to
 the spider, which silently corrupts output on every one of these
 spiders - see ARCHITECTURE.md's "Never pass -O/-o to a multi-FEEDS-entry
@@ -230,15 +230,14 @@ def _build_kwargs(args):
 def main():
     if len(sys.argv) == 1:
         print("No arguments given. Did you mean to run ./scrape_index_pipeline_interactive instead?", file=sys.stderr)
-        print("(Or pass a subcommand directly: push/crawl/crawl-and-push <site>, or --all. See -h.)", file=sys.stderr)
+        print("(Or pass a subcommand directly: push/crawl/crawl-and-push <site>. See -h.)", file=sys.stderr)
         sys.exit(1)
 
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='mode', required=True)
 
     push_p = sub.add_parser('push', help='Run an existing CSV through validate/filter/convert/push, no crawl')
-    push_p.add_argument('site', nargs='?', help='Spider name or source_site (omit with --all)')
-    push_p.add_argument('--all', action='store_true', help='Run against every registered site')
+    push_p.add_argument('site', help='Spider name or source_site')
     push_p.add_argument('--csv', metavar='PATH', help="Override which CSV to read (default: the site's own data/<site>/<site>.csv)")
     push_p.add_argument('--jsonl', metavar='PATH', help='Override where the converted JSONL is written (default: alongside the CSV, same basename)')
     push_p.add_argument('--filter-rules-file', metavar='PATH', help='Overlay a one-off warning-filter override on top of the committed archive_crawler/filter_rules/<site>.yml')
@@ -247,15 +246,13 @@ def main():
     push_p.add_argument('--bypass', action='store_true', help='Skip the http_5xx/network_error abort check (the zero-row check always runs, with no override)')
 
     crawl_p = sub.add_parser('crawl', help='Run the spider - scrapy crawl <site>, nothing else')
-    crawl_p.add_argument('site', nargs='?')
-    crawl_p.add_argument('--all', action='store_true')
+    crawl_p.add_argument('site')
     crawl_p.add_argument('--download-delay', type=_download_delay_type, metavar='SECONDS', help="Override DOWNLOAD_DELAY, 0.1-2 (default: settings.py's 0.25)")
     crawl_p.add_argument('--concurrent-requests-per-domain', type=_concurrency_type, metavar='N', help="Override CONCURRENT_REQUESTS_PER_DOMAIN, 1-20 (default: settings.py's 4)")
     crawl_p.add_argument('--logfile', metavar='PATH', help='Write the full crawl log here instead of stdout/stderr (default: none - only ERROR-level messages persist, via ErrorFileLogger)')
 
     crawl_and_push_p = sub.add_parser('crawl-and-push', help='Run the spider, then do everything push does')
-    crawl_and_push_p.add_argument('site', nargs='?')
-    crawl_and_push_p.add_argument('--all', action='store_true')
+    crawl_and_push_p.add_argument('site')
     crawl_and_push_p.add_argument('--jsonl', metavar='PATH', help='Override where the converted JSONL is written (default: alongside the CSV, same basename)')
     crawl_and_push_p.add_argument('--filter-rules-file', metavar='PATH', help='Overlay a one-off warning-filter override on top of the committed archive_crawler/filter_rules/<site>.yml')
     crawl_and_push_p.add_argument('--filter-rules-mode', choices=('append', 'replace'), default='append', help="'append' (default) unions with the committed file; 'replace' uses the override's own drop_if_all_present if it defines one")
@@ -267,30 +264,16 @@ def main():
 
     args = parser.parse_args()
 
-    if not args.all and not args.site:
-        parser.error('either a site argument or --all is required')
-    if args.all and args.site:
-        parser.error('pass either a site argument or --all, not both')
-    if args.all and (
-        getattr(args, 'csv', None) or getattr(args, 'jsonl', None)
-        or getattr(args, 'logfile', None) or getattr(args, 'filter_rules_file', None)
-    ):
-        parser.error('--csv/--jsonl/--logfile/--filter-rules-file cannot be combined with --all - one path cannot apply to every site')
-
     logging.basicConfig(level=logging.INFO, format='%(message)s')
 
     action = _ACTIONS[args.mode]
     kwargs = _build_kwargs(args)
 
     try:
-        if args.all:
-            for site_info in registry.list_sites().values():
-                action(site_info, **kwargs)
-        else:
-            site_info = registry.resolve(args.site)
-            if getattr(args, 'csv', None):
-                site_info = site_info._replace(csv_path=args.csv)
-            action(site_info, **kwargs)
+        site_info = registry.resolve(args.site)
+        if getattr(args, 'csv', None):
+            site_info = site_info._replace(csv_path=args.csv)
+        action(site_info, **kwargs)
     except (
         registry.UnknownSiteError, validate.ValidationError, filter_rows.UnknownSiteFilterError,
         crawl_health.CrawlHealthError, subprocess.CalledProcessError,
