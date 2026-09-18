@@ -302,6 +302,7 @@ worth knowing, that are not obvious from the flag descriptions alone:
 
 - `--csv` is `push`-only. `crawl`/`crawl-and-push` never accept a CSV path override. Passing `-O` to the spider would silently corrupt output. See the "Never pass `-O`/`-o` to a multi-`FEEDS`-entry spider" section in ARCHITECTURE.md. Only the *converted JSONL* is redirectable after a crawl.
 - `--logfile` diverts the *entire* crawl log away from the terminal (Scrapy writes to one or the other, never both). `ErrorFileLogger`'s own ERROR-level file keeps recording regardless. When stdout is a real terminal, a spinner and an elapsed-seconds counter fill the gap this otherwise leaves blank.
+- `push`/`crawl-and-push` run two checks before uploading anything. A 0-row CSV always aborts, with no override — a network or server outage can leave a crawl with nothing to push, and the downstream Lambda's mark-and-sweep should never read that as "the site now has zero pages." Separately, `--error-threshold N` (default 1) aborts when the site's `*_dropped.csv` has at least N `http_5xx`/`network_error` rows, since a partial outage can still leave real, nonzero rows behind while sweeping away every URL that failed to fetch this run. `--bypass` skips only this second check. It never skips the 0-row check.
 
 `scrape_index_pipeline_interactive` prompts for site, mode, and any
 relevant overrides, instead of requiring them as CLI arguments. It

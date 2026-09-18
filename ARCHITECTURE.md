@@ -92,8 +92,8 @@ want to redirect output to a path the spider's own
 ## Push pipeline stages (`archive_crawler/pipeline/`)
 
 **What.** `scrape_index_pipeline` (see README's "Push Pipeline" section for
-usage) is a thin CLI over five modules: `registry.py`, `validate.py`,
-`filter_rows.py`, `convert.py`, `push.py`.
+usage) is a thin CLI over six modules: `registry.py`, `validate.py`,
+`crawl_health.py`, `filter_rows.py`, `convert.py`, `push.py`.
 
 **Why.** This project's own responsibility ends at pushing a site's
 converted JSONL to S3. A downstream Lambda, closer to the OpenSearch side
@@ -109,7 +109,10 @@ or reconciles index contents itself.
   `generic_crawl`/`generic_crawl_harvest`/`sitemap_harvest`, which have no
   fixed site identity). `resolve(site_arg)` looks a site up by either
   spider name or `source_site`.
-- **`validate.py`** — every `source_site` value present must be a known
+- **`validate.py`** — a 0-row CSV always raises `ValidationError`, with no
+  override, whatever the cause (a failed crawl, a bad `--csv` path, a
+  truncated file). A push has no content to justify going ahead. Beyond
+  that, every `source_site` value present must be a known
   site, and `url` must be present and well-formed (it becomes the
   OpenSearch document ID downstream). Raises `ValidationError` listing
   every problem found, not just the first. `full_text`/`teaser_text`
@@ -122,6 +125,22 @@ or reconciles index contents itself.
   HTML-tag, HTML-entity, missing-space, "Continue reading" checks). That
   script audits CSVs already pulled back out of the live index. This one
   only gates whether a row is safe to push at all.
+- **`crawl_health.py`** — runs right after `validate.py`, unless `--bypass`
+  is passed. Counts `http_5xx` and `network_error:*` rows in the site's
+  sibling `*_dropped.csv`, except `network_error:EmptyResponseError`. That
+  one reason stays excluded on purpose: it turned up persistent, on the
+  same URLs, unchanged for months, on several Clinton-era sites. Counting
+  it would abort every future push for those sites, forever, since a
+  permanently broken page never resolves the way a transient failure does.
+  `network_error:EmptyPaginationResponseError` and
+  `network_error:EmptySitemapResponseError` both still count. Either one
+  means a dead pagination or sub-sitemap request cost everything past it,
+  not just one page. Raises `CrawlHealthError` at `--error-threshold` or
+  more matching rows (default 1). Both reasons mean the site, or the
+  network path to it, went unreachable for at least part of this crawl,
+  not just that individual pages got excluded by content rules.
+  `--bypass` skips only this check. It never skips the 0-row check
+  `validate.py` already ran.
 - **`filter_rows.py`** — reads `archive_crawler/filter_rules/<source_site>.yml`
   (`drop_if_all_present: [no_body]`, or `[]` for "never drop") to decide
   which `warnings` labels (see README's "Warnings Column") drop a row
