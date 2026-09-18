@@ -8,8 +8,8 @@ OpenSearch side.
 
 Usage:
     ./scrape_index_pipeline push <site> [--csv PATH] [--jsonl PATH] [--filter-rules-file PATH] [--filter-rules-mode append|replace] [--error-threshold N] [--bypass]
-    ./scrape_index_pipeline crawl <site> [--download-delay N] [--concurrent-requests-per-domain N] [--logfile PATH]
-    ./scrape_index_pipeline crawl-and-push <site> [--jsonl PATH] [--download-delay N] [--concurrent-requests-per-domain N] [--logfile PATH] [--filter-rules-file PATH] [--filter-rules-mode append|replace] [--error-threshold N] [--bypass]
+    ./scrape_index_pipeline crawl <site> [--download-delay N] [--concurrent-requests-per-domain N] [--logfile PATH] [--memusage-limit MB]
+    ./scrape_index_pipeline crawl-and-push <site> [--jsonl PATH] [--download-delay N] [--concurrent-requests-per-domain N] [--logfile PATH] [--memusage-limit MB] [--filter-rules-file PATH] [--filter-rules-mode append|replace] [--error-threshold N] [--bypass]
 
 Every command takes exactly one site. To run against every site, call
 this once per site (see crontab.example) - each call gets its own
@@ -157,7 +157,10 @@ def _push(
     push.push(site_info.source_site, jsonl_path, count)
 
 
-def _crawl(site_info, download_delay=None, concurrent_requests_per_domain=None, logfile=None):
+def _crawl(
+    site_info, download_delay=None, concurrent_requests_per_domain=None, logfile=None,
+    memusage_limit=None,
+):
     # No -O: every content spider already writes data/<site>/<site>.csv on
     # its own via custom_settings['FEEDS'] (see README's "CSV Naming
     # Convention"). Passing -O here would REPLACE that FEEDS setting
@@ -166,14 +169,16 @@ def _crawl(site_info, download_delay=None, concurrent_requests_per_domain=None, 
     # trump_petitions/trumpwhitehouse) that setting has two entries
     # (HarvestItem + ArchiveItem, each with its own item_classes/fields
     # filter), and collapsing them loses the real content rows entirely.
-    # DOWNLOAD_DELAY/CONCURRENT_REQUESTS_PER_DOMAIN are ordinary scalar
-    # settings unrelated to FEEDS - safe to override via -s.
+    # DOWNLOAD_DELAY/CONCURRENT_REQUESTS_PER_DOMAIN/MEMUSAGE_LIMIT_MB are
+    # ordinary scalar settings unrelated to FEEDS - safe to override via -s.
     logger.info("Crawling %s -> %s", site_info.spider_name, site_info.csv_path)
     cmd = ['scrapy', 'crawl', site_info.spider_name]
     if download_delay is not None:
         cmd += ['-s', f'DOWNLOAD_DELAY={download_delay}']
     if concurrent_requests_per_domain is not None:
         cmd += ['-s', f'CONCURRENT_REQUESTS_PER_DOMAIN={concurrent_requests_per_domain}']
+    if memusage_limit is not None:
+        cmd += ['-s', f'MEMUSAGE_LIMIT_MB={memusage_limit}']
     if logfile is not None:
         # Scrapy's own _get_handler() picks FileHandler-to-logfile OR
         # StreamHandler-to-console, never both - passing this means the
@@ -197,12 +202,13 @@ def _crawl(site_info, download_delay=None, concurrent_requests_per_domain=None, 
 
 def _crawl_and_push(
     site_info, jsonl_path=None, download_delay=None, concurrent_requests_per_domain=None,
-    logfile=None, filter_rules_file=None, filter_rules_mode='append',
+    logfile=None, memusage_limit=None, filter_rules_file=None, filter_rules_mode='append',
     error_threshold=None, bypass=False,
 ):
     _crawl(
         site_info, download_delay=download_delay,
         concurrent_requests_per_domain=concurrent_requests_per_domain, logfile=logfile,
+        memusage_limit=memusage_limit,
     )
     _push(
         site_info, jsonl_path=jsonl_path, filter_rules_file=filter_rules_file,
@@ -230,6 +236,8 @@ def _build_kwargs(args):
             kwargs['concurrent_requests_per_domain'] = args.concurrent_requests_per_domain
         if args.logfile is not None:
             kwargs['logfile'] = args.logfile
+        if args.memusage_limit is not None:
+            kwargs['memusage_limit'] = args.memusage_limit
     return kwargs
 
 
@@ -256,6 +264,7 @@ def main():
     crawl_p.add_argument('--download-delay', type=_download_delay_type, metavar='SECONDS', help="Override DOWNLOAD_DELAY, 0.1-2 (default: settings.py's 0.25)")
     crawl_p.add_argument('--concurrent-requests-per-domain', type=_concurrency_type, metavar='N', help="Override CONCURRENT_REQUESTS_PER_DOMAIN, 1-20 (default: settings.py's 4)")
     crawl_p.add_argument('--logfile', metavar='PATH', help='Write the full crawl log here instead of stdout/stderr (default: none - only ERROR-level messages persist, via ErrorFileLogger)')
+    crawl_p.add_argument('--memusage-limit', type=int, metavar='MB', help="Override MEMUSAGE_LIMIT_MB - close the spider gracefully and flush the feed export at this memory footprint, instead of letting the OS OOM-kill it (default: settings.py's 8192)")
 
     crawl_and_push_p = sub.add_parser('crawl-and-push', help='Run the spider, then do everything push does')
     crawl_and_push_p.add_argument('site')
@@ -265,6 +274,7 @@ def main():
     crawl_and_push_p.add_argument('--download-delay', type=_download_delay_type, metavar='SECONDS', help="Override DOWNLOAD_DELAY, 0.1-2 (default: settings.py's 0.25)")
     crawl_and_push_p.add_argument('--concurrent-requests-per-domain', type=_concurrency_type, metavar='N', help="Override CONCURRENT_REQUESTS_PER_DOMAIN, 1-20 (default: settings.py's 4)")
     crawl_and_push_p.add_argument('--logfile', metavar='PATH', help='Write the full crawl log here instead of stdout/stderr (default: none - only ERROR-level messages persist, via ErrorFileLogger)')
+    crawl_and_push_p.add_argument('--memusage-limit', type=int, metavar='MB', help="Override MEMUSAGE_LIMIT_MB - close the spider gracefully and flush the feed export at this memory footprint, instead of letting the OS OOM-kill it (default: settings.py's 8192)")
     crawl_and_push_p.add_argument('--error-threshold', type=int, default=None, metavar='N', help='Abort before pushing if the site\'s *_dropped.csv has at least N http_5xx/network_error rows (default: the site\'s own ERROR_THRESHOLD, normally 1 - see archive_crawler/spiders/base.py)')
     crawl_and_push_p.add_argument('--bypass', action='store_true', help='Skip only the ordinary http_5xx/network_error threshold check (the zero-row check and the critical sitemap/pagination check both always run, with no override)')
 

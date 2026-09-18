@@ -126,9 +126,17 @@ or reconciles index contents itself.
   script audits CSVs already pulled back out of the live index. This one
   only gates whether a row is safe to push at all.
 - **`crawl_health.py`** — runs right after `validate.py`, and checks the
-  site's sibling `*_dropped.csv` in two tiers. The first tier always runs,
-  with no override, not even `--bypass`. It looks for any
-  `critical_sitemap:*` row (`ArchiveSpiderMixin._log_sitemap_fetch_error`
+  site's sibling `*_dropped.csv` in three tiers. The first two tiers
+  always run, with no override, not even `--bypass`. First: the
+  dropped-log must exist at all. `ExclusionLoggingMixin` writes it on
+  every clean `spider_closed`, even with zero data rows, so a missing
+  file means the crawl crashed before finishing (an OOM kill, a
+  segfault, a killed SSH session), not that it ran clean. A crashed
+  crawl can still leave a real, nonzero main CSV behind, since `FEEDS`
+  writes rows as they get scraped, not only at the end, so this catches
+  a case `validate.py`'s own zero-row check cannot. A hand-built `--csv`
+  needs a placeholder dropped-log (header row, zero data rows) alongside
+  it to pass. Second: any `critical_sitemap:*` row (`ArchiveSpiderMixin._log_sitemap_fetch_error`
   in `base.py`, for a failed top-level sitemap or sub-sitemap request) or
   `critical_pagination:*` row (`NavHarvesterMixin._log_pagination_fetch_error`
   in `nav_harvest.py`, for a failed listing-pagination continuation
@@ -137,7 +145,7 @@ or reconciles index contents itself.
   Each covers both a real server/network error and its matching
   empty-response case (`EmptySitemapResponseError`/
   `EmptyPaginationResponseError`) under the same prefix — see the module
-  docstring for the full split. The second tier, skipped only by
+  docstring for the full split. The third tier, skipped only by
   `--bypass`, counts ordinary `http_5xx`/`network_error:*` rows on a
   content-page fetch, except `network_error:EmptyResponseError`. That one
   reason stays excluded on purpose: it turned up persistent, on the same
@@ -150,8 +158,8 @@ or reconciles index contents itself.
   `archive_crawler/spiders/base.py`), normally 1 through
   `ArchiveSpiderMixin`. A spider overrides it to set its own default.
   `--error-threshold` on the CLI always wins over both. `--bypass` skips
-  only this second tier. It never skips the first tier, and never skips
-  the 0-row check `validate.py` already ran.
+  only this third tier. It never skips the first two tiers, and never
+  skips the 0-row check `validate.py` already ran.
 - **`filter_rows.py`** — reads `archive_crawler/filter_rules/<source_site>.yml`
   (`drop_if_all_present: [no_body]`, or `[]` for "never drop") to decide
   which `warnings` labels (see README's "Warnings Column") drop a row

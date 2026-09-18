@@ -42,11 +42,21 @@ same way. Neither failure is safe to average against a threshold meant
 for isolated, one-page losses, so a single row in this group always
 raises, with no override.
 
-A missing dropped-log (a site not yet re-crawled since this check was
-added, or a hand-built --csv unrelated to any crawl) is treated as no
-rows at all, not a hard failure - the zero-row check in validate.py and
-the Lambda's own empty-scope guard already cover the case where nothing
-at all came back.
+A missing dropped-log always raises, unconditionally, the same as a
+Group 3 row - --bypass does not skip this either. ExclusionLoggingMixin
+writes *_dropped.csv on every clean spider_closed, even with zero data
+rows (see its own docstring). The one thing that skips that write is a
+crash: an OOM kill, a segfault, a killed SSH session, anything that
+ends the process before spider_closed fires. A crashed crawl can still
+leave a real, nonzero main CSV behind, since FEEDS writes rows as they
+get scraped, not only at the end - so validate.py's zero-row check does
+not catch this case either. Before this check existed, a crashed run's
+missing dropped-log read as zero errors, the same as a clean run, and a
+partial crawl could reach push looking like a smaller, ordinary one. A
+hand-built --csv with no matching dropped-log, previously tolerated
+here, now needs a placeholder dropped-log (header row, zero data rows)
+alongside it. --bypass does not create that exception either, the
+deliberate trade for closing the crash gap.
 """
 import csv
 import os
@@ -99,16 +109,30 @@ def find_critical_errors(csv_path):
 
 
 def check_crawl_health(source_site, csv_path, threshold, bypass=False):
-    """Raise CrawlHealthError for either of two reasons.
+    """Raise CrawlHealthError for any of three reasons.
 
-    First, unconditionally: csv_path's dropped-log holds at least one
-    Group 3 (critical_) row. --bypass does not skip this check.
+    First, unconditionally: csv_path's dropped-log does not exist at
+    all. --bypass does not skip this check.
 
-    Second, only when bypass is False: the dropped-log holds at least
+    Second, unconditionally: the dropped-log holds at least one Group 3
+    (critical_) row. --bypass does not skip this check either.
+
+    Third, only when bypass is False: the dropped-log holds at least
     `threshold` Group 2 (http_5xx/network_error) rows. --bypass skips
-    only this second check.
+    only this third check.
 
-    See the module docstring for the full three-group split."""
+    See the module docstring for the full three-group split, and why a
+    missing dropped-log is no longer treated as zero errors."""
+    dropped_path = _dropped_path(csv_path)
+    if not os.path.exists(dropped_path):
+        raise CrawlHealthError(
+            f"{source_site}: {dropped_path} does not exist. Either this "
+            f"site has never been crawled through this project's own "
+            f"spiders, or the crawl that produced {csv_path} crashed "
+            f"before writing it. This check has no --bypass. A hand-built "
+            f"CSV needs a placeholder dropped-log (header row, zero data "
+            f"rows) alongside it."
+        )
     critical = find_critical_errors(csv_path)
     if critical:
         detail = ', '.join(sorted(set(critical)))

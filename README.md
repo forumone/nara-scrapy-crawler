@@ -46,7 +46,7 @@ spider per site doing nav link-following, listing-pagination-walking, and
 content extraction, all in a single crawl:
 
 ```bash
-scrapy crawl open_obama_whitehouse
+./scrape_index_pipeline crawl open_obama_whitehouse
 ```
 
 Replace with any of: `letsmove`, `obama_whitehouse`, `trumpwhitehouse`.
@@ -67,7 +67,7 @@ their own URLs from each site's committed sitemap. Each one scrapes content
 in the same run, through `SitemapUrlSpiderMixin` (`archive_crawler/spiders/base.py`):
 
 ```bash
-scrapy crawl clintonwhitehouse2
+./scrape_index_pipeline crawl clintonwhitehouse2
 ```
 
 Replace with any of: `clintonwhitehouse1`, `clintonwhitehouse3` through `6`,
@@ -159,12 +159,15 @@ Use `--depth 0` to report only the total count, with no path grouping.
 
 ## ⚙️ Recommended Run Settings
 
-Run large archives (CW4–6, GWBush) on a remote server. Override the
-default throttling with Scrapy's `-s` flag, not a bare environment
-variable. `settings.py` does not read `DOWNLOAD_DELAY`/`CONCURRENT_REQUESTS*`
-from the environment (only `FEED_URI`, `CLOSESPIDER_PAGECOUNT`, and
-`DEPTH_LIMIT` do). Prefixing the command with `DOWNLOAD_DELAY=0.15 ...`
-silently does nothing, and the crawl runs at the `settings.py` defaults
+Run large archives (CW4–6, GWBush) on a remote server. Always launch
+through `scrape_index_pipeline`, never a bare `scrapy crawl` — see
+"Always use the wrapper" below. Override the default throttling with
+`--download-delay`/`--concurrent-requests-per-domain`, not a bare
+environment variable. `settings.py` does not read
+`DOWNLOAD_DELAY`/`CONCURRENT_REQUESTS*` from the environment (only
+`FEED_URI`, `CLOSESPIDER_PAGECOUNT`, and `DEPTH_LIMIT` do). Prefixing
+the command with `DOWNLOAD_DELAY=0.15 ...` silently does nothing, and
+the crawl runs at the `settings.py` defaults
 (`CONCURRENT_REQUESTS_PER_DOMAIN=4`, `DOWNLOAD_DELAY=0.25`) instead.
 
 The right override on the remote server depends on how many crawls are
@@ -181,9 +184,9 @@ outbound load, not any single crawl's own politeness:
 | 8+ | 1 | 1 |
 
 ```bash
-scrapy crawl georgewbush_whitehouse \
-  -s DOWNLOAD_DELAY=0.12 \
-  -s CONCURRENT_REQUESTS_PER_DOMAIN=10
+./scrape_index_pipeline crawl georgewbush_whitehouse \
+  --download-delay 0.12 \
+  --concurrent-requests-per-domain 10
 ```
 
 To launch on the remote server itself, SSH in. Background the crawl
@@ -194,10 +197,10 @@ progress:
 ```bash
 ssh user@example-remote-host \
   "cd /home/scrapy/nara-scrapy-crawler && \
-   nohup scrapy crawl obama_whitehouse \
-     -s DOWNLOAD_DELAY=0.12 \
-     -s CONCURRENT_REQUESTS_PER_DOMAIN=10 \
-     --logfile=data/www.obamawhitehouse/obama_whitehouse-20261231.log \
+   nohup ./scrape_index_pipeline crawl obama_whitehouse \
+     --download-delay 0.12 \
+     --concurrent-requests-per-domain 10 \
+     --logfile data/www.obamawhitehouse/obama_whitehouse-20261231.log \
      > /dev/null 2>&1 & disown"
 ```
 
@@ -219,10 +222,28 @@ footprint exceeds that limit (for example, a crawler trap on a
 faceted-search or listing-heavy site generates unbounded unique URLs),
 Scrapy closes the spider gracefully and flushes the feed export. The OS
 never gets the chance to OOM-kill the process and lose all buffered
-output. Override this per-run with `-s MEMUSAGE_LIMIT_MB=N` (for
-example, a lower value for local dev testing).
+output. Override it per-run with `--memusage-limit N` on `crawl`/
+`crawl-and-push` (for example, a lower value for local dev testing).
 
 ---
+
+## 🛡 Always Use the Wrapper
+
+For every one of the 12 in-scope content spiders, launch through
+`./scrape_index_pipeline crawl`/`crawl-and-push`, never a bare `scrapy
+crawl <site>` call. This is not only a style preference.
+`scrape_index_pipeline`'s own `_crawl` step checks the spider process's
+exit code before continuing. A `crawl-and-push` run whose crawl exits
+nonzero never reaches `push` at all. A bare `scrapy crawl`, run by
+hand or scripted outside the wrapper, has no such gate. Nothing stops
+its output from being pushed later, by a separate `push` call, with no
+record of whether that crawl actually finished.
+
+`generic_crawl`, `generic_crawl_harvest`, and `sitemap_harvest` are the
+exception. All three are one-off exploratory tools for a site not yet
+onboarded (see HARVESTING.md), outside `scrape_index_pipeline`'s own
+site registry (`archive_crawler/pipeline/registry.py`) by design. They
+have no wrapper equivalent, and running them directly is correct.
 
 ## 🗂 CSV Naming Convention
 
@@ -302,7 +323,7 @@ worth knowing, that are not obvious from the flag descriptions alone:
 
 - `--csv` is `push`-only. `crawl`/`crawl-and-push` never accept a CSV path override. Passing `-O` to the spider would silently corrupt output. See the "Never pass `-O`/`-o` to a multi-`FEEDS`-entry spider" section in ARCHITECTURE.md. Only the *converted JSONL* is redirectable after a crawl.
 - `--logfile` diverts the *entire* crawl log away from the terminal (Scrapy writes to one or the other, never both). `ErrorFileLogger`'s own ERROR-level file keeps recording regardless. When stdout is a real terminal, a spinner and an elapsed-seconds counter fill the gap this otherwise leaves blank.
-- `push`/`crawl-and-push` run three checks before uploading anything, none skippable by `--bypass` except the last. A 0-row CSV always aborts, with no override — a network or server outage can leave a crawl with nothing to push, and the downstream Lambda's mark-and-sweep should never read that as "the site now has zero pages." A lost sitemap or listing-pagination request also always aborts, with no override — that single lost request costs every page past it, not just one page, so it is never averaged against a threshold. Only the third check, ordinary `http_5xx`/`network_error` rows on individual content pages, respects `--error-threshold N` and `--bypass`: it aborts when the site's `*_dropped.csv` has at least N such rows, since a partial outage can still leave real, nonzero rows behind while sweeping away every URL that failed to fetch this run. Each site's spider class sets its own default threshold through `ERROR_THRESHOLD` (see ARCHITECTURE.md), normally 1. Passing `--error-threshold` on the CLI always overrides that default. `--bypass` skips only this third check.
+- `push`/`crawl-and-push` run four checks before uploading anything, none skippable by `--bypass` except the last. A 0-row CSV always aborts, with no override — a network or server outage can leave a crawl with nothing to push, and the downstream Lambda's mark-and-sweep should never read that as "the site now has zero pages." A missing `*_dropped.csv` also always aborts, with no override — `ExclusionLoggingMixin` writes that file on every clean spider close, even with zero rows, so its absence means the crawl crashed before finishing, not that it ran clean. A hand-built `--csv` needs a placeholder dropped-log (header row, zero data rows) alongside it to pass this check. A lost sitemap or listing-pagination request also always aborts, with no override — that single lost request costs every page past it, not just one page, so it is never averaged against a threshold. Only the fourth check, ordinary `http_5xx`/`network_error` rows on individual content pages, respects `--error-threshold N` and `--bypass`: it aborts when the site's `*_dropped.csv` has at least N such rows, since a partial outage can still leave real, nonzero rows behind while sweeping away every URL that failed to fetch this run. Each site's spider class sets its own default threshold through `ERROR_THRESHOLD` (see ARCHITECTURE.md), normally 1. Passing `--error-threshold` on the CLI always overrides that default. `--bypass` skips only this fourth check.
 
 `scrape_index_pipeline_interactive` prompts for site, mode, and any
 relevant overrides, instead of requiring them as CLI arguments. It

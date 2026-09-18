@@ -1,6 +1,8 @@
 import csv
 import os
 
+import scrapy
+
 from archive_crawler import exclusion_rules as _exclusion_rules_module
 
 
@@ -54,6 +56,13 @@ class ExclusionLoggingMixin:
     nothing to log. scrape_index_pipeline's crawl_health check relies on
     this to read *_dropped.csv as this run's own record, not leftover
     state from whenever the site last had a fetch failure.
+
+    Both are also deleted, if present, at spider_opened, before this run
+    writes anything of its own - see _delete_stale_logs. That write-on-
+    close plus delete-on-open pair together guarantee the file's mere
+    presence, after this run, is honest evidence this run reached a
+    clean spider_closed. A crash leaves it genuinely missing, not the
+    previous run's file mistaken for this one's.
     """
 
     EXCLUSIONS_FILE_SUFFIX = 'exclusions'
@@ -87,29 +96,69 @@ class ExclusionLoggingMixin:
         self._logged_dropped_urls.add(url)
         self._dropped.append({'url': url, 'reason': reason})
 
+    def _log_path(self, file_attr, suffix):
+        # -a exclusions_file=<path>/-a dropped_file=<path> overrides the
+        # derived default - no explicit __init__ parameter needed for
+        # this, since plain scrapy.Spider.__init__ already assigns any
+        # unrecognized -a kwarg as an instance attribute. Shared by
+        # _write_log and _delete_stale_logs, so both always agree on
+        # exactly which path they mean.
+        out_path = getattr(self, file_attr, None)
+        if not out_path:
+            return os.path.join('data', self.SOURCE_SITE, f'{self.SOURCE_SITE}_{suffix}.csv')
+        return out_path
+
     def _write_log(self, rows, file_attr, suffix):
         # Always write, even with zero rows - a downstream consumer (e.g.
         # scrape_index_pipeline's crawl_health check) reads this file to
         # judge THIS run's health. Skipping the write on an empty run would
         # leave a prior run's file in place, making a healthy re-crawl look
         # like it still has that old run's dropped rows.
-        # -a exclusions_file=<path>/-a dropped_file=<path> overrides the
-        # derived default - no explicit __init__ parameter needed for
-        # this, since plain scrapy.Spider.__init__ already assigns any
-        # unrecognized -a kwarg as an instance attribute.
-        out_path = getattr(self, file_attr, None)
-        if not out_path:
-            out_dir = os.path.join('data', self.SOURCE_SITE)
+        out_path = self._log_path(file_attr, suffix)
+        out_dir = os.path.dirname(out_path)
+        if out_dir:
             os.makedirs(out_dir, exist_ok=True)
-            out_path = os.path.join(out_dir, f'{self.SOURCE_SITE}_{suffix}.csv')
-        else:
-            out_dir = os.path.dirname(out_path)
-            if out_dir:
-                os.makedirs(out_dir, exist_ok=True)
         with open(out_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=['url', 'reason'])
             writer.writeheader()
             writer.writerows(rows)
+
+    @classmethod
+    def from_crawler(cls, crawler, *args, **kwargs):
+        # Runs the delete on spider_opened, not __init__ - SOURCE_SITE and
+        # any -a dropped_file=<path> override are both guaranteed set by
+        # then, and this fires once, before start_requests yields anything.
+        # Nothing else in this project connects a signal manually; every
+        # other hook (closed()) rides Scrapy's own automatic spider_closed
+        # dispatch. spider_opened has no equivalent auto-dispatch, so this
+        # is the one place that needs an explicit crawler.signals.connect.
+        spider = super().from_crawler(crawler, *args, **kwargs)
+        crawler.signals.connect(spider._delete_stale_logs, signal=scrapy.signals.spider_opened)
+        return spider
+
+    def _delete_stale_logs(self):
+        """Delete *_exclusions.csv/*_dropped.csv, if either already exists,
+        before this run writes anything of its own.
+
+        closed() only runs on a clean spider_closed - a crash (an OOM
+        kill, a segfault, a killed SSH session) skips it entirely, and
+        the file from this run's *predecessor* stays on disk untouched,
+        looking exactly like a valid record of this run.
+        scrape_index_pipeline's crawl_health check now requires
+        *_dropped.csv to exist and treats a missing one as an
+        unconditional abort (see crawl_health.py's module docstring) -
+        without this delete, a crashed re-crawl's stale, leftover file
+        would still exist, and that abort would never fire. Deleting it
+        here first means a crash produces a genuinely missing file, not
+        a misleadingly present one, and the existing crawl_health check
+        catches it without needing to inspect finish_reason at all."""
+        for file_attr, suffix in (
+            ('exclusions_file', self.EXCLUSIONS_FILE_SUFFIX),
+            ('dropped_file', self.DROPPED_FILE_SUFFIX),
+        ):
+            path = self._log_path(file_attr, suffix)
+            if os.path.exists(path):
+                os.remove(path)
 
     def closed(self, reason):
         self._write_log(getattr(self, '_exclusions', []), 'exclusions_file', self.EXCLUSIONS_FILE_SUFFIX)
