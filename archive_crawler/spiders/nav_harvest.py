@@ -300,7 +300,7 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         pairs, one per LISTING_CONTAINER_SELECTOR match with a populated
         LISTING_PAGER_SELECTOR inside it - evaluated per container, since
         a page can carry more than one genuinely paginated listing
-        (confirmed on obamawhitehouse's /energy/news).
+        (e.g. obamawhitehouse's /energy/news).
 
         view_urls is the wider set LISTING_VIEW_LINK_EXTRACTOR returns
         (item links AND the container's own pager links) - used by
@@ -339,11 +339,8 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         independently-broken listings collapse onto the identical empty
         fingerprint, and whichever is discovered second gets silently
         treated as an already-walked duplicate of the first, skipping its
-        entire pagination walk. Confirmed live on trumpwhitehouse:
-        presidential-actions and articles both matched zero items under
-        the old item selector, and articles (discovered second) never
-        issued a single page-2 request as a result - not a cosmetic
-        undercount, real content past page 1 was never requested at all.
+        entire pagination walk - not a cosmetic undercount, real content
+        past page 1 goes unrequested entirely.
 
         response.url in FORCE_SKIP_LISTING_URLS short-circuits the whole
         page."""
@@ -473,10 +470,10 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         start_requests and _follow_ordinary_links. The next-page
         continuation request uses its own errback,
         _log_pagination_fetch_error - a permanently-failed fetch there
-        (e.g. a broken CDN cache entry serving an empty 200 body,
-        confirmed live on trumpwhitehouse) used to end this whole chain
-        silently, with no dropped-log row and no further pages ever
-        discovered. That errback logs under the critical_pagination:
+        (e.g. a broken CDN cache entry serving an empty 200 body) used
+        to end this whole chain silently, with no dropped-log row and
+        no further pages ever discovered. That errback logs under the
+        critical_pagination:
         prefix crawl_health.py always aborts on, since losing that one
         request costs every page past it, not just one item - unlike an
         item-request failure, which loses only that one item. A failed
@@ -542,6 +539,14 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         Still yields the HarvestItem _log_nav_fetch_error would have, so
         scrape + drop = harvest holds for this URL too.
 
+        A plain HTTP 404 is the one exception - logged as ordinary
+        http_404, the same reason a content-page 404 gets, not
+        critical_pagination:http_404. A 404 means this page of the
+        listing does not exist, not that the crawl lost access to it -
+        unlike a 5xx or a network error, it never resolves on a later
+        run, so counting it here would abort every future push for this
+        site, forever.
+
         A real twisted.internet.error.TimeoutError here - every retry
         already exhausted, same as base.py's _log_http_error/
         _log_sitemap_fetch_error - closes the spider immediately, on the
@@ -557,6 +562,8 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
             status = failure.value.response.status
             if status < 400:
                 reason = 'critical_pagination:http_3xx'
+            elif status == 404:
+                reason = 'http_404'
             elif status >= 500:
                 reason = 'critical_pagination:http_5xx'
             else:

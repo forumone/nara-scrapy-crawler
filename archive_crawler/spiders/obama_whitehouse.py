@@ -191,13 +191,11 @@ class ObamaWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         # Whole-body fallback (/sites/default/ only): these are standalone
         # uploaded files, not real Drupal node pages - none of the selectors
         # above ever match since there's no Drupal theme wrapper at all.
-        # Confirmed 2026-08-01 against 13 live samples (mostly OMB budget
-        # appendix documents, plus at least one Bootstrap-styled standalone
-        # report): all 13 recovered clean, substantial, well-bounded content
-        # with no visible boilerplate leakage - no chrome/nav to leak in the
-        # first place, since these files have no site template wrapped
-        # around them. Scoped to this one prefix so it can't mask genuine
-        # no_body pages elsewhere on the site.
+        # These recover clean, substantial, well-bounded content with no
+        # visible boilerplate leakage - no chrome/nav to leak in the first
+        # place, since these files have no site template wrapped around
+        # them. Scoped to this one prefix so it can't mask genuine no_body
+        # pages elsewhere on the site.
         body = (self._extract_first_substantial(response, '.field-items .field-item') or
                 self._extract_text(response, '.longpage-sections') or
                 self._extract_text(response, '#content') or

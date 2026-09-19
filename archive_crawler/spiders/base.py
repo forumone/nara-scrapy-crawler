@@ -124,9 +124,7 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
     # every DOWNLOAD_TIMEOUT/RETRY_TIMES retry, all the way to a real
     # twisted.internet.error.TimeoutError, closes the spider outright
     # (see _log_http_error). A running, no-reset count for the whole
-    # crawl. Confirmed live 2026-09-18: bidenwhitehouse's connection
-    # timed out on request after request for over 3 hours before this
-    # existed, with nothing to stop it early.
+    # crawl.
     CONTENT_LEAF_TIMEOUT_THRESHOLD = 5
 
     # Every subclass without its own custom_settings gets one FEEDS entry
@@ -539,6 +537,13 @@ class SitemapUrlSpiderMixin(ArchiveSpiderMixin):
         CSV. See crawl_health.py's module docstring for the full reason
         split.
 
+        A plain HTTP 404 is the one exception - logged as ordinary
+        http_404, the same reason a content-page 404 gets, not
+        critical_sitemap:http_404. A 404 means the resource does not
+        exist, not that the crawl lost access to it - unlike a 5xx or a
+        network error, it never resolves on a later run, so counting it
+        here would abort every future push for this site, forever.
+
         A real twisted.internet.error.TimeoutError here - every retry
         already exhausted, same as _log_http_error - closes the spider
         immediately, on the first occurrence, with finish_reason
@@ -555,7 +560,12 @@ class SitemapUrlSpiderMixin(ArchiveSpiderMixin):
                     status, failure.value.response.url,
                 )
                 return
-            reason = 'critical_sitemap:http_5xx' if status >= 500 else f'critical_sitemap:http_{status}'
+            if status == 404:
+                reason = 'http_404'
+            elif status >= 500:
+                reason = 'critical_sitemap:http_5xx'
+            else:
+                reason = f'critical_sitemap:http_{status}'
             self._log_dropped(failure.value.response.url, reason)
             self.logger.warning("Sitemap fetch failed: %s", failure.getErrorMessage())
             return

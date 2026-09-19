@@ -47,9 +47,9 @@ class GeorgeWBushWhiteHouseSpider(SitemapUrlSpiderMixin, scrapy.Spider):
     LEADING_TEXT_STRIP_PATTERNS = TEXT_VERSION_TOGGLE_PATTERNS
 
     # "White House News" is a breadcrumb/section label this template inserts
-    # between the headline and the body text on ~6% of pages. Confirmed via
-    # sampling it never appears as part of real content, always as this
-    # exact standalone label.
+    # between the headline and the body text on ~6% of pages. It never
+    # appears as part of real content, always as this exact standalone
+    # label.
     MIDTEXT_STRIP_PATTERNS = (
         re.compile(r'\s*White House News\s*'),
     )
@@ -76,21 +76,12 @@ class GeorgeWBushWhiteHouseSpider(SitemapUrlSpiderMixin, scrapy.Spider):
         #     TD that contains the skip-nav anchor (CSS :has() not supported by cssselect).
         # 11. body (whole-document fallback, site-wide) — covers pre-2003 nested-<table>
         #     pages with no id/class attributes anywhere, so none of the selectors above
-        #     can ever match (e.g. /infocus/iraq/, /omb/budget/). Confirmed 2026-08-01
-        #     against 15 live /infocus/iraq/+/omb/budget/ samples (13/15 clean recoveries,
-        #     2 correctly downgraded to short_body) plus a 102-item site-wide random
-        #     sample covering many more sections (/kids/, /911/, /omb/library/, etc.):
-        #     89/102 (87%) recovered substantial real content, the rest were legitimately
-        #     thin (correctly landing as short_body) except for one true dead end
-        #     (/fragments/css-home.html, itself covered by the /fragments/ exclusion rule
-        #     above) - no case found where this fallback produces a misleadingly non-empty
-        #     result. Originally scoped to just /infocus/iraq/ and /omb/budget/; broadened
-        #     to site-wide once the 102-item sample confirmed the same zero-selector-match
-        #     root cause recurs across the whole site, not just those two sections. A
-        #     little nav-link text ("Skip Main Navigation Site Search", a closing OMB link
-        #     bar) can bookend the real content on old table-layout pages - accepted
-        #     per-project as a fine trade for resilience over precision on
-        #     already-poorly-structured pages.
+        #     can ever match (e.g. /infocus/iraq/, /omb/budget/), and the same
+        #     zero-selector-match condition recurs site-wide, not just in those two
+        #     sections. A little nav-link text ("Skip Main Navigation Site Search", a
+        #     closing OMB link bar) can bookend the real content on old table-layout
+        #     pages - accepted per-project as a fine trade for resilience over precision
+        #     on already-poorly-structured pages.
         body = (
             self._extract_text(response, '#news_container')
             or self._extract_text(response, '#whitebox')

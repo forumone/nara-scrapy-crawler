@@ -36,11 +36,10 @@ class EmptyResponseGuardMiddleware:
     has explicitly opted into via handle_httpstatus_list) but has a
     0-byte body.
 
-    Confirmed live 2026-09-16 against trumpwhitehouse, and confirmed
-    widespread the same day - persistently, on the same URLs, for months
-    - on several Clinton-era sites' ordinary content pages: CloudFront
-    can serve a genuinely empty body on a 200 response, from a
-    stale/broken edge cache entry. That response passes every existing
+    CloudFront can serve a genuinely empty body on a 200 response, from
+    a stale/broken edge cache entry - on some sites a one-off, on
+    others a persistent condition on the same URLs for months. That
+    response passes every existing
     check (not a network error, not an HTTP error, a real TextResponse)
     and reaches _scrape_item, where it silently produces a
     no_body/no_title row - exactly the content some sites'
@@ -111,11 +110,11 @@ class UnhandledSpiderExceptionLoggingMiddleware:
             log_dropped(response.url, f'spider_exception:{type(exception).__name__}')
         # exc_info=True pulls from sys.exc_info(), which is not reliably
         # still set by the time this runs (Scrapy/Twisted's deferred
-        # chain can leave this frame's exception context cleared) -
-        # confirmed live: logged "NoneType: None" instead of a real
-        # traceback. Building the tuple explicitly from the exception
-        # object itself (which still carries its own __traceback__)
-        # sidesteps that.
+        # chain can leave this frame's exception context cleared,
+        # logging "NoneType: None" instead of a real traceback).
+        # Building the tuple explicitly from the exception object
+        # itself (which still carries its own __traceback__) sidesteps
+        # that.
         spider.logger.error(
             "Unhandled %s processing %s - logged as dropped, rest of this "
             "response's callback output is lost, crawl continues.",

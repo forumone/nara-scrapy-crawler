@@ -5,16 +5,15 @@ Every reason this check looks at falls into one of three groups.
 Group 1, excluded, never counts toward anything:
 network_error:EmptyResponseError. EmptyResponseGuardMiddleware (archive_
 crawler/middlewares.py) raises it for a 0-byte body that otherwise looks
-like a normal response, on an ordinary content-page request. Confirmed
-live 2026-09-16 on trumpwhitehouse (a stale/broken CloudFront edge cache
-entry) and, separately, confirmed widespread and persistent - the same
-URLs, unchanged for months - on several Clinton-era sites' ordinary
-content pages. Threshold-based abort assumes a failure eventually
-resolves, so a later crawl gets through cleanly. A permanently-empty page
-never resolves that way, so counting it would abort every future push
-for that site, forever, requiring a manual --bypass on every single run -
-worse than the problem it would guard against. It is logged, for manual
-review, but never counted here.
+like a normal response, on an ordinary content-page request. On some
+sites this reason is transient; on others it turns up on the same URLs
+indefinitely, a permanently broken page rather than a temporary outage.
+Threshold-based abort assumes a failure eventually resolves, so a later
+crawl gets through cleanly. A permanently-empty page never resolves that
+way, so counting it would abort every future push for that site,
+forever, requiring a manual --bypass on every single run - worse than
+the problem it would guard against. It is logged, for manual review, but
+never counted here.
 
 Group 2, counted toward --error-threshold, skipped by --bypass:
 http_5xx and network_error:* rows on an ordinary content-page fetch
@@ -41,6 +40,14 @@ continuation page costs every page past it in that listing's chain, the
 same way. Neither failure is safe to average against a threshold meant
 for isolated, one-page losses, so a single row in this group always
 raises, with no override.
+
+A plain HTTP 404 on either kind of request is excluded from this group
+on purpose, logged as ordinary http_404 instead. A 404 means the
+resource does not exist, not that the crawl lost access to it. Unlike a
+5xx or a network error, a 404 never resolves on a later run, so
+counting it here would abort every future push for that site, forever -
+the same reasoning Group 1's network_error:EmptyResponseError exclusion
+already rests on.
 
 A missing dropped-log always raises, unconditionally, the same as a
 Group 3 row - --bypass does not skip this either. ExclusionLoggingMixin

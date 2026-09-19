@@ -145,7 +145,11 @@ or reconciles index contents itself.
   Each covers both a real server/network error and its matching
   empty-response case (`EmptySitemapResponseError`/
   `EmptyPaginationResponseError`) under the same prefix — see the module
-  docstring for the full split. The third tier, skipped only by
+  docstring for the full split. A plain HTTP 404 on either kind of
+  request is excluded from this tier on purpose, logged as ordinary
+  `http_404` instead — a 404 means the resource does not exist, not
+  that the crawl lost access to it, and unlike a 5xx or a network
+  error it never resolves on a later run. The third tier, skipped only by
   `--bypass`, counts ordinary `http_5xx`/`network_error:*` rows on a
   content-page fetch, except `network_error:EmptyResponseError`. That one
   reason stays excluded on purpose: it turned up persistent, on the same
@@ -312,11 +316,11 @@ default alone.
 *URL aliasing.* The fingerprint keys off exact item-URL-set identity
 (plus view identity, see above), not "is this the same underlying view
 reached a different way." Two URL paths that alias the identical view hash
-differently, and each get walked in full. Confirmed on letsmove, where
-`/blog/all` and `/blog/all/all` render overlapping-but-not-identical content
-at different page sizes, and on obamawhitehouse, where a legacy
-`/realitycheck` alias prefix mirrors already-crawled content (including the
-site's shared video and photogallery catalogs) under a different address.
+differently, and each get walked in full. On letsmove, `/blog/all` and
+`/blog/all/all` render overlapping-but-not-identical content at
+different page sizes. On obamawhitehouse, a legacy `/realitycheck`
+alias prefix mirrors already-crawled content (including the site's
+shared video and photogallery catalogs) under a different address.
 
 Deliberately not fixed. The cost stays bounded: linear in however many
 distinct aliases a site actually defines for one view (in practice, a
@@ -347,10 +351,10 @@ only fires when a container has a populated `LISTING_PAGER_SELECTOR` match,
 and it only covers facet controls that actually render inside
 `LISTING_VIEW_LINK_EXTRACTOR`'s scope.
 
-Confirmed live on `open.obamawhitehouse.archives.gov` (which has no
-listing-fingerprint dedup enabled at all): the site's Facet API
-exposed-filter widget renders in a sidebar panel, structurally separate
-from the results-and-pager container. One of its pages
+On `open.obamawhitehouse.archives.gov` (which has no listing-fingerprint
+dedup enabled at all), the site's Facet API exposed-filter widget
+renders in a sidebar panel, structurally separate from the
+results-and-pager container. One of its pages
 (`/group/data-catalog`) has no pager on it at all, so even scoping
 `LISTING_VIEW_LINK_EXTRACTOR` to cover both regions would not help,
 since the pager-presence gate that triggers pooling never fires there.
@@ -391,11 +395,11 @@ already uses for content spiders), rather than crashing the response:
   `isinstance(response, scrapy.http.TextResponse)` catches this.
 - A JSON response *is* a `TextResponse` (isinstance alone will not catch
   it), but Scrapy's auto-selector gives it a dict root instead of an lxml
-  tree. Confirmed live through `open.obamawhitehouse.archives.gov`'s DKAN
-  JSON API (`/api/3/action/package_show?id=...`, linked from every dataset
-  page), which crashed with `AttributeError: 'dict' object has no attribute
-  'iter'` before this guard existed. `response.selector.type == 'json'`
-  catches this one. XML and plain-text responses are fine either way.
+  tree, raising `AttributeError: 'dict' object has no attribute 'iter'`
+  without this guard. `open.obamawhitehouse.archives.gov`'s DKAN JSON API
+  (`/api/3/action/package_show?id=...`, linked from every dataset page) is
+  one such case. `response.selector.type == 'json'` catches this one. XML
+  and plain-text responses are fine either way.
   Parsel falls back to a working HTML-parsed root for both, so this check
   is deliberately JSON-specific, not a blanket "must be real HTML" gate.
 

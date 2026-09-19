@@ -73,11 +73,11 @@ class TrumpWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     EXCLUSIONS_FILE_SUFFIX = 'exclusions'
 
     # .page-results__wrap wraps a listing's facet-filter nav, its item
-    # <article>s, AND its .pagination block together (confirmed live on
-    # /briefings-statements/) - the WordPress-theme equivalent of Drupal's
-    # .view. .pagination__next is only rendered when a next page actually
-    # exists (absent on a listing's last page, and on a facet-filtered
-    # variant short enough to fit on one page), distinguishing a real
+    # <article>s, AND its .pagination block together - the WordPress-theme
+    # equivalent of Drupal's .view. .pagination__next is only rendered
+    # when a next page actually exists (absent on a listing's last page,
+    # and on a facet-filtered variant short enough to fit on one page),
+    # distinguishing a real
     # paginated listing from a single-page one. Only the main site has this
     # listing template - crisisnextdoor/coronavirus pages simply never match
     # these selectors, so no false-positive risk from sharing them.
@@ -90,7 +90,7 @@ class TrumpWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     LISTING_PAGER_SELECTOR = '.pagination__next'
 
     # DEPTH_LIMIT raised well past the mixin's usual 2 - /briefings-statements/
-    # alone chains 670 pager pages deep (confirmed live), and other listings
+    # alone chains 670 pager pages deep, and other listings
     # (news/, issues/, articles/, remarks/, presidential-actions/) may run
     # comparably long. Same DepthMiddleware-shares-one-counter reasoning as
     # obama_whitehouse.py/letsmove.py: without raising this,
@@ -149,13 +149,11 @@ class TrumpWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     )
 
     # .briefing-statement__title only matches the briefings-statements/
-    # remarks/news templates, and only half of news' own items (5 of 10
-    # confirmed live) - presidential-actions and articles use their own
-    # class names for the same h2 title link and matched zero, which
-    # silently cost nearly all of both categories (2 of ~1,780 real
-    # presidential-actions items scraped, 3 of ~620 real articles items,
-    # confirmed against a live run). Every listing template on this site
-    # puts its item title in an h2 inside the item's own <article> - this
+    # remarks/news templates, and only half of news' own items -
+    # presidential-actions and articles use their own class names for the
+    # same h2 title link and match zero, which silently costs nearly all
+    # of both categories. Every listing template on this site puts its
+    # item title in an h2 inside the item's own <article> - this
     # selector covers all five without a per-listing special case.
     def _listing_pagination_items(self, container):
         return container.css('article h2 a::attr(href)').getall()
@@ -173,8 +171,8 @@ class TrumpWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
     #   the photo-gallery template (/briefings-statements/photo-*/photos-*)
     #   wraps its own real captions in .editor__module.editor__module--content,
     #   which a blanket strip here would wipe out along with the sidebar.
-    # .visually-hidden: screen-reader-only labels, confirmed live on both the
-    #   main site's microsites (a "heading" reading "Introduction") and
+    # .visually-hidden: screen-reader-only labels, on both the main
+    #   site's microsites (a "heading" reading "Introduction") and
     #   crisisnextdoor (duplicate "WhiteHouse.gov" logo labels).
     # .nara-disclaimer / header nav / footer: coronavirus's NARA archival
     #   banner and site-chrome nav/footer links, not real content.
@@ -209,8 +207,8 @@ class TrumpWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
         # .microsite__content is the shared wrapper the /ai/ and /wgdp/
         # microsites both use for their actual panel content (each microsite
         # otherwise has its own distinct theme naming -
-        # .ai-panel/.wgdp-panel* - confirmed live neither reuses the main
-        # site's .page-content__content template). /bebest/ is the one
+        # .ai-panel/.wgdp-panel*, neither reusing the main site's
+        # .page-content__content template). /bebest/ is the one
         # microsite that DOES reuse the main site's ordinary template, so
         # the first selector still covers it.
         body = (self._extract_text(response, '.page-content__content.editor') or
@@ -221,7 +219,7 @@ class TrumpWhiteHouseSpider(NavHarvesterMixin, ArchiveSpiderMixin, CrawlSpider):
             warnings.append('short_body')
         # _extract_title's generic h1/<title> fallback is deliberately
         # skipped for microsite pages (the shared .microsite wrapper div
-        # confirmed live on /ai/ and /wgdp/): each microsite's masthead h1
+        # on /ai/ and /wgdp/): each microsite's masthead h1
         # ("Artificial Intelligence for the American People", etc.) and
         # <title> tag are identical across its homepage AND every one of
         # its sub-pages (e.g. /ai/ai-american-values/) - there is no

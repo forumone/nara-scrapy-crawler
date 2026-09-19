@@ -28,8 +28,8 @@ class TrumpPetitionsSpider(PetitionsSpiderMixin, NavHarvesterMixin, CrawlSpider)
     EXCLUSIONS_FILE_SUFFIX = 'exclusions'
 
     # DEPTH_LIMIT raised past the mixin's usual 2 - a full unlimited-depth
-    # crawl of this site reaches depth 11 at most (confirmed via the prior
-    # generic_crawl_harvest-based harvest), so this leaves a comfortable
+    # crawl of this site reaches depth 11 at most, per the prior
+    # generic_crawl_harvest-based harvest, so this leaves a comfortable
     # margin.
     #
     # REDIRECT_ENABLED=True overrides the project-wide default: this site's

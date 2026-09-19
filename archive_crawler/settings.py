@@ -28,14 +28,13 @@ ROBOTSTXT_OBEY = False
 CONCURRENT_REQUESTS_PER_DOMAIN = 4
 DOWNLOAD_DELAY = 0.25
 
-# A dead site (bidenwhitehouse.archives.gov, confirmed live 2026-09-18, over
-# 3 hours of nothing but repeated TCP connection timeouts) used to hold a
-# crawl at Scrapy's own defaults, 180 seconds and 2 retries, one URL at a
-# time, with nothing to end it early. 30 seconds and 3 retries gives every
-# URL 4 attempts, 120 seconds total, before the request finally fails for
-# good. base.py's _log_http_error/_log_sitemap_fetch_error and
-# nav_harvest.py's _log_pagination_fetch_error close the spider outright
-# once that failure is a real twisted.internet.error.TimeoutError, at
+# Scrapy's own defaults, 180 seconds and 2 retries, let a single dead
+# connection hold a crawl for a very long time with nothing to end it
+# early. 30 seconds and 3 retries gives every URL 4 attempts, 120 seconds
+# total, before the request finally fails for good. base.py's
+# _log_http_error/_log_sitemap_fetch_error and nav_harvest.py's
+# _log_pagination_fetch_error close the spider outright once that failure
+# is a real twisted.internet.error.TimeoutError, at
 # CONTENT_LEAF_TIMEOUT_THRESHOLD occurrences on an ordinary content page, or
 # immediately on a sitemap/pagination request.
 DOWNLOAD_TIMEOUT = 30
