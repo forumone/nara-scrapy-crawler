@@ -117,7 +117,7 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
     # scrape_index_pipeline's crawl_health.py abort check reads this as its
     # per-site default --error-threshold. A subclass overrides it to set
     # its own default; the CLI flag, when passed, still wins over both.
-    ERROR_THRESHOLD = 1
+    ERROR_THRESHOLD = 3
 
     # A crawl-time circuit breaker, not scrape_index_pipeline's push-time
     # ERROR_THRESHOLD above - this many content-leaf requests exhausting

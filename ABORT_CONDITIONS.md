@@ -98,7 +98,7 @@ removed from the live site, rather than simply missed this run.
 
 The default threshold comes from the site's own configuration, not a
 fixed global number. A site can set its own default higher or lower
-than the project default of 1. Passing `--error-threshold` on the
+than the project default of 3. Passing `--error-threshold` on the
 command line always overrides whatever default applies.
 
 One specific reason is excluded from this count entirely:
