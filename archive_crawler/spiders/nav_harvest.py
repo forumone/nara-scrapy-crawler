@@ -540,8 +540,19 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
         logs under the critical_pagination: prefix crawl_health.py
         always aborts on, ignoring both --error-threshold and --bypass.
         Still yields the HarvestItem _log_nav_fetch_error would have, so
-        scrape + drop = harvest holds for this URL too."""
+        scrape + drop = harvest holds for this URL too.
+
+        A real twisted.internet.error.TimeoutError here - every retry
+        already exhausted, same as base.py's _log_http_error/
+        _log_sitemap_fetch_error - closes the spider immediately, on the
+        first occurrence, with finish_reason critical_pagination_timeout.
+        The HarvestItem below still yields first, so this URL's own
+        scrape + drop = harvest bookkeeping holds even on the run that
+        ends the crawl."""
+        from twisted.internet.error import TimeoutError as DownloadTimeoutError
+
         from scrapy.spidermiddlewares.httperror import HttpError
+        timed_out = False
         if failure.check(HttpError):
             status = failure.value.response.status
             if status < 400:
@@ -553,6 +564,9 @@ class NavHarvesterMixin(ExclusionLoggingMixin):
             self._log_dropped(failure.value.response.url, reason)
         else:
             self._log_dropped(failure.request.url, f'critical_pagination:network_error:{failure.type.__name__}')
+            timed_out = failure.check(DownloadTimeoutError)
         depth = failure.request.meta.get('depth', 0) if failure.request else 0
         url = failure.request.url if failure.request else ''
         yield HarvestItem(url=url, is_listing=False, depth=depth)
+        if timed_out:
+            self.crawler.engine.close_spider(self, 'critical_pagination_timeout')
