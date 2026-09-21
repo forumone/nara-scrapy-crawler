@@ -14,9 +14,9 @@ of request it was.
 
 **Content-page request.** A running count tracks how many content-page
 requests, on the current crawl, have exhausted every retry with a real
-`twisted.internet.error.TimeoutError`. At `CONTENT_LEAF_TIMEOUT_THRESHOLD`
+`twisted.internet.error.TimeoutError`. At `CONTENT_PAGE_TIMEOUT_THRESHOLD`
 occurrences, the spider closes outright, with `finish_reason`
-`content_leaf_timeout_threshold`. Below that count, each timeout logs
+`content_page_timeout_threshold`. Below that count, each timeout logs
 as an ordinary dropped row and the crawl continues. Only a genuine
 timeout counts toward this. A site could return a real HTTP error, or a
 connection-refused error, for every single request, and this count

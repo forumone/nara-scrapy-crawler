@@ -10,7 +10,7 @@ class EmptyPaginationResponseError(EmptyResponseError):
     NavHarvesterMixin._walk_listing_pagination request specifically - a
     dead pager-continuation page costs everything past it in that
     listing's chain (see nav_harvest.py), not just the one page a
-    content-leaf failure costs. crawl_health.py counts this reason but
+    content-page failure costs. crawl_health.py counts this reason but
     not plain EmptyResponseError - see that module for why."""
     pass
 
@@ -22,7 +22,7 @@ class EmptySitemapResponseError(EmptyResponseError):
     every URL it would have listed, silently, with no per-URL retry or
     record beyond this one row - the same cascading shape
     EmptyPaginationResponseError already covers for a dead
-    pager-continuation page, not a single content-leaf loss.
+    pager-continuation page, not a single content-page loss.
     crawl_health.py counts this reason but not plain
     EmptyResponseError - see that module for why."""
     pass

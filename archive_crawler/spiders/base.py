@@ -120,12 +120,12 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
     ERROR_THRESHOLD = 3
 
     # A crawl-time circuit breaker, not scrape_index_pipeline's push-time
-    # ERROR_THRESHOLD above - this many content-leaf requests exhausting
+    # ERROR_THRESHOLD above - this many content-page requests exhausting
     # every DOWNLOAD_TIMEOUT/RETRY_TIMES retry, all the way to a real
     # twisted.internet.error.TimeoutError, closes the spider outright
     # (see _log_http_error). A running, no-reset count for the whole
     # crawl.
-    CONTENT_LEAF_TIMEOUT_THRESHOLD = 5
+    CONTENT_PAGE_TIMEOUT_THRESHOLD = 5
 
     # Every subclass without its own custom_settings gets one FEEDS entry
     # derived from SOURCE_SITE: data/<SOURCE_SITE>/<SOURCE_SITE>.csv. A
@@ -286,15 +286,15 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         return scrapy.Request(url, **kwargs)
 
     def _log_http_error(self, failure):
-        """Errback for an ordinary content-leaf request - _make_request's
+        """Errback for an ordinary content-page request - _make_request's
         own default, and NavHarvesterMixin._log_nav_fetch_error calls this
         too, for its own ordinary link-following. A real
         twisted.internet.error.TimeoutError here means DOWNLOAD_TIMEOUT/
         RETRY_TIMES already exhausted every retry Scrapy was going to make
         on this one URL - this method only ever sees the final failure.
-        CONTENT_LEAF_TIMEOUT_THRESHOLD of those, over the whole crawl,
+        CONTENT_PAGE_TIMEOUT_THRESHOLD of those, over the whole crawl,
         closes the spider outright, with finish_reason
-        content_leaf_timeout_threshold."""
+        content_page_timeout_threshold."""
         from twisted.internet.error import TimeoutError as DownloadTimeoutError
 
         from scrapy.spidermiddlewares.httperror import HttpError
@@ -310,9 +310,9 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
             return
         self._log_dropped(failure.request.url, f'network_error:{failure.type.__name__}')
         if failure.check(DownloadTimeoutError):
-            self._content_leaf_timeout_count = getattr(self, '_content_leaf_timeout_count', 0) + 1
-            if self._content_leaf_timeout_count >= self.CONTENT_LEAF_TIMEOUT_THRESHOLD:
-                self.crawler.engine.close_spider(self, 'content_leaf_timeout_threshold')
+            self._content_page_timeout_count = getattr(self, '_content_page_timeout_count', 0) + 1
+            if self._content_page_timeout_count >= self.CONTENT_PAGE_TIMEOUT_THRESHOLD:
+                self.crawler.engine.close_spider(self, 'content_page_timeout_threshold')
 
     @staticmethod
     def _is_redirect_wrapper(response):
@@ -547,7 +547,7 @@ class SitemapUrlSpiderMixin(ArchiveSpiderMixin):
         A real twisted.internet.error.TimeoutError here - every retry
         already exhausted, same as _log_http_error - closes the spider
         immediately, on the first occurrence, with finish_reason
-        critical_sitemap_timeout. Unlike the content-leaf case, this
+        critical_sitemap_timeout. Unlike the content-page case, this
         never waits for a count."""
         from twisted.internet.error import TimeoutError as DownloadTimeoutError
 

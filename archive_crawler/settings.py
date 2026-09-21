@@ -35,7 +35,7 @@ DOWNLOAD_DELAY = 0.25
 # _log_http_error/_log_sitemap_fetch_error and nav_harvest.py's
 # _log_pagination_fetch_error close the spider outright once that failure
 # is a real twisted.internet.error.TimeoutError, at
-# CONTENT_LEAF_TIMEOUT_THRESHOLD occurrences on an ordinary content page, or
+# CONTENT_PAGE_TIMEOUT_THRESHOLD occurrences on an ordinary content page, or
 # immediately on a sitemap/pagination request.
 DOWNLOAD_TIMEOUT = 30
 RETRY_TIMES = 3
