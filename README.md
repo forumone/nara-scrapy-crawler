@@ -444,6 +444,24 @@ open.obamawhitehouse` afterward to overwrite these synthetic test URLs
 in the dev index with real content, rather than leaving them indexed
 indefinitely.
 
+### What this design deliberately doesn't clean up
+
+A URL that loses its last inbound link - only possible on the 4
+link-crawled sites (`open.obamawhitehouse`, `www.obamawhitehouse`,
+`letsmove.obamawhitehouse`, `www.trumpwhitehouse`; the 8 sitemap-based
+sites get their URL list from a maintained sitemap, not from what's
+currently linked) - produces no harvest row, no `*_dropped.csv` entry,
+and no `*_exclusions.csv` entry. Neither `find_confirmed_deletions` nor
+`find_excluded_urls` has anything to read for it, so nothing tombstones
+it, and its document stays in the index exactly as it was.
+
+This is deliberate, confirmed as the preferred behavior: keep stale
+content rather than delete on an ambiguous signal, and audit for it
+separately rather than guess at deletion. `last_seen_at` is the audit
+signal - it simply stops advancing for an orphaned URL while the rest
+of its `source_site` moves forward. See `nara-opensearch-lambda`'s
+README for the query that surfaces those candidates directly.
+
 ---
 
 ## 📂 Project Structure

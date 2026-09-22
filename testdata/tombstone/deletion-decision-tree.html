@@ -209,8 +209,20 @@
   }
   .pill-fixed   { background: var(--changed-soft); color: var(--changed); }
   .pill-same    { background: var(--paper-raised); color: var(--ink-soft); border: 1px solid var(--line); }
-  .pill-open    { background: var(--warn-soft); color: var(--warn); }
   .pill-removed { background: var(--ok-soft); color: var(--ok); }
+  .pill-intentional { background: var(--accent-soft); color: var(--accent); }
+
+  pre.code-block {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.55;
+    margin: 10px 0 0;
+  }
 
   /* ---- scenario table ---- */
 
@@ -369,7 +381,7 @@
   }
   .status-card.closed h3 { color: var(--changed); }
   .status-card.same h3 { color: var(--ink-soft); }
-  .status-card.open h3 { color: var(--warn); }
+  .status-card.intentional h3 { color: var(--accent); }
   .status-card ul { margin: 0; padding-left: 18px; font-size: 13.5px; }
   .status-card li { margin-bottom: 8px; }
 
@@ -472,8 +484,10 @@
       push-time abort checks (<code>ABORT_CONDITIONS.md</code>) — untouched
       by this change, since they all run before reconciliation ever sees a
       file. Three rows change outcome. Two more, not in Weikai's original
-      complaint at all, are a new trade this design makes on purpose —
-      flagged rather than left to be discovered later.
+      complaint at all, surface a deliberate policy this design commits to:
+      never delete on an ambiguous signal, only on a confirmed one. See 06
+      for how that policy gets audited rather than left to accumulate
+      silently.
     </p>
     <div class="table-wrap">
       <table>
@@ -544,14 +558,14 @@
           <tr>
             <td class="scenario">Page loses its last inbound link (4 link-crawled sites)</td>
             <td class="reason">no row anywhere — never requested</td>
-            <td class="outcome">No dropped-log entry exists to tombstone. Left untouched. Previously swept and deleted, same as a real removal.</td>
-            <td class="status"><span class="pill pill-open">New: no longer self-cleans</span></td>
+            <td class="outcome">No dropped-log entry exists to tombstone. Left in the index, deliberately - confirmed as the preferred default over auto-deleting on an ambiguous signal. See 06.</td>
+            <td class="status"><span class="pill pill-intentional">Intentional — audit via last_seen_at</span></td>
           </tr>
           <tr>
             <td class="scenario">Page dropped by the site's own <code>no_body</code>/<code>no_title</code> filter rule</td>
             <td class="reason">excluded pre-conversion — no dropped-log entry</td>
-            <td class="outcome">Same as above — nothing to tombstone, so nothing removes it either.</td>
-            <td class="status"><span class="pill pill-open">New: no longer self-cleans</span></td>
+            <td class="outcome">Same as above — nothing to tombstone, left in place by the same policy.</td>
+            <td class="status"><span class="pill pill-intentional">Intentional — audit via last_seen_at</span></td>
           </tr>
           <tr>
             <td class="scenario">Empty-200 on ordinary content page — duplicate of row 5, flagged separately in the original</td>
@@ -680,7 +694,7 @@
   <section>
     <div class="section-head">
       <span class="section-num">06</span>
-      <h2>What is closed, what is intended, and what stays open</h2>
+      <h2>What is closed, what is intended, and what is left for audit</h2>
     </div>
     <div class="status-grid">
       <div class="status-card closed">
@@ -699,15 +713,41 @@
           <li>A real <code>404</code> still removes a page, now more directly than before.</li>
         </ul>
       </div>
-      <div class="status-card open">
-        <h3>Stays open — a new trade, not a bug</h3>
+      <div class="status-card intentional">
+        <h3>Left for audit, not auto-deleted</h3>
         <ul>
-          <li>A page that loses its last inbound link, or gets filtered by a content-quality rule, no longer self-cleans from the index either — it never produces the <code>http_404</code> this design requires.</li>
-          <li>Accepted deliberately: never deleting without positive confirmation costs some staleness, in exchange for never deleting something still live.</li>
-          <li>No automated cleanup exists yet for that staleness — worth a decision on its own, not smuggled into this one.</li>
+          <li>A page that loses its last inbound link, or gets filtered by a content-quality rule, is left in the index rather than removed — confirmed as the preferred default: keep stale content, review before removing it.</li>
+          <li>Real exposure, not hypothetical: the 4 link-crawled sites (<code>open.obamawhitehouse</code>, <code>www.obamawhitehouse</code>, <code>letsmove.obamawhitehouse</code>, <code>www.trumpwhitehouse</code>) track source sites that receive real quarterly updates, under a weekly crawl cadence meant to catch exactly that kind of change.</li>
+          <li><code>last_seen_at</code> is the audit signal — already stamped on every document, already read by the Lambda's own freshness gate. No new field, no new pipeline.</li>
         </ul>
       </div>
     </div>
+    <p>
+      Every document not reconfirmed by a <code>source_site</code>'s most
+      recent crawl keeps its old <code>last_seen_at</code> while its
+      siblings move forward — that gap is the whole audit mechanism. One
+      query, scoped to a site, surfaces every candidate oldest-first:
+    </p>
+    <pre class="code-block">GET archive_content_v2/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        { "term": { "source_site.keyword": "open.obamawhitehouse" } },
+        { "range": { "last_seen_at": { "lt": "&lt;most-recent-crawl's-last_seen_at-for-this-site&gt;" } } }
+      ]
+    }
+  },
+  "sort": [{ "last_seen_at": "asc" }]
+}</pre>
+    <p class="callout">
+      This is close to a mirror of <code>_max_indexed_last_seen_at</code>,
+      the aggregation <code>lambda_function.py</code>'s own freshness gate
+      already runs on every push — that function asks "what's the newest
+      <code>last_seen_at</code> for this site," this asks the inverse,
+      "what's fallen behind it." No new capability, just pointed the other
+      direction.
+    </p>
   </section>
 
   <footer>
