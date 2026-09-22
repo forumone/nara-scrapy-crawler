@@ -353,6 +353,80 @@ AWS environment variables of its own.
 
 ---
 
+## 🧪 Testing the Tombstone Reconciliation
+
+A real crawl can't reliably reproduce "URL confirmed 404" and "URL lost
+to a network error" on demand, so verifying that `naraCrawlIngestor`
+(the downstream Lambda in `nara-opensearch-lambda`) reconciles them
+differently needs a synthetic push instead. `testdata/tombstone/`
+holds two fixture pairs, both under the real `open.obamawhitehouse`
+`source_site` (`validate.py` rejects anything not in the spider
+registry, so a fixture can't invent its own fake site).
+
+**Before pushing either fixture**, the `tombstone`-branch
+`lambda_function.py` needs to already be deployed to the target
+Lambda - it's what turns a `"_tombstone": true` row into a delete
+instead of indexing it as a garbage document. See
+`nara-opensearch-lambda`'s own README for the (manual, console-paste)
+deploy process. Confirm `--csv`/`NARA_S3_BUCKET` point at a dev
+environment, not production, before running either command below - both
+of them really upload to S3 and really invoke the live Lambda.
+
+1. **Seed** (`run1_seed.csv` + its sibling `run1_seed_dropped.csv`,
+   which exists with only a header row - `crawl_health.py` requires the
+   dropped-log to exist, even when a run has nothing to report):
+   ```bash
+   ./scrape_index_pipeline push open.obamawhitehouse \
+     --csv testdata/tombstone/run1_seed.csv \
+     --jsonl /tmp/tombstone-run1.jsonl
+   ```
+   Establishes four documents in the index: `test-unchanged`,
+   `test-updated`, `test-confirmed-gone`, and `test-network-blip`, all
+   as ordinary content.
+
+2. **Reconcile** (`run2_reconcile.csv` + `run2_reconcile_dropped.csv`):
+   ```bash
+   ./scrape_index_pipeline push open.obamawhitehouse \
+     --csv testdata/tombstone/run2_reconcile.csv \
+     --jsonl /tmp/tombstone-run2.jsonl
+   ```
+   Only `test-unchanged` and `test-updated` (with new content) appear
+   as content rows this time. `run2_reconcile_dropped.csv` logs
+   `test-confirmed-gone` as `http_404` and `test-network-blip` as
+   `network_error:TCPTimedOutError` - the CLI's own log line reports
+   `2 converted, 1 tombstoned`, confirming only the 404 produced a
+   tombstone row in the generated JSONL.
+
+Query the index for all four URLs (`<drupal_datasource_id>/<url>` as
+the `_id` - see the Lambda's own README for a ready-to-run verification
+script) after step 2 completes and its invocation shows up in
+CloudWatch Logs. Expected result:
+
+| URL | Expected after run 2 |
+|---|---|
+| `test-unchanged` | Still indexed, `last_seen_at` bumped to run 2 |
+| `test-updated` | Still indexed, new content, `last_seen_at` bumped |
+| `test-confirmed-gone` | Deleted - the tombstone removed it |
+| `test-network-blip` | Still indexed, untouched, `last_seen_at` still from run 1 |
+
+That last row is the actual regression this design fixes: a URL this
+run failed to confirm (for any reason short of a real 404) is left
+alone rather than swept, unlike the sweep-by-absence design tombstoning
+replaced.
+
+Re-running step 2 a second time (simulating an S3 redelivery or a
+manual Lambda retry) should complete without error - the second delete
+attempt against the already-gone `test-confirmed-gone` document 404s,
+which `ignore_status=(404,)` in `lambda_function.py` absorbs instead of
+aborting the whole invocation.
+
+**Cleanup**: push a real, unmodified `crawl-and-push
+open.obamawhitehouse` afterward to overwrite these synthetic test URLs
+in the dev index with real content, rather than leaving them indexed
+indefinitely.
+
+---
+
 ## 📂 Project Structure
 
 Each file's own docstring or comments carry the full detail. This is just a map.
