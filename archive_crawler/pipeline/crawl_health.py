@@ -24,12 +24,12 @@ away every URL that failed to fetch, so this check exists at all - but
 losing one ordinary page, on its own, does not cost any other page.
 
 Group 3, critical, always aborts, ignores --error-threshold and
---bypass alike: every critical_sitemap:* and critical_pagination:*
-reason. ArchiveSpiderMixin._log_sitemap_fetch_error (base.py) logs the
-first, for a failed top-level sitemap or sub-sitemap request.
-NavHarvesterMixin._log_pagination_fetch_error (nav_harvest.py) logs the
-second, for a failed listing-pagination continuation request. Both
-cover a real server error, a real network error, and the matching
+--bypass alike: every critical_sitemap:*, critical_pagination:*, and
+critical_timeout_threshold reason. ArchiveSpiderMixin._log_sitemap_fetch_error
+(base.py) logs the first, for a failed top-level sitemap or sub-sitemap
+request. NavHarvesterMixin._log_pagination_fetch_error (nav_harvest.py)
+logs the second, for a failed listing-pagination continuation request.
+Both cover a real server error, a real network error, and the matching
 empty-response special case (EmptySitemapResponseError/
 EmptyPaginationResponseError) alike - the reason string carries the
 detail, but every one of them lands in this group. A lost sub-sitemap
@@ -40,6 +40,15 @@ continuation page costs every page past it in that listing's chain, the
 same way. Neither failure is safe to average against a threshold meant
 for isolated, one-page losses, so a single row in this group always
 raises, with no override.
+
+ArchiveSpiderMixin._log_http_error (base.py) logs the third,
+critical_timeout_threshold, once CONTENT_PAGE_TIMEOUT_THRESHOLD ordinary
+content-page timeouts close the spider outright. This one carries no
+per-row sub-reason, since it marks a single aggregate event, not one
+failed request - CONTENT_PAGE_TIMEOUT_THRESHOLD and --error-threshold
+are two independent settings, for two independent jobs, and neither
+should have to be tuned to stay above the other for this circuit
+breaker to mean anything at push time.
 
 A plain HTTP 404 on either kind of request is excluded from this group
 on purpose, logged as ordinary http_404 instead. A 404 means the
@@ -109,9 +118,10 @@ def count_fetch_errors(csv_path):
 
 def find_critical_errors(csv_path):
     """Return every Group 3 row in csv_path's sibling dropped-log: a
-    critical_sitemap:*/critical_pagination:* reason, meaning a lost
-    sitemap or listing-pagination-continuation request. Returns an empty
-    list if the dropped-log does not exist or holds none."""
+    critical_sitemap:*/critical_pagination:* reason (a lost sitemap or
+    listing-pagination-continuation request), or critical_timeout_threshold
+    (the crawl-time content-page timeout circuit breaker tripped). Returns
+    an empty list if the dropped-log does not exist or holds none."""
     return [reason for reason in _read_dropped_reasons(csv_path) if reason.startswith(_CRITICAL_PREFIX)]
 
 
@@ -147,7 +157,8 @@ def check_crawl_health(source_site, csv_path, threshold, bypass=False):
             f"{source_site}: {len(critical)} critical fetch failure(s) in "
             f"{_dropped_path(csv_path)} ({detail}). A lost sitemap or "
             f"listing-pagination request costs every page past it, not "
-            f"just one page. This check has no --bypass."
+            f"just one page, and a tripped timeout circuit breaker means "
+            f"the crawl itself gave up early. This check has no --bypass."
         )
     if bypass:
         return

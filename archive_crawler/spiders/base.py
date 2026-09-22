@@ -293,7 +293,9 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         RETRY_TIMES already exhausted every retry Scrapy was going to make
         on this one URL - this method only ever sees the final failure.
         CONTENT_PAGE_TIMEOUT_THRESHOLD of those, over the whole crawl,
-        closes the spider outright, with finish_reason
+        logs one extra critical_timeout_threshold row - unconditional at
+        push time, independent of --error-threshold - then closes the
+        spider outright, with finish_reason
         content_page_timeout_threshold."""
         from twisted.internet.error import TimeoutError as DownloadTimeoutError
 
@@ -312,6 +314,7 @@ class ArchiveSpiderMixin(ExclusionLoggingMixin):
         if failure.check(DownloadTimeoutError):
             self._content_page_timeout_count = getattr(self, '_content_page_timeout_count', 0) + 1
             if self._content_page_timeout_count >= self.CONTENT_PAGE_TIMEOUT_THRESHOLD:
+                self._log_dropped(failure.request.url, 'critical_timeout_threshold')
                 self.crawler.engine.close_spider(self, 'content_page_timeout_threshold')
 
     @staticmethod

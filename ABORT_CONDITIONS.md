@@ -15,12 +15,21 @@ of request it was.
 **Content-page request.** A running count tracks how many content-page
 requests, on the current crawl, have exhausted every retry with a real
 `twisted.internet.error.TimeoutError`. At `CONTENT_PAGE_TIMEOUT_THRESHOLD`
-occurrences, the spider closes outright, with `finish_reason`
-`content_page_timeout_threshold`. Below that count, each timeout logs
-as an ordinary dropped row and the crawl continues. Only a genuine
-timeout counts toward this. A site could return a real HTTP error, or a
-connection-refused error, for every single request, and this count
-would stay at zero, since neither condition is a timeout.
+occurrences, the spider logs one extra `critical_timeout_threshold` row,
+then closes outright, with `finish_reason` `content_page_timeout_threshold`.
+Below that count, each timeout logs as an ordinary dropped row and the
+crawl continues. Only a genuine timeout counts toward this. A site
+could return a real HTTP error, or a connection-refused error, for
+every single request, and this count would stay at zero, since neither
+condition is a timeout.
+
+The extra row exists so this circuit breaker aborts the push on its own
+merit, at push-time check 3 below, regardless of `--error-threshold`.
+`CONTENT_PAGE_TIMEOUT_THRESHOLD` and `--error-threshold` are two
+independent settings for two independent jobs - the crawler's own
+patience with a bad connection, and the pusher's tolerance for a
+partly-unreachable site - and neither is meant to depend on the other
+being configured a particular way.
 
 **Sitemap or listing-pagination-continuation request.** The same
 exhausted-retry timeout, on either of these two request kinds, closes
@@ -76,6 +85,12 @@ was, a real server error, a real network error, or an empty response
 that otherwise looked like a normal page. One such row means part of
 the site was never actually discovered this run, not that one page
 happened to fail.
+
+A single `critical_timeout_threshold` row aborts the push the same way,
+with no count of its own to reach - the content-page timeout circuit
+breaker already did the counting, at crawl time. This is what keeps
+that circuit breaker meaningful regardless of what `--error-threshold`
+happens to be set to for a given site.
 
 A plain HTTP 404 on either kind of request is the one exception, and
 does not fall under either prefix. A 404 means the resource genuinely

@@ -132,8 +132,13 @@ or reconciles index contents itself.
   are the two counting functions, called by `check_crawl_health`, the
   single entry point `_push` invokes. The critical tier reads
   `critical_sitemap:*` rows from `ArchiveSpiderMixin._log_sitemap_fetch_error`
-  (`base.py`) and `critical_pagination:*` rows from
-  `NavHarvesterMixin._log_pagination_fetch_error` (`nav_harvest.py`).
+  (`base.py`), `critical_pagination:*` rows from
+  `NavHarvesterMixin._log_pagination_fetch_error` (`nav_harvest.py`), and
+  a single `critical_timeout_threshold` row from
+  `ArchiveSpiderMixin._log_http_error` (`base.py`) once
+  `CONTENT_PAGE_TIMEOUT_THRESHOLD` ordinary content-page timeouts close
+  the spider - independent of `ERROR_THRESHOLD`/`--error-threshold` on
+  purpose, since the two settings serve two different jobs.
   The threshold tier's default comes from the site's spider class, its
   `ERROR_THRESHOLD` attribute, normally 3 through `ArchiveSpiderMixin`;
   a spider overrides it to set its own default, and `--error-threshold`
