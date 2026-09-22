@@ -1,0 +1,3 @@
+url,reason
+https://www.whitehouse.gov/test-confirmed-gone,http_404
+https://www.whitehouse.gov/test-network-blip,network_error:TCPTimedOutError

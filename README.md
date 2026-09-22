@@ -118,7 +118,7 @@ Two invariants hold for every one of the 12 in-scope sites. **`scraped + dropped
 | `extension:<ext>` | Exclusions | Sitemap-based spiders only (CW1–6, Biden, GWBush). The sitemap entry failed the site's extension allowlist (e.g. a PDF or image). `NavHarvesterMixin`-based spiders (all 4 no-sitemap spiders) filter the same way during link-following. They do not log it — see "Watch out for" below. |
 | `frameset` | Dropped | The page is a frameset with no extractable content. |
 | `non_text_response` | Dropped | The response body is not text. Example: a binary file, served from an extension-less URL a link-following crawl swept up. |
-| `http_404` | Dropped | The page returned an HTTP 404. |
+| `http_404` | Dropped | The page returned an HTTP 404. The one reason in this table that also gets tombstoned into the pushed JSONL (see "Push Pipeline" below) — a 404 means the page is actually gone, unlike every other row here, which just means this run didn't confirm the page's state either way. |
 | `http_3xx` | Dropped | A redirect went unfollowed (redirects are disabled globally). |
 | `http_5xx` | Dropped | The server returned an error. |
 | `network_error:<type>` | Dropped | The connection failed at the network level. |
@@ -287,11 +287,15 @@ spider, and validating the output.
 
 `scrape_index_pipeline` takes a site's content CSV through validation,
 per-site warning-based row filtering, and CSV-to-JSONL conversion, then
-pushes the result to S3. This project's responsibility ends at that
-upload. A downstream Lambda watches the bucket, and handles indexing
-on the OpenSearch side (including any reconciliation against existing
-index contents). Nothing in this repo deletes or reconciles index
-contents. Three subcommands:
+pushes the result to S3. Conversion also tombstones every URL the
+crawl confirmed gone (a plain `http_404` in `*_dropped.csv`) as an
+explicit delete-marker row, alongside the ordinary content rows — see
+"Exclusion & Dropped Output" below and ARCHITECTURE.md's `convert.py`
+entry. This project's responsibility ends at that upload. A downstream
+Lambda watches the bucket, and handles indexing on the OpenSearch side
+(including any reconciliation against existing index contents, guided
+by those tombstone markers). Nothing in this repo deletes or reconciles
+index contents itself. Three subcommands:
 
 ```bash
 # Validate/filter/convert/push an existing CSV, no crawl
@@ -346,6 +350,117 @@ priority, when present. Copy [.env.example](.env.example) to a
 gitignored `.env`, to configure a fallback credentials file or profile,
 and the target bucket and region, for a server or workstation with no
 AWS environment variables of its own.
+
+---
+
+## 🧪 Testing the Tombstone Reconciliation
+
+A real crawl can't reliably reproduce "URL confirmed 404", "URL lost to
+a network error", and "URL newly matched by an exclusion rule" on
+demand, so verifying that `naraCrawlIngestor` (the downstream Lambda in
+`nara-opensearch-lambda`) reconciles them differently needs a synthetic
+push instead. `testdata/tombstone/` holds two fixture pairs, both under
+the real `open.obamawhitehouse` `source_site` (`validate.py` rejects
+anything not in the spider registry, so a fixture can't invent its own
+fake site).
+
+Two sources feed `tombstone_urls`: `crawl_health.find_confirmed_deletions`
+(a plain `http_404` in `*_dropped.csv`) and `crawl_health.find_excluded_urls`
+(every URL in `*_exclusions.csv`, regardless of reason - a
+`url_pattern:`/`extension:`/`rules:` match is a deliberate editorial
+signal, at least as authoritative as a confirmed 404). Both land in the
+same tombstone row shape, so the Lambda needs no changes to honor
+either source - see `_push`'s own comment in `scrape_index_pipeline`
+for exactly how the two lists combine.
+
+**Before pushing either fixture**, the `tombstone`-branch
+`lambda_function.py` needs to already be deployed to the target
+Lambda - it's what turns a `"_tombstone": true` row into a delete
+instead of indexing it as a garbage document. See
+`nara-opensearch-lambda`'s own README for the (manual, console-paste)
+deploy process. Confirm `--csv`/`NARA_S3_BUCKET` point at a dev
+environment, not production, before running either command below - both
+of them really upload to S3 and really invoke the live Lambda.
+
+1. **Seed** (`run1_seed.csv` + its siblings `run1_seed_dropped.csv` and
+   `run1_seed_exclusions.csv`, both header-only - `crawl_health.py`
+   requires the dropped-log to exist even when a run has nothing to
+   report, and a real clean crawl always writes both logs, empty or
+   not):
+   ```bash
+   ./scrape_index_pipeline push open.obamawhitehouse \
+     --csv testdata/tombstone/run1_seed.csv \
+     --jsonl /tmp/tombstone-run1.jsonl
+   ```
+   Establishes five documents in the index: `test-unchanged`,
+   `test-updated`, `test-confirmed-gone`, `test-network-blip`, and
+   `test-excluded-by-rule`, all as ordinary content.
+
+2. **Reconcile** (`run2_reconcile.csv` + `run2_reconcile_dropped.csv` +
+   `run2_reconcile_exclusions.csv`):
+   ```bash
+   ./scrape_index_pipeline push open.obamawhitehouse \
+     --csv testdata/tombstone/run2_reconcile.csv \
+     --jsonl /tmp/tombstone-run2.jsonl
+   ```
+   Only `test-unchanged` and `test-updated` (with new content) appear
+   as content rows this time. `run2_reconcile_dropped.csv` logs
+   `test-confirmed-gone` as `http_404` and `test-network-blip` as
+   `network_error:TCPTimedOutError`; `run2_reconcile_exclusions.csv`
+   logs `test-excluded-by-rule` as `rules:/test-exclude/` - the CLI's
+   own log line reports `2 converted, 2 tombstoned`, confirming the 404
+   and the exclusion match both produced a tombstone row, and the
+   network error produced neither.
+
+Query the index for all five URLs (`<drupal_datasource_id>/<url>` as
+the `_id` - see the Lambda's own README for a ready-to-run verification
+script) after step 2 completes and its invocation shows up in
+CloudWatch Logs. Expected result:
+
+| URL | Expected after run 2 |
+|---|---|
+| `test-unchanged` | Still indexed, `last_seen_at` bumped to run 2 |
+| `test-updated` | Still indexed, new content, `last_seen_at` bumped |
+| `test-confirmed-gone` | Deleted - the tombstone removed it |
+| `test-network-blip` | Still indexed, untouched, `last_seen_at` still from run 1 |
+| `test-excluded-by-rule` | Deleted - the exclusion match tombstoned it, same as a 404 |
+
+The `test-network-blip` row is the regression the original tombstone
+design fixes: a URL this run failed to confirm (for any reason short of
+a real 404 or an exclusion match) is left alone rather than swept,
+unlike the sweep-by-absence design tombstoning replaced. The
+`test-excluded-by-rule` row is what honoring the exclusion list adds on
+top - a URL the crawler was deliberately told to stop indexing comes
+out just as reliably as a URL the source site actually took down.
+
+Re-running step 2 a second time (simulating an S3 redelivery or a
+manual Lambda retry) should complete without error - the second delete
+attempt against either already-gone document (`test-confirmed-gone` or
+`test-excluded-by-rule`) 404s, which `ignore_status=(404,)` in
+`lambda_function.py` absorbs instead of aborting the whole invocation.
+
+**Cleanup**: push a real, unmodified `crawl-and-push
+open.obamawhitehouse` afterward to overwrite these synthetic test URLs
+in the dev index with real content, rather than leaving them indexed
+indefinitely.
+
+### What this design deliberately doesn't clean up
+
+A URL that loses its last inbound link - only possible on the 4
+link-crawled sites (`open.obamawhitehouse`, `www.obamawhitehouse`,
+`letsmove.obamawhitehouse`, `www.trumpwhitehouse`; the 8 sitemap-based
+sites get their URL list from a maintained sitemap, not from what's
+currently linked) - produces no harvest row, no `*_dropped.csv` entry,
+and no `*_exclusions.csv` entry. Neither `find_confirmed_deletions` nor
+`find_excluded_urls` has anything to read for it, so nothing tombstones
+it, and its document stays in the index exactly as it was.
+
+This is deliberate, confirmed as the preferred behavior: keep stale
+content rather than delete on an ambiguous signal, and audit for it
+separately rather than guess at deletion. `last_seen_at` is the audit
+signal - it simply stops advancing for an orphaned URL while the rest
+of its `source_site` moves forward. See `nara-opensearch-lambda`'s
+README for the query that surfaces those candidates directly.
 
 ---
 
