@@ -143,6 +143,11 @@ or reconciles index contents itself.
   `ERROR_THRESHOLD` attribute, normally 3 through `ArchiveSpiderMixin`;
   a spider overrides it to set its own default, and `--error-threshold`
   on the CLI always wins over both.
+  A fourth function, `find_confirmed_deletions`, is unrelated to
+  `check_crawl_health` and never raises - it returns every URL logged
+  with a plain `http_404` reason, the one dropped-log reason that means
+  a URL is actually gone rather than merely unreached this run. `_push`
+  passes its result into `convert.rows_to_jsonl` as `tombstone_urls`.
 - **`filter_rows.py`** — reads `archive_crawler/filter_rules/<source_site>.yml`
   (`drop_if_all_present: [no_body]`, or `[]` for "never drop") to decide
   which `warnings` labels (see README's "Warnings Column") drop a row
@@ -162,6 +167,17 @@ or reconciles index contents itself.
   This is a live production gap now, not a theoretical future one, though
   it has not blocked indexing, `source_site.keyword` counts, or search
   from working.
+  `rows_to_jsonl` also writes one `to_tombstone` row per URL in
+  `tombstone_urls` (`{url, source_site, last_seen_at, "_tombstone":
+  true}`), after every content row, sharing the same `last_seen_at`.
+  This is how a confirmed-gone URL (see `crawl_health.py` above) reaches
+  the pushed JSONL: as an explicit delete marker, not as a URL that's
+  simply missing from the file. A downstream reconciliation step that
+  only ever sees "present" or "absent" can't tell a real 404 apart from
+  a URL this run failed to reach for an unrelated reason - the marker
+  is what carries that distinction across the S3 boundary. This project
+  still never deletes anything itself; it only emits the signal the
+  Lambda needs to.
 
 **Watch out for.** `push.py` uploads to a `<source_site>/<source_site>.jsonl`
 key in the `NARA_S3_BUCKET` bucket (`nara-crawl-data`), one folder per site.

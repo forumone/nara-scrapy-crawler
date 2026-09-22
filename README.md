@@ -118,7 +118,7 @@ Two invariants hold for every one of the 12 in-scope sites. **`scraped + dropped
 | `extension:<ext>` | Exclusions | Sitemap-based spiders only (CW1–6, Biden, GWBush). The sitemap entry failed the site's extension allowlist (e.g. a PDF or image). `NavHarvesterMixin`-based spiders (all 4 no-sitemap spiders) filter the same way during link-following. They do not log it — see "Watch out for" below. |
 | `frameset` | Dropped | The page is a frameset with no extractable content. |
 | `non_text_response` | Dropped | The response body is not text. Example: a binary file, served from an extension-less URL a link-following crawl swept up. |
-| `http_404` | Dropped | The page returned an HTTP 404. |
+| `http_404` | Dropped | The page returned an HTTP 404. The one reason in this table that also gets tombstoned into the pushed JSONL (see "Push Pipeline" below) — a 404 means the page is actually gone, unlike every other row here, which just means this run didn't confirm the page's state either way. |
 | `http_3xx` | Dropped | A redirect went unfollowed (redirects are disabled globally). |
 | `http_5xx` | Dropped | The server returned an error. |
 | `network_error:<type>` | Dropped | The connection failed at the network level. |
@@ -287,11 +287,15 @@ spider, and validating the output.
 
 `scrape_index_pipeline` takes a site's content CSV through validation,
 per-site warning-based row filtering, and CSV-to-JSONL conversion, then
-pushes the result to S3. This project's responsibility ends at that
-upload. A downstream Lambda watches the bucket, and handles indexing
-on the OpenSearch side (including any reconciliation against existing
-index contents). Nothing in this repo deletes or reconciles index
-contents. Three subcommands:
+pushes the result to S3. Conversion also tombstones every URL the
+crawl confirmed gone (a plain `http_404` in `*_dropped.csv`) as an
+explicit delete-marker row, alongside the ordinary content rows — see
+"Exclusion & Dropped Output" below and ARCHITECTURE.md's `convert.py`
+entry. This project's responsibility ends at that upload. A downstream
+Lambda watches the bucket, and handles indexing on the OpenSearch side
+(including any reconciliation against existing index contents, guided
+by those tombstone markers). Nothing in this repo deletes or reconciles
+index contents itself. Three subcommands:
 
 ```bash
 # Validate/filter/convert/push an existing CSV, no crawl

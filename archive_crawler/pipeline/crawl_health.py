@@ -58,6 +58,17 @@ counting it here would abort every future push for that site, forever -
 the same reasoning Group 1's network_error:EmptyResponseError exclusion
 already rests on.
 
+That same property - a 404 is the one dropped-log reason that means a
+URL is actually gone, rather than merely unreached this run - is also
+what find_confirmed_deletions() below relies on. convert.py uses its
+result to tombstone those URLs explicitly in the pushed JSONL, rather
+than leaving the downstream Lambda to infer deletion from a URL's plain
+absence, which cannot tell a real 404 apart from a transient failure
+(see ABORT_CONDITIONS.md and ARCHITECTURE.md's "Push pipeline stages").
+Every other dropped-log reason - Group 1, Group 2, and Group 3 alike -
+means the crawl simply never confirmed the URL's current state, so none
+of them tombstone anything; the existing index entry is left alone.
+
 A missing dropped-log always raises, unconditionally, the same as a
 Group 3 row - --bypass does not skip this either. ExclusionLoggingMixin
 writes *_dropped.csv on every clean spider_closed, even with zero data
@@ -81,6 +92,7 @@ _NETWORK_ERROR_PREFIX = 'network_error:'
 _HTTP_5XX_REASON = 'http_5xx'
 _EXCLUDED_REASONS = frozenset({'network_error:EmptyResponseError'})
 _CRITICAL_PREFIX = 'critical_'
+_CONFIRMED_DELETE_REASON = 'http_404'
 
 
 class CrawlHealthError(ValueError):
@@ -91,14 +103,20 @@ def _dropped_path(csv_path):
     return csv_path.rsplit('.', 1)[0] + '_dropped.csv'
 
 
-def _read_dropped_reasons(csv_path):
-    """Return every `reason` value in csv_path's sibling dropped-log, or
-    an empty list if that file does not exist (see module docstring)."""
+def _read_dropped_rows(csv_path):
+    """Return every row (url + reason) in csv_path's sibling dropped-log,
+    or an empty list if that file does not exist (see module docstring)."""
     dropped_path = _dropped_path(csv_path)
     if not os.path.exists(dropped_path):
         return []
     with open(dropped_path, newline='', encoding='utf-8') as f:
-        return [row.get('reason', '') for row in csv.DictReader(f)]
+        return list(csv.DictReader(f))
+
+
+def _read_dropped_reasons(csv_path):
+    """Return every `reason` value in csv_path's sibling dropped-log, or
+    an empty list if that file does not exist (see module docstring)."""
+    return [row.get('reason', '') for row in _read_dropped_rows(csv_path)]
 
 
 def count_fetch_errors(csv_path):
@@ -123,6 +141,18 @@ def find_critical_errors(csv_path):
     (the crawl-time content-page timeout circuit breaker tripped). Returns
     an empty list if the dropped-log does not exist or holds none."""
     return [reason for reason in _read_dropped_reasons(csv_path) if reason.startswith(_CRITICAL_PREFIX)]
+
+
+def find_confirmed_deletions(csv_path):
+    """Return every URL in csv_path's sibling dropped-log logged as a
+    plain http_404 - see the module docstring's note right after the
+    Group 3 discussion for why this, alone among every dropped-log
+    reason, means the URL is confirmed gone rather than merely unreached
+    this run. Returns an empty list if the dropped-log does not exist or
+    holds none. Does not require check_crawl_health to have passed first
+    - a 404 carries the same meaning whether or not this run's
+    ordinary-failure count trips --error-threshold."""
+    return [row['url'] for row in _read_dropped_rows(csv_path) if row.get('reason') == _CONFIRMED_DELETE_REASON]
 
 
 def check_crawl_health(source_site, csv_path, threshold, bypass=False):

@@ -142,10 +142,13 @@ def _push(
     )
     if jsonl_path is None:
         jsonl_path = site_info.csv_path.rsplit('.', 1)[0] + '.jsonl'
-    count = convert.rows_to_jsonl(kept, jsonl_path)
+    tombstone_urls = crawl_health.find_confirmed_deletions(site_info.csv_path)
+    count, tombstone_count = convert.rows_to_jsonl(
+        kept, jsonl_path, tombstone_urls=tombstone_urls, source_site=site_info.source_site,
+    )
     logger.info(
-        "%s: %d row(s) read, %d dropped by warnings filter, %d converted",
-        site_info.source_site, len(rows), len(dropped), count,
+        "%s: %d row(s) read, %d dropped by warnings filter, %d converted, %d tombstoned",
+        site_info.source_site, len(rows), len(dropped), count, tombstone_count,
     )
     push.push(site_info.source_site, jsonl_path, count)
 
