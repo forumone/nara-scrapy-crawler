@@ -103,6 +103,10 @@ def _dropped_path(csv_path):
     return csv_path.rsplit('.', 1)[0] + '_dropped.csv'
 
 
+def _exclusions_path(csv_path):
+    return csv_path.rsplit('.', 1)[0] + '_exclusions.csv'
+
+
 def _read_dropped_rows(csv_path):
     """Return every row (url + reason) in csv_path's sibling dropped-log,
     or an empty list if that file does not exist (see module docstring)."""
@@ -153,6 +157,25 @@ def find_confirmed_deletions(csv_path):
     - a 404 carries the same meaning whether or not this run's
     ordinary-failure count trips --error-threshold."""
     return [row['url'] for row in _read_dropped_rows(csv_path) if row.get('reason') == _CONFIRMED_DELETE_REASON]
+
+
+def find_excluded_urls(csv_path):
+    """Every URL in csv_path's sibling exclusions-log, regardless of
+    reason - an exclusion rule match is a deliberate editorial signal,
+    at least as authoritative as a confirmed 404. Unlike
+    find_confirmed_deletions, this reads *_exclusions.csv, not
+    *_dropped.csv - a url_pattern:/extension:/rules: match happens
+    before a harvest row ever exists for the URL (see
+    ExclusionLoggingMixin's own docstring), so it never appears in the
+    dropped-log at all. Returns an empty list if the exclusions-log does
+    not exist or holds none. Independent of check_crawl_health, same as
+    find_confirmed_deletions - an exclusion match carries the same
+    meaning regardless of this run's ordinary-failure count."""
+    path = _exclusions_path(csv_path)
+    if not os.path.exists(path):
+        return []
+    with open(path, newline='', encoding='utf-8') as f:
+        return [row['url'] for row in csv.DictReader(f)]
 
 
 def check_crawl_health(source_site, csv_path, threshold, bypass=False):

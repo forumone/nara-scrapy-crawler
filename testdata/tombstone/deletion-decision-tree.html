@@ -1,0 +1,717 @@
+<title>Deletion Decision Tree</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --paper: #eceee7;
+    --paper-raised: #f5f6f1;
+    --ink: #1c211d;
+    --ink-soft: #4c554e;
+    --line: #c9cdc0;
+    --accent: #2b4a63;
+    --accent-soft: #33587550;
+    --folder: #a97c3f;
+    --folder-soft: #a97c3f22;
+    --ok: #3f6a4c;
+    --ok-soft: #3f6a4c1c;
+    --changed: #1f6f7c;
+    --changed-soft: #1f6f7c1c;
+    --warn: #a15a2a;
+    --warn-soft: #a15a2a1c;
+    --code-bg: #dfe2d8;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14181a;
+      --paper-raised: #1b2124;
+      --ink: #e7ebe4;
+      --ink-soft: #9aa89e;
+      --line: #333e3a;
+      --accent: #7fa9c9;
+      --accent-soft: #7fa9c930;
+      --folder: #d6a668;
+      --folder-soft: #d6a66826;
+      --ok: #7fb493;
+      --ok-soft: #7fb49324;
+      --changed: #5fb8c9;
+      --changed-soft: #5fb8c924;
+      --warn: #d98f57;
+      --warn-soft: #d98f5724;
+      --code-bg: #232a2c;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #14181a;
+    --paper-raised: #1b2124;
+    --ink: #e7ebe4;
+    --ink-soft: #9aa89e;
+    --line: #333e3a;
+    --accent: #7fa9c9;
+    --accent-soft: #7fa9c930;
+    --folder: #d6a668;
+    --folder-soft: #d6a66826;
+    --ok: #7fb493;
+    --ok-soft: #7fb49324;
+    --changed: #5fb8c9;
+    --changed-soft: #5fb8c924;
+    --warn: #d98f57;
+    --warn-soft: #d98f5724;
+    --code-bg: #232a2c;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    padding: 0 20px;
+  }
+
+  .page {
+    max-width: 740px;
+    margin: 0 auto;
+    padding-block: 48px 96px;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Source Serif 4', Georgia, serif;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+
+  code, .mono {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  /* ---- masthead ---- */
+
+  .masthead {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 20px;
+    margin-bottom: 8px;
+  }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--folder);
+    margin: 0 0 10px;
+  }
+
+  h1 {
+    font-size: 38px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+
+  .subtitle {
+    font-size: 15px;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  /* ---- provenance banner ---- */
+
+  .banner {
+    margin-top: 24px;
+    padding: 18px 20px;
+    background: var(--changed-soft);
+    border-left: 3px solid var(--changed);
+    border-radius: 2px;
+    font-size: 14.5px;
+    line-height: 1.65;
+  }
+
+  .banner strong { color: var(--changed); }
+
+  .banner .stamp {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--paper-raised);
+    background: var(--changed);
+    padding: 3px 8px;
+    border-radius: 2px;
+    margin-bottom: 10px;
+  }
+
+  /* ---- sections ---- */
+
+  section {
+    margin-top: 56px;
+  }
+
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+
+  .section-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--folder);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+
+  h2 {
+    font-size: 23px;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  p { max-width: 62ch; }
+  section > p, section > .callout, section > ul { max-width: 62ch; }
+
+  a { color: var(--accent); }
+
+  ul.plain {
+    padding-left: 20px;
+    max-width: 62ch;
+  }
+  ul.plain li { margin-bottom: 8px; }
+
+  .callout {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 16px 18px;
+    font-size: 14.5px;
+    margin-block: 18px;
+  }
+
+  /* ---- status pills ---- */
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    padding: 3px 8px;
+    border-radius: 100px;
+    white-space: nowrap;
+  }
+  .pill-fixed   { background: var(--changed-soft); color: var(--changed); }
+  .pill-same    { background: var(--paper-raised); color: var(--ink-soft); border: 1px solid var(--line); }
+  .pill-open    { background: var(--warn-soft); color: var(--warn); }
+  .pill-removed { background: var(--ok-soft); color: var(--ok); }
+
+  /* ---- scenario table ---- */
+
+  .table-wrap {
+    overflow-x: auto;
+    margin-block: 18px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 760px;
+    font-size: 13.5px;
+  }
+
+  thead th {
+    text-align: left;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    background: var(--paper-raised);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+  }
+
+  tbody td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:nth-child(even) { background: color-mix(in srgb, var(--paper-raised) 55%, transparent); }
+
+  td.scenario { font-weight: 500; max-width: 190px; }
+  td.reason code {
+    display: inline-block;
+    background: var(--code-bg);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  td.outcome { max-width: 220px; color: var(--ink-soft); }
+  td.status { white-space: nowrap; }
+
+  /* ---- case file (worked example) ---- */
+
+  .case-file {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-block: 18px;
+  }
+  .case-file-head {
+    background: var(--paper-raised);
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .case-file-head .url {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+  }
+  .case-steps {
+    padding: 4px 18px 18px;
+  }
+  .case-step {
+    display: grid;
+    grid-template-columns: 84px 1fr;
+    gap: 14px;
+    padding: 14px 0;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+  }
+  .case-step:first-child { border-top: none; }
+  .case-step .when {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    padding-top: 2px;
+  }
+  .case-step .body strong { color: var(--ink); }
+
+  .fork {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .fork > div { background: var(--paper-raised); padding: 12px 14px; font-size: 13.5px; }
+  .fork .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .fork .before .label { color: var(--warn); }
+  .fork .after .label { color: var(--ok); }
+
+  @media (max-width: 520px) {
+    .fork { grid-template-columns: 1fr; }
+  }
+
+  /* ---- diagram ---- */
+
+  figure { margin: 18px 0 8px; }
+  figcaption {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin-top: 10px;
+    max-width: 62ch;
+  }
+  svg text { fill: var(--ink); font-family: 'IBM Plex Sans', sans-serif; }
+  svg .mono-label { font-family: 'IBM Plex Mono', monospace; }
+  svg .lane-label { fill: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.05em; }
+
+  /* ---- status grid (section 6) ---- */
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-block: 18px;
+  }
+  @media (max-width: 640px) {
+    .status-grid { grid-template-columns: 1fr; }
+  }
+  .status-card {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 16px 16px 18px;
+    background: var(--paper-raised);
+  }
+  .status-card h3 {
+    font-size: 13px;
+    font-family: 'IBM Plex Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0 0 10px;
+  }
+  .status-card.closed h3 { color: var(--changed); }
+  .status-card.same h3 { color: var(--ink-soft); }
+  .status-card.open h3 { color: var(--warn); }
+  .status-card ul { margin: 0; padding-left: 18px; font-size: 13.5px; }
+  .status-card li { margin-bottom: 8px; }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+</style>
+
+<div class="page">
+
+  <div class="masthead">
+    <p class="eyebrow">Internal — NARA archive crawler / OpenSearch ingestion</p>
+    <h1>Deletion Decision Tree</h1>
+    <p class="subtitle">For the Weikai deletion-safety conversation (Sep 2–21, 2026) — updated fork, Sep 22, 2026</p>
+  </div>
+
+  <div class="banner">
+    <span class="stamp">Corrected fork</span>
+    <div>
+      The original version of this document (RkPrgNN5s1…) described the
+      tombstone design as internally floated and never adopted, and closed
+      Weikai's "just don't delete on a failed fetch" request as unreconcilable
+      with contracted scope. Neither is true anymore. Tombstoning shipped —
+      <code>archive_crawler</code> and <code>nara-opensearch-lambda</code>,
+      both on a <code>tombstone</code> branch, committed and pushed — and it
+      resolves the core conflict section 02 below describes, using data the
+      crawler already computed and was discarding, not a new re-verification
+      pipeline. Sections 03, 04, and 06 are rewritten against the shipped
+      logic. Sections 01, 02, and 05 keep their original shape, corrected
+      where the old conclusion no longer holds.
+    </div>
+  </div>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">01</span>
+      <h2>Where this comes from</h2>
+    </div>
+    <p>
+      Weikai raised the same concern twice — once about a full purge risking
+      empty search results, once about the timestamp-based reconciliation
+      that replaced it: a page that fails to load for a transient reason
+      (a network blip, a slow server, a bad CDN response) is indistinguishable,
+      from the pushed file's own contents, from a page genuinely removed from
+      the site. Both are simply absent. The original policy swept both alike.
+    </p>
+    <p>
+      That concern was correct. It's checked directly against the crawl-time
+      and push-time code, not just against what the client said: a page that
+      times out mid-crawl produces the same kind of entry — a dropped-log row,
+      nothing in the pushed file — as a page that returns a clean
+      <code>404</code>. Nothing downstream could tell them apart, so nothing
+      downstream should have deleted on either signal alone.
+    </p>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">02</span>
+      <h2>The conflict Weikai's "just don't delete" request runs into</h2>
+    </div>
+    <p>
+      Weikai's own counter-proposal was a persistent inventory — URL,
+      response status, content checksum — diffed crawl over crawl, so a page
+      only comes out of the index on a confirmed <code>404</code>, never on
+      a fetch failure. Building that is real, scoped work: new persistent
+      state, a new comparison step, a new thing to keep correct across every
+      site. That's the conflict this document originally closed as
+      unreconcilable with the contract as scoped.
+    </p>
+    <p>
+      What that framing missed: the crawler already classifies <em>why</em>
+      a URL failed, per request, before this conversation ever started.
+      <code>ArchiveSpiderMixin._log_http_error</code> writes one of
+      <code>http_404</code>, <code>http_5xx</code>, <code>http_3xx</code>, or
+      <code>network_error:&lt;type&gt;</code> to <code>*_dropped.csv</code> —
+      today, on every crawl, for every site. Nothing needed inventing. The
+      fix is narrower than the conflict this section originally posed: read
+      the one reason that already means "confirmed gone," carry it across
+      the S3 boundary as an explicit marker instead of leaving deletion to be
+      inferred from absence, and leave every other reason alone. No
+      checksums, no new persistent store — the conflict was solvable inside
+      contracted scope because the signal was already being computed and
+      thrown away.
+    </p>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">03</span>
+      <h2>Every scenario, in one table</h2>
+    </div>
+    <p>
+      Ten of these thirteen rows are the crawl-time circuit breaker and
+      push-time abort checks (<code>ABORT_CONDITIONS.md</code>) — untouched
+      by this change, since they all run before reconciliation ever sees a
+      file. Three rows change outcome. Two more, not in Weikai's original
+      complaint at all, are a new trade this design makes on purpose —
+      flagged rather than left to be discovered later.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Scenario</th><th>Dropped-log reason</th><th>Outcome now</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="scenario">Page genuinely removed</td>
+            <td class="reason"><code>http_404</code></td>
+            <td class="outcome">Explicit tombstone row → targeted delete of that URL's document, independent of timestamps.</td>
+            <td class="status"><span class="pill pill-removed">Removed — correct</span></td>
+          </tr>
+          <tr>
+            <td class="scenario">Isolated timeout or <code>5xx</code>, below <code>ERROR_THRESHOLD</code></td>
+            <td class="reason"><code>network_error:*</code> / <code>http_5xx</code></td>
+            <td class="outcome">Not tombstoned, absent from the file either way — left untouched. Previously swept and deleted this run.</td>
+            <td class="status"><span class="pill pill-fixed">Fixed by this change</span></td>
+          </tr>
+          <tr>
+            <td class="scenario">Content-page timeouts reach <code>CONTENT_PAGE_TIMEOUT_THRESHOLD</code> (5) in one crawl</td>
+            <td class="reason"><code>critical_timeout_threshold</code></td>
+            <td class="outcome">Spider closes outright; push aborts unconditionally. Nothing reaches reconciliation this cycle.</td>
+            <td class="status"><span class="pill pill-same">Unchanged</span></td>
+          </tr>
+          <tr>
+            <td class="scenario"><code>5xx</code>/network rows reach <code>ERROR_THRESHOLD</code> at push time</td>
+            <td class="reason">count ≥ threshold</td>
+            <td class="outcome">Push aborts entirely; <code>--bypass</code> required to override. Nothing pushed, nothing reconciled.</td>
+            <td class="status"><span class="pill pill-same">Unchanged</span></td>
+          </tr>
+          <tr>
+            <td class="scenario">Empty-200 (CDN defect) on an ordinary content page</td>
+            <td class="reason"><code>network_error:EmptyResponseError</code></td>
+            <td class="outcome">Not tombstoned — the reason isn't <code>http_404</code> — so it's left untouched instead of recurring indefinitely on every affected run.</td>
+            <td class="status"><span class="pill pill-fixed">Also fixed (unintended win)</span></td>
+          </tr>
+          <tr>
+            <td class="scenario">Empty-200 on a listing-pagination or sitemap request</td>
+            <td class="reason"><code>critical_pagination:</code> / <code>critical_sitemap:</code></td>
+            <td class="outcome">Unconditional abort on the first occurrence, before reconciliation is reached.</td>
+            <td class="status"><span class="pill pill-same">Unchanged</span></td>
+          </tr>
+          <tr>
+            <td class="scenario">Lost sitemap or sub-sitemap fetch</td>
+            <td class="reason"><code>critical_sitemap:*</code></td>
+            <td class="outcome">Unconditional abort, no count, no <code>--bypass</code>.</td>
+            <td class="status"><span class="pill pill-same">Unchanged</span></td>
+          </tr>
+          <tr>
+            <td class="scenario">Listing-pagination or sitemap timeout, even once</td>
+            <td class="reason"><code>critical_pagination:*</code></td>
+            <td class="outcome">Spider closes immediately; push aborts unconditionally.</td>
+            <td class="status"><span class="pill pill-same">Unchanged</span></td>
+          </tr>
+          <tr>
+            <td class="scenario"><code>*_dropped.csv</code> missing entirely</td>
+            <td class="reason">n/a — crash signal</td>
+            <td class="outcome">Hard abort, no <code>--bypass</code>.</td>
+            <td class="status"><span class="pill pill-same">Unchanged</span></td>
+          </tr>
+          <tr>
+            <td class="scenario">Main CSV has zero rows</td>
+            <td class="reason">n/a</td>
+            <td class="outcome">Hard abort, no <code>--bypass</code>.</td>
+            <td class="status"><span class="pill pill-same">Unchanged</span></td>
+          </tr>
+          <tr>
+            <td class="scenario">Page loses its last inbound link (4 link-crawled sites)</td>
+            <td class="reason">no row anywhere — never requested</td>
+            <td class="outcome">No dropped-log entry exists to tombstone. Left untouched. Previously swept and deleted, same as a real removal.</td>
+            <td class="status"><span class="pill pill-open">New: no longer self-cleans</span></td>
+          </tr>
+          <tr>
+            <td class="scenario">Page dropped by the site's own <code>no_body</code>/<code>no_title</code> filter rule</td>
+            <td class="reason">excluded pre-conversion — no dropped-log entry</td>
+            <td class="outcome">Same as above — nothing to tombstone, so nothing removes it either.</td>
+            <td class="status"><span class="pill pill-open">New: no longer self-cleans</span></td>
+          </tr>
+          <tr>
+            <td class="scenario">Empty-200 on ordinary content page — duplicate of row 5, flagged separately in the original</td>
+            <td class="reason"><code>network_error:EmptyResponseError</code></td>
+            <td class="outcome">See row 5. No longer a distinct open case.</td>
+            <td class="status"><span class="pill pill-fixed">Folded into row 5</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">04</span>
+      <h2>The About Us case, worked through</h2>
+    </div>
+    <p>
+      <code>openobamawhitehouse.archives.gov/about</code> — evergreen,
+      high-value, one of the pages most likely to be linked to from outside
+      the archive. It last indexed clean on <span class="mono">Sep 15</span>.
+      On the <span class="mono">Sep 22</span> recrawl, a mid-run connection
+      reset takes it out after both retries exhaust.
+    </p>
+    <div class="case-file">
+      <div class="case-file-head">
+        <span class="url">/about</span>
+        <span class="pill pill-same">network_error:TCPTimedOutError</span>
+      </div>
+      <div class="case-steps">
+        <div class="case-step">
+          <div class="when">Sep 15</div>
+          <div class="body">Indexed normally. <code>last_seen_at = 2026-09-15</code>.</div>
+        </div>
+        <div class="case-step">
+          <div class="when">Sep 22</div>
+          <div class="body">
+            Fetch fails, retries exhaust, logged to <code>*_dropped.csv</code>
+            as <code>network_error:TCPTimedOutError</code>. Below
+            <code>ERROR_THRESHOLD</code> — this one page's loss doesn't abort
+            the push. The URL is absent from the pushed file either way.
+          </div>
+        </div>
+        <div class="case-step">
+          <div class="when">Reconciled</div>
+          <div class="body">
+            <div class="fork">
+              <div class="before">
+                <span class="label">Before this fork</span>
+                Absence from the file swept the document. <code>/about</code>
+                drops out of search until the next clean crawl happens to
+                succeed.
+              </div>
+              <div class="after">
+                <span class="label">Now</span>
+                No <code>http_404</code>, no tombstone row. The document
+                keeps its <code>2026-09-15</code> content, visibly a week
+                stale, but present.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">05</span>
+      <h2>The decision tree</h2>
+    </div>
+    <p>
+      What changed structurally: the trigger for deletion moved from "is
+      this URL missing from the file" to "does this URL carry an explicit
+      gone-marker" — a one-branch difference with a very different failure
+      mode on the wrong side of it.
+    </p>
+    <figure>
+      <svg viewBox="0 0 700 330" role="img" aria-label="Before: any URL missing from the pushed file is deleted, regardless of why it's missing. After: only a URL explicitly tombstoned as a confirmed 404 is deleted; anything else missing from the file is left untouched.">
+        <defs>
+          <marker id="dot-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+            <polygon points="0,0 8,4 0,8" fill="currentColor" />
+          </marker>
+        </defs>
+
+        <text x="10" y="22" class="lane-label" font-size="11">BEFORE</text>
+        <rect x="10" y="34" width="190" height="46" rx="4" fill="none" stroke="currentColor" opacity="0.5"/>
+        <text x="105" y="58" text-anchor="middle" font-size="13">URL missing from file</text>
+        <line x1="200" y1="57" x2="260" y2="57" stroke="currentColor" opacity="0.5" marker-end="url(#dot-arrow)"/>
+        <text x="230" y="48" text-anchor="middle" class="mono-label" font-size="10" opacity="0.7">any reason</text>
+        <rect x="262" y="34" width="150" height="46" rx="4" fill="var(--warn-soft)" stroke="var(--warn)"/>
+        <text x="337" y="53" text-anchor="middle" font-size="13" fill="var(--warn)">Delete</text>
+        <text x="337" y="68" text-anchor="middle" font-size="10" fill="var(--warn)" opacity="0.85">real or transient</text>
+
+        <line x1="10" y1="108" x2="690" y2="108" stroke="var(--line)"/>
+
+        <text x="10" y="138" class="lane-label" font-size="11">AFTER</text>
+
+        <rect x="10" y="150" width="190" height="46" rx="4" fill="none" stroke="currentColor" opacity="0.5"/>
+        <text x="105" y="174" text-anchor="middle" font-size="13">URL's dropped-log reason</text>
+
+        <line x1="105" y1="196" x2="105" y2="230" stroke="currentColor" opacity="0.5"/>
+        <line x1="105" y1="230" x2="230" y2="230" stroke="currentColor" opacity="0.5" marker-end="url(#dot-arrow)"/>
+        <text x="167" y="222" text-anchor="middle" class="mono-label" font-size="10" opacity="0.7">== http_404</text>
+        <rect x="232" y="207" width="150" height="46" rx="4" fill="var(--changed-soft)" stroke="var(--changed)"/>
+        <text x="307" y="226" text-anchor="middle" font-size="13" fill="var(--changed)">Tombstone</text>
+        <text x="307" y="241" text-anchor="middle" font-size="10" fill="var(--changed)" opacity="0.85">explicit delete</text>
+
+        <line x1="105" y1="196" x2="105" y2="290" stroke="currentColor" opacity="0.5"/>
+        <line x1="105" y1="290" x2="230" y2="290" stroke="currentColor" opacity="0.5" marker-end="url(#dot-arrow)"/>
+        <text x="167" y="282" text-anchor="middle" class="mono-label" font-size="10" opacity="0.7">anything else / never seen</text>
+        <rect x="232" y="267" width="180" height="46" rx="4" fill="var(--ok-soft)" stroke="var(--ok)"/>
+        <text x="322" y="286" text-anchor="middle" font-size="13" fill="var(--ok)">Left untouched</text>
+        <text x="322" y="301" text-anchor="middle" font-size="10" fill="var(--ok)" opacity="0.85">stale, still present</text>
+      </svg>
+      <figcaption>
+        Before: absence alone deleted, so a real removal and a network blip
+        were indistinguishable. After: only the one reason that means
+        confirmed-gone (<code>http_404</code>) triggers deletion; every other
+        reason — including never having a dropped-log entry at all — leaves
+        the existing document alone.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">06</span>
+      <h2>What is closed, what is intended, and what stays open</h2>
+    </div>
+    <div class="status-grid">
+      <div class="status-card closed">
+        <h3>Closed by this fork</h3>
+        <ul>
+          <li>A transient fetch failure no longer deletes a live page — the core of Weikai's complaint.</li>
+          <li>The empty-200/CDN-defect case no longer recurs indefinitely — flagged as open in the original, resolved as a side effect.</li>
+          <li>Deletion no longer depends on <code>last_seen_at</code> comparisons at all — it's carried explicitly, row by row.</li>
+        </ul>
+      </div>
+      <div class="status-card same">
+        <h3>Intended, unchanged</h3>
+        <ul>
+          <li>Every crawl-time and push-time abort check (rows 3, 4, 6–10) — none of them touch reconciliation logic.</li>
+          <li><code>--bypass</code> still only ever skips the ordinary-failure threshold, never the critical or crash checks.</li>
+          <li>A real <code>404</code> still removes a page, now more directly than before.</li>
+        </ul>
+      </div>
+      <div class="status-card open">
+        <h3>Stays open — a new trade, not a bug</h3>
+        <ul>
+          <li>A page that loses its last inbound link, or gets filtered by a content-quality rule, no longer self-cleans from the index either — it never produces the <code>http_404</code> this design requires.</li>
+          <li>Accepted deliberately: never deleting without positive confirmation costs some staleness, in exchange for never deleting something still live.</li>
+          <li>No automated cleanup exists yet for that staleness — worth a decision on its own, not smuggled into this one.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Forked from RkPrgNN5s1H8Ee6yTFrhnQ · archive_crawler + nara-opensearch-lambda, branch <code>tombstone</code> · updated 2026-09-22
+  </footer>
+
+</div>

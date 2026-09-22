@@ -143,11 +143,19 @@ or reconciles index contents itself.
   `ERROR_THRESHOLD` attribute, normally 3 through `ArchiveSpiderMixin`;
   a spider overrides it to set its own default, and `--error-threshold`
   on the CLI always wins over both.
-  A fourth function, `find_confirmed_deletions`, is unrelated to
-  `check_crawl_health` and never raises - it returns every URL logged
-  with a plain `http_404` reason, the one dropped-log reason that means
-  a URL is actually gone rather than merely unreached this run. `_push`
-  passes its result into `convert.rows_to_jsonl` as `tombstone_urls`.
+  Two further functions, `find_confirmed_deletions` and
+  `find_excluded_urls`, are unrelated to `check_crawl_health` and never
+  raise. `find_confirmed_deletions` returns every URL logged with a
+  plain `http_404` reason, the one dropped-log reason that means a URL
+  is actually gone rather than merely unreached this run.
+  `find_excluded_urls` returns every URL in the sibling
+  `*_exclusions.csv` instead, regardless of reason - a
+  `url_pattern:`/`extension:`/`rules:` match happens before a harvest
+  row ever exists (see `ExclusionLoggingMixin`'s own docstring), so it
+  never reaches `*_dropped.csv` at all, and it's read as an equally
+  authoritative "confirmed, don't index this" signal as a 404. `_push`
+  unions both functions' results into one `tombstone_urls` list, passed
+  into `convert.rows_to_jsonl`.
 - **`filter_rows.py`** — reads `archive_crawler/filter_rules/<source_site>.yml`
   (`drop_if_all_present: [no_body]`, or `[]` for "never drop") to decide
   which `warnings` labels (see README's "Warnings Column") drop a row
