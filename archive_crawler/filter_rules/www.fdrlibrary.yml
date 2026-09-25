@@ -1,6 +1,6 @@
 # Warning-based row filter for www.fdrlibrary, applied at index time
-# (scrape_index_pipeline), not at crawl time. Drop a row only when BOTH
-# no_body and no_title are present together - either alone still gets
-# indexed.
+# (scrape_index_pipeline), not at crawl time. Drop a row when no_body is
+# present. The spider always gets a title from <title>, so a
+# [no_body, no_title] rule never drops a row on this site.
 
-drop_if_all_present: [no_body, no_title]
+drop_if_all_present: [no_body]
