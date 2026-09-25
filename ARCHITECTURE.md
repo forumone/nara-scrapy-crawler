@@ -53,9 +53,9 @@ be a real extension, always passes, regardless of mode.
 ## Never pass `-O`/`-o` to a multi-`FEEDS`-entry spider
 
 **What.** A hard rule: never pass Scrapy's `-O`/`-o` CLI flags to any of
-this project's 12 in-scope content spiders.
+this project's 13 in-scope content spiders.
 
-**Why.** Every fused spider (all 8 sitemap-based sites, plus
+**Why.** Every fused spider (all 9 sitemap-based sites, plus
 `obama_whitehouse`/`letsmove`/`trumpwhitehouse`) declares
 `custom_settings['FEEDS']` with **two**
 entries: a harvest feed (`item_classes: [HarvestItem]`, `fields:
@@ -166,7 +166,7 @@ or reconciles index contents itself.
 **Watch out for.** `push.py` uploads to a `<source_site>/<source_site>.jsonl`
 key in the `NARA_S3_BUCKET` bucket (`nara-crawl-data`), one folder per site.
 `convert.py`'s `id`/`document_type`/`source`/`changed` gap (see above) is
-still open, live in production across all 12 sites now, but does not block
+still open, live in production across all 13 sites now, but does not block
 a real upload or search from working today.
 Credentials: this project uses boto3's own default provider chain as-is
 (real environment variables first, a shared credentials file after). See

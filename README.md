@@ -6,7 +6,7 @@ This project is a containerized **Scrapy** crawler. AWS Batch deploys it. It ser
 
 ## 🏗 Architecture
 
-This repo crawls static, archived websites. It pushes each site's converted JSONL to an S3 bucket (see "Push Pipeline" below). A downstream Lambda, outside this repo, watches that bucket and indexes into OpenSearch. The search front end queries OpenSearch directly, through Drupal's `search_api`. Drupal does not trigger or control this repo's crawling or pushing.
+This repo crawls static, archived websites. It pushes each site's converted JSONL to an S3 bucket (see "Push Pipeline" below). One site is not archived: `fdrlibrary` crawls www.fdrlibrary.org, a live site that its owners still maintain. The client has no access to that site to connect it to the search index directly. An upgrade or redesign of that site will probably break its spider. A downstream Lambda, outside this repo, watches that bucket and indexes into OpenSearch. The search front end queries OpenSearch directly, through Drupal's `search_api`. Drupal does not trigger or control this repo's crawling or pushing.
 
 What triggers a crawl remains an open question, out of scope for this repo. Options include manual invocation, `crontab.example`'s schedule, or some other interface.
 
@@ -62,8 +62,8 @@ git-tracked, through `data/.gitkeep`. The `.csv` files themselves are gitignored
 
 ## 🗺 Sitemap-Based Archive Spiders
 
-The Clinton (CW1 through CW6), Biden, and GWBush whitehouse spiders discover
-their own URLs from each site's committed sitemap. Each one scrapes content
+The Clinton (CW1 through CW6), Biden, GWBush whitehouse, and FDR Library
+spiders discover their own URLs from each site's committed sitemap. Each one scrapes content
 in the same run, through `SitemapUrlSpiderMixin` (`archive_crawler/spiders/base.py`):
 
 ```bash
@@ -71,11 +71,11 @@ in the same run, through `SitemapUrlSpiderMixin` (`archive_crawler/spiders/base.
 ```
 
 Replace with any of: `clintonwhitehouse1`, `clintonwhitehouse3` through `6`,
-`bidenwhitehouse`, `georgewbush_whitehouse`. Never pass `-O` or `-o` here.
+`bidenwhitehouse`, `georgewbush_whitehouse`, `fdrlibrary`. Never pass `-O` or `-o` here.
 See the "Never pass `-O`/`-o` to a multi-`FEEDS`-entry
 spider" section in ARCHITECTURE.md.
 
-These 8 spiders each model themselves on `sitemap_harvest`, the generic,
+These 9 spiders each model themselves on `sitemap_harvest`, the generic,
 one-size-fits-all sitemap URL harvester. It is not part of running any
 of them. It exists only to explore a *new* sitemap-based site's URL
 shape, before writing that site's own spider (see the "Sitemap
@@ -107,15 +107,15 @@ derived default). Each row holds the skipped URL and a typed reason.
 Neither file's rows ever appear in the main output CSV. The split
 depends on whether a harvest row exists for the URL:
 
-- **`{source_site}_exclusions.csv`** — a URL rejected *before* it was ever a harvest candidate, so it has no harvest row at all. For the 4 no-sitemap spiders, this means a `rules:`-matched link. Real link-following found it, then dropped it before it was ever requested. For the 8 sitemap-based spiders, this means a sitemap entry that failed the extension allowlist, or matched a `rules:` entry. Either way, the spider dropped it before writing a harvest row for it. Read this file for a per-rule audit of what got excluded, and why.
+- **`{source_site}_exclusions.csv`** — a URL rejected *before* it was ever a harvest candidate, so it has no harvest row at all. For the 4 no-sitemap spiders, this means a `rules:`-matched link. Real link-following found it, then dropped it before it was ever requested. For the 9 sitemap-based spiders, this means a sitemap entry that failed the extension allowlist, or matched a `rules:` entry. Either way, the spider dropped it before writing a harvest row for it. Read this file for a per-rule audit of what got excluded, and why.
 - **`{source_site}_dropped.csv`** — a URL that already has a harvest row, then got rejected. This happens post-fetch (a bad response) or post-harvest-row (fetched fine, judged non-content).
 
-Two invariants hold for every one of the 12 in-scope sites. **`scraped + dropped = harvested`** always holds. For the 8 sitemap-based spiders specifically, **`harvested + excluded = sitemap total`** also holds. The 4 no-sitemap spiders have no fixed "total" to reconcile `excluded` against. A nav crawl's link-discovery has no fixed URL list to bound it, unlike a sitemap.
+Two invariants hold for every one of the 13 in-scope sites. **`scraped + dropped = harvested`** always holds. For the 9 sitemap-based spiders specifically, **`harvested + excluded = sitemap total`** also holds. The 4 no-sitemap spiders have no fixed "total" to reconcile `excluded` against. A nav crawl's link-discovery has no fixed URL list to bound it, unlike a sitemap.
 
 | Reason | File | Description |
 |---|---|---|
 | `url_pattern:/foo/` | Exclusions | The URL matched a known non-content path prefix. |
-| `extension:<ext>` | Exclusions | Sitemap-based spiders only (CW1–6, Biden, GWBush). The sitemap entry failed the site's extension allowlist (e.g. a PDF or image). `NavHarvesterMixin`-based spiders (all 4 no-sitemap spiders) filter the same way during link-following. They do not log it — see "Watch out for" below. |
+| `extension:<ext>` | Exclusions | Sitemap-based spiders only (CW1–6, Biden, GWBush, FDR Library). The sitemap entry failed the site's extension allowlist (e.g. a PDF or image). `NavHarvesterMixin`-based spiders (all 4 no-sitemap spiders) filter the same way during link-following. They do not log it — see "Watch out for" below. |
 | `frameset` | Dropped | The page is a frameset with no extractable content. |
 | `non_text_response` | Dropped | The response body is not text. Example: a binary file, served from an extension-less URL a link-following crawl swept up. |
 | `http_404` | Dropped | The page returned an HTTP 404. |
@@ -129,7 +129,7 @@ Two invariants hold for every one of the 12 in-scope sites. **`scraped + dropped
 **Watch out for**: `NavHarvesterMixin`-based spiders (the 4 no-sitemap
 sites) never log a link that `_filter_web_urls` drops for failing the
 extension allowlist. That link is silently excluded from following,
-with no `extension:*` row anywhere, unlike the 8 sitemap-based spiders'
+with no `extension:*` row anywhere, unlike the 9 sitemap-based spiders'
 own extension-allowlist rejections during sitemap parsing.
 `_walk_listing_pagination`'s own pagination-continuation pages (page 2,
 3, and on) never get a harvest row either way. A `non_text_response`
@@ -229,7 +229,7 @@ output. Override it per-run with `--memusage-limit N` on `crawl`/
 
 ## 🛡 Always Use the Wrapper
 
-For every one of the 12 in-scope content spiders, launch through
+For every one of the 13 in-scope content spiders, launch through
 `./scrape_index_pipeline crawl`/`crawl-and-push`, never a bare `scrapy
 crawl <site>` call. This is not only a style preference.
 `scrape_index_pipeline`'s own `_crawl` step checks the spider process's
@@ -252,7 +252,7 @@ scheme. Every spider writes to its own path automatically, except
 `generic_crawl`/`generic_crawl_harvest`. Those two are one-off
 exploratory tools with no fixed site identity (see "Running Locally"
 above), and the only two spiders that still require `-O`/`-o` for any
-output at all. Do not pass `-O <path>` to any of the 12 in-scope
+output at all. Do not pass `-O <path>` to any of the 13 in-scope
 content spiders, to redirect their output. Every one of them has a
 two-entry `custom_settings['FEEDS']` (harvest and content). Scrapy's
 CLI setting replaces that whole dict, rather than adding to it, which
@@ -367,7 +367,7 @@ Each file's own docstring or comments carry the full detail. This is just a map.
 | `audit_url_gaps.py` | Post-hoc URL gap analysis tool (see "URL Gap Analysis" above) |
 | `pipeline/`, `scrape_index_pipeline`, `scrape_index_pipeline_interactive` | Push pipeline (see "Push Pipeline" above). `scrape_index_pipeline` is the Docker `ENTRYPOINT` |
 | `Dockerfile` | Python 3.9 Slim image configuration |
-| `crontab.example` | Example weekly re-crawl schedule for all 12 sites, 2-parallel-max |
+| `crontab.example` | Example weekly re-crawl schedule for all 13 sites, 2-parallel-max |
 
 
 ## 🛠 Deployment to AWS

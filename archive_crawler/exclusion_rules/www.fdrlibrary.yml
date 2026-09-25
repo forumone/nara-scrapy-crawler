@@ -1,0 +1,36 @@
+# URL-pattern exclusion rules for www.fdrlibrary. Evaluated in order at
+# start_requests time. The first match wins.
+
+extensions:
+  mode: allow
+  values: [html, htm, php, asp, aspx, shtml, cfm, cgi]
+
+rules:
+  # Liferay locale-prefix copies of every English page (/es/, /de/, /zh/,
+  # and 7 more today, 295 URLs each). The body text is the same English
+  # text, and the canonical link points to the unprefixed URL. The regex
+  # matches any 2-letter first segment (with an optional _XX region), so
+  # a locale that the live site adds later is also excluded.
+  # Example: https://www.fdrlibrary.org/es/wagner-act
+  - match: regex
+    pattern: '^https?://[^/]+/[a-z]{2}(_[A-Z]{2})?(/|$)'
+    reason: "locale_duplicate"
+
+  # CMS test and scratch pages that the sitemap lists.
+  - match: url_list
+    values:
+      - "https://www.fdrlibrary.org/test-list"
+      - "https://www.fdrlibrary.org/test26017"
+      - "https://www.fdrlibrary.org/udhrtest"
+      - "https://www.fdrlibrary.org/collapsible-list-example"
+      - "https://www.fdrlibrary.org/museum-temp"
+    reason: "test_page"
+
+  # Site utility pages with no content of their own.
+  - match: url_list
+    values:
+      - "https://www.fdrlibrary.org/login"
+      - "https://www.fdrlibrary.org/search"
+      - "https://www.fdrlibrary.org/thank-you"
+      - "https://www.fdrlibrary.org/site-map"
+    reason: "utility_page"
