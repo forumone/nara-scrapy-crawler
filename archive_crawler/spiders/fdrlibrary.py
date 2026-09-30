@@ -20,9 +20,9 @@ class FDRLibrarySpider(SitemapUrlSpiderMixin, scrapy.Spider):
     allowed_domains = ["www.fdrlibrary.org"]
 
     SOURCE_SITE = 'www.fdrlibrary'
-    # Placeholder until the TL confirms a value for this site. The FDR
-    # Library is not an archived White House site.
-    SOURCE_TYPE = 'Archived White House Websites'
+    # The same group as the Drupal-indexed presidential library sites, not
+    # the frozen White House archives.
+    SOURCE_TYPE = 'Presidential Libraries'
 
     SITEMAP_URL = 'https://www.fdrlibrary.org/sitemap.xml'
 
