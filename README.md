@@ -345,8 +345,10 @@ for what each pipeline module (`registry.py`/`validate.py`/`filter_rows.py`/
 
 ### Credentials
 
-`push`/`crawl-and-push` need AWS credentials, and `NARA_S3_BUCKET` set,
-to upload. This project uses boto3's own default provider chain as-is.
+`push`/`crawl-and-push` need AWS credentials, and `NARA_S3_BUCKET` and
+`NARA_ENV` set, to upload. `NARA_ENV` (`dev`, `stage` or `prod`) picks
+which environment's OpenSearch index the upload reaches. This project
+uses boto3's own default provider chain as-is.
 Real `AWS_ACCESS_KEY_ID` and similar environment variables take
 priority, when present. Copy [.env.example](.env.example) to a
 gitignored `.env`, to configure a fallback credentials file or profile,

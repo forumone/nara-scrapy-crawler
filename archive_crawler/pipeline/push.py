@@ -11,7 +11,10 @@ loaded via python-dotenv with override=False, fills in only what the
 environment doesn't already have - see .env.example for what it
 configures.
 
-Key convention: <source_site>/<source_site>.jsonl, one folder per site.
+Key convention: <env>/<source_site>/<source_site>.jsonl, one folder per
+site under one folder per destination environment. NARA_ENV picks <env>;
+the Lambda reads that first key segment to choose the OpenSearch domain
+and index for the upload.
 """
 import logging
 import os
@@ -36,23 +39,34 @@ load_dotenv(override=False)
 urllib3_connection.allowed_gai_family = lambda: socket.AF_INET
 
 
-def _bucket_and_key(source_site):
+ENVIRONMENTS = ('dev', 'stage', 'prod')
+
+
+def bucket_and_key(source_site):
+    """Return the (bucket, key) source_site's JSONL uploads to.
+
+    Raises RuntimeError if NARA_S3_BUCKET or NARA_ENV is missing, or if
+    NARA_ENV is not one of ENVIRONMENTS. crawl-and-push calls this before
+    crawling so a misconfigured server fails at once, not after the crawl.
+    """
     bucket = os.environ.get('NARA_S3_BUCKET')
     if not bucket:
         raise RuntimeError(
             "NARA_S3_BUCKET is not set. Copy .env.example to .env and fill "
             "it in, or export NARA_S3_BUCKET directly in the environment."
         )
-    prefix = os.environ.get('NARA_S3_PREFIX', '').strip('/')
-    key = f'{source_site}/{source_site}.jsonl'
-    if prefix:
-        key = f'{prefix}/{key}'
-    return bucket, key
+    env = os.environ.get('NARA_ENV')
+    if env not in ENVIRONMENTS:
+        raise RuntimeError(
+            f"NARA_ENV must be one of {', '.join(ENVIRONMENTS)} (got {env!r}). "
+            "Set it in .env, or export it directly in the environment."
+        )
+    return bucket, f'{env}/{source_site}/{source_site}.jsonl'
 
 
 def push(source_site, jsonl_path, doc_count):
     """Upload source_site's converted JSONL to S3."""
-    bucket, key = _bucket_and_key(source_site)
+    bucket, key = bucket_and_key(source_site)
     client = boto3.client('s3', region_name=os.environ.get('AWS_DEFAULT_REGION'))
     client.upload_file(jsonl_path, bucket, key)
     logger.info(

@@ -198,6 +198,7 @@ def _crawl_and_push(
     logfile=None, memusage_limit=None, filter_rules_file=None, filter_rules_mode='append',
     error_threshold=None, bypass=False,
 ):
+    push.bucket_and_key(site_info.source_site)
     _crawl(
         site_info, download_delay=download_delay,
         concurrent_requests_per_domain=concurrent_requests_per_domain, logfile=logfile,
