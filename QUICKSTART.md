@@ -4,11 +4,19 @@ Minimal commands to confirm the crawler works on your machine. Two of the
 simplest sites: `open_obama_whitehouse` (no sitemap, single fused spider)
 and `clintonwhitehouse1` (sitemap-based, single fused spider).
 
+Run every command from the repository root. The repository root is the
+directory that contains `scrapy.cfg`, not the inner `archive_crawler/`
+package directory. Use the Python version in `.python-version`.
+
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
+python --version          # Must match .python-version
 pip install -r requirements.txt
 ```
+
+If `python --version` does not match `.python-version`, delete the `venv`
+directory. Install the correct Python version, then do these steps again.
 
 ## open_obama_whitehouse
 

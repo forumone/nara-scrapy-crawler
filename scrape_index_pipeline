@@ -69,7 +69,7 @@ def _run_with_spinner(cmd, label):
     cmd's own OS process, so nothing the crawl does can starve or stall
     the spinner thread; if the counter ever stops climbing, the spinner
     itself has broken, not "the crawl is just slow." No-ops (falls back to
-    a plain blocking wait) when stdout isn't a real terminal, so a Docker/
+    a plain blocking wait) when stdout isn't a real terminal, so a cron/
     automated invocation's logs don't fill up with carriage-return noise
     nobody's watching."""
     proc = subprocess.Popen(cmd)

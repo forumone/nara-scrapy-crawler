@@ -1,6 +1,6 @@
-# AWS Serverless Web Crawler for Archived Sites
+# Web Crawler for Archived Sites
 
-This project is a containerized **Scrapy** crawler. AWS Batch deploys it. It serves as the data collection engine for an aggregated search system.
+This project is a **Scrapy** crawler that runs on a Linux server. It serves as the data collection engine for an aggregated search system.
 
 > New to this repo? See [QUICKSTART.md](QUICKSTART.md) to validate your local setup with two of the simplest crawlers before reading further.
 
@@ -13,28 +13,34 @@ What triggers a crawl remains an open question, out of scope for this repo. Opti
 ## 🚀 Setup & Installation
 
 ### Prerequisites
-* Python 3.9+
-* Docker
-* AWS CLI (configured)
+* The Python version in `.python-version`
+* AWS credentials, for `push` and `crawl-and-push` only (see "Credentials" below)
 
 ### Local Setup
+
+Run every command in this README from the repository root. The repository root is the directory that contains `scrapy.cfg`. Do not run commands in the inner `archive_crawler/` package directory.
 
 ```bash
 # 1. Create a virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# 2. Install dependencies
+# 2. Check the Python version. It must match .python-version.
+python --version
+
+# 3. Install dependencies
 pip install -r requirements.txt
 ```
 
-> **Note:** `legacy-cgi` is listed in `requirements.txt`. Python 3.13+ requires it, since that version removed the `cgi` standard-library module. On earlier Python versions, it does nothing.
+If `python --version` does not match `.python-version`, delete the `venv` directory. Install the correct Python version, then do these steps again.
+
+`requirements.txt` pins every package, including indirect dependencies, to a tested version. Do not edit it by hand. See "Dependency Maintenance" below.
 
 ---
 
 ## 🕷️ Running Locally (Development)
 
-`generic_crawl_harvest` and `generic_crawl` form a two-phase spider pair. Both run entirely locally, with no Docker needed. They are starter and example tooling, not a production-ready scraper for an arbitrary new site. See the "Step-by-step: generic harvester" section in HARVESTING.md for usage. Each spider's own docstring holds its full `-a` argument list.
+`generic_crawl_harvest` and `generic_crawl` form a two-phase spider pair. Both run entirely locally. They are starter and example tooling, not a production-ready scraper for an arbitrary new site. See the "Step-by-step: generic harvester" section in HARVESTING.md for usage. Each spider's own docstring holds its full `-a` argument list.
 
 ---
 
@@ -365,35 +371,39 @@ Each file's own docstring or comments carry the full detail. This is just a map.
 | `items.py` | `ArchiveItem`, `HarvestItem` schemas |
 | `extensions/error_log.py` | `ErrorFileLogger` |
 | `audit_url_gaps.py` | Post-hoc URL gap analysis tool (see "URL Gap Analysis" above) |
-| `pipeline/`, `scrape_index_pipeline`, `scrape_index_pipeline_interactive` | Push pipeline (see "Push Pipeline" above). `scrape_index_pipeline` is the Docker `ENTRYPOINT` |
-| `Dockerfile` | Python 3.9 Slim image configuration |
+| `pipeline/`, `scrape_index_pipeline`, `scrape_index_pipeline_interactive` | Push pipeline (see "Push Pipeline" above) |
+| `requirements.in` | Direct dependencies. Edit this file, not `requirements.txt` |
+| `requirements.txt` | Every package pinned to a tested version. `pip-compile` generates it from `requirements.in` |
+| `.python-version` | The Python version for every environment |
 | `crontab.example` | Example weekly re-crawl schedule for all 13 sites, 2-parallel-max |
 
 
-## 🛠 Deployment to AWS
+## 🛠 Deployment
 
-### Authenticate Docker to ECR.
-```commandline
-aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 756132184927.dkr.ecr.us-east-2.amazonaws.com
-```
+The crawl server holds a git clone of this repository. To deploy a change:
 
-### Build to make a new image.
-```commandline
-docker build --platform linux/amd64 -t archive-crawler .
-```
+1. Merge the change into `main`.
+2. On the server, in the repository root, run `git pull`.
+3. If `requirements.txt` changed, run `venv/bin/pip install -r requirements.txt`.
 
-### Create the history tag:
+The server venv must use the Python version in `.python-version`.
 
-Where `[tag]` is the next iteration of the tag.
+## 📦 Dependency Maintenance
 
-```commandline
-docker tag archive-crawler:latest 756132184927.dkr.ecr.us-east-2.amazonaws.com/nara/archive-crawler:[tag]
-docker push 756132184927.dkr.ecr.us-east-2.amazonaws.com/nara/archive-crawler:[tag]
-```
+`requirements.in` lists the direct dependencies. `requirements.txt` pins those and all their indirect dependencies to exact versions. Every install gets the same versions, so a new upstream release cannot break a new setup.
 
-### Update the current pointer
+A package can remove a private name (a name that starts with `_`) in any release. An unpinned indirect dependency can thus break the crawler with no change in this repository. For example, `w3lib` 2.5.0 removed `_safe_chars`, which Scrapy 2.11.0 imports.
 
-```commandline
-docker tag archive-crawler:latest 756132184927.dkr.ecr.us-east-2.amazonaws.com/nara/archive-crawler:latest
-docker push 756132184927.dkr.ecr.us-east-2.amazonaws.com/nara/archive-crawler:latest
-```
+### Add or change a dependency
+
+1. Edit `requirements.in`.
+2. Run `pip install pip-tools`, in the venv.
+3. Run `pip-compile requirements.in`. This rewrites `requirements.txt`.
+4. Run `pip install -r requirements.txt`.
+5. Do a short test crawl, then commit both files.
+
+### Upgrade dependencies
+
+Run `pip-compile --upgrade requirements.in` to move every package to its newest allowed version. To upgrade one package only, run `pip-compile --upgrade-package <name> requirements.in`. Do a test crawl of each spider before you commit an upgrade.
+
+A version limit in `requirements.in` has a comment that gives its reason. Remove the limit only when that reason no longer applies. For example, `w3lib<2.5` can go when Scrapy moves to a version that does not import `_safe_chars`.

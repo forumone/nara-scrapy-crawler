@@ -8,6 +8,25 @@
 #     https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
 import os
+import sys
+
+# Print a notice when the running Python does not match .python-version.
+# requirements.txt is only tested on that version.
+_PYTHON_VERSION_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".python-version"
+)
+try:
+    with open(_PYTHON_VERSION_FILE) as _f:
+        _expected = _f.read().strip()
+except OSError:
+    _expected = None
+_running = f"{sys.version_info.major}.{sys.version_info.minor}"
+if _expected and _running != _expected:
+    print(
+        f"NOTICE: This is Python {_running}. This project uses Python {_expected} "
+        f"(see .python-version). Other versions are not tested.",
+        file=sys.stderr,
+    )
 
 BOT_NAME = "archive_crawler"
 

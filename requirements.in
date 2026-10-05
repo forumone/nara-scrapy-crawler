@@ -1,0 +1,17 @@
+# Direct dependencies. Edit this file, not requirements.txt.
+# Regenerate requirements.txt after any edit:
+#   pip install pip-tools
+#   pip-compile requirements.in
+# See "Dependency Maintenance" in README.md.
+
+Scrapy==2.11.0
+# Twisted breaks with some attrs releases.
+attrs==26.1.0
+# Scrapy 2.11.0 imports private names that w3lib 2.5.0 removed.
+w3lib<2.5
+boto3==1.34.0
+botocore==1.34.0
+# Python 3.13+ removed the cgi standard-library module.
+legacy-cgi
+PyYAML==6.0.1
+python-dotenv==1.0.1
