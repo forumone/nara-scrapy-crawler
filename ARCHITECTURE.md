@@ -163,8 +163,10 @@ or reconciles index contents itself.
   it has not blocked indexing, `source_site.keyword` counts, or search
   from working.
 
-**Watch out for.** `push.py` uploads to a `<source_site>/<source_site>.jsonl`
-key in the `NARA_S3_BUCKET` bucket (`nara-crawl-data`), one folder per site.
+**Watch out for.** `push.py` uploads to a `<env>/<source_site>/<source_site>.jsonl`
+key in the `NARA_S3_BUCKET` bucket (`nara-crawl-data`), one folder per site
+under one folder per environment. `NARA_ENV` (`dev`, `stage` or `prod`) sets
+`<env>`, and the Lambda uses it to pick the OpenSearch domain and index.
 `convert.py`'s `id`/`document_type`/`source`/`changed` gap (see above) is
 still open, live in production across all 13 sites now, but does not block
 a real upload or search from working today.
