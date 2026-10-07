@@ -1,0 +1,3 @@
+url,title,teaser_text,full_text,source_site,source_type,warnings
+https://www.whitehouse.gov/test-unchanged,Unchanged,teaser text v1,Full text v1.,open.obamawhitehouse,page,
+https://www.whitehouse.gov/test-updated,Updated V2,teaser text v2,Full text v2 - changed.,open.obamawhitehouse,page,

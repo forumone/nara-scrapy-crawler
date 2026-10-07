@@ -142,10 +142,24 @@ def _push(
     )
     if jsonl_path is None:
         jsonl_path = site_info.csv_path.rsplit('.', 1)[0] + '.jsonl'
-    count = convert.rows_to_jsonl(kept, jsonl_path)
+    # Confirmed 404s and excluded URLs both tombstone the same way - see
+    # find_excluded_urls's own docstring for why an exclusion rule match
+    # carries the same "confirmed, don't index this" weight a 404 does.
+    # sorted(set(...)) just keeps the list deterministic for anyone
+    # reading the log line or the JSONL by hand; a URL appearing in both
+    # sources (unlikely - one requires a harvest row, the other requires
+    # never having one) would otherwise tombstone twice, which is
+    # harmless but noisy.
+    tombstone_urls = sorted(set(
+        crawl_health.find_confirmed_deletions(site_info.csv_path)
+        + crawl_health.find_excluded_urls(site_info.csv_path)
+    ))
+    count, tombstone_count = convert.rows_to_jsonl(
+        kept, jsonl_path, tombstone_urls=tombstone_urls, source_site=site_info.source_site,
+    )
     logger.info(
-        "%s: %d row(s) read, %d dropped by warnings filter, %d converted",
-        site_info.source_site, len(rows), len(dropped), count,
+        "%s: %d row(s) read, %d dropped by warnings filter, %d converted, %d tombstoned",
+        site_info.source_site, len(rows), len(dropped), count, tombstone_count,
     )
     push.push(site_info.source_site, jsonl_path, count)
 
